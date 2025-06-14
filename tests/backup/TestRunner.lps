@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <ProjectSession>
+    <PathDelim Value="\"/>
+    <Version Value="12"/>
+    <BuildModes Active="Debug"/>
+    <Units>
+      <Unit>
+        <Filename Value="TestRunner.lpr"/>
+        <IsPartOfProject Value="True"/>
+        <CursorPos X="18" Y="8"/>
+        <UsageCount Value="21"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="testcase.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UsageCount Value="21"/>
+      </Unit>
+      <Unit>
+        <Filename Value="Request.Test.pas"/>
+        <IsVisibleTab Value="True"/>
+        <EditorIndex Value="1"/>
+        <TopLine Value="77"/>
+        <CursorPos X="68" Y="87"/>
+        <UsageCount Value="10"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="..\src\Request.pas"/>
+        <UnitName Value="TidyKit.Request"/>
+        <EditorIndex Value="2"/>
+        <TopLine Value="125"/>
+        <CursorPos X="33" Y="136"/>
+        <UsageCount Value="10"/>
+        <Loaded Value="True"/>
+      </Unit>
+    </Units>
+    <JumpHistory HistoryIndex="7">
+      <Position>
+        <Filename Value="TestRunner.lpr"/>
+        <Caret Line="10" Column="5"/>
+      </Position>
+      <Position>
+        <Filename Value="TestRunner.lpr"/>
+        <Caret Line="8" Column="18"/>
+      </Position>
+      <Position>
+        <Filename Value="Request.Test.pas"/>
+        <Caret Line="10" Column="11"/>
+      </Position>
+      <Position>
+        <Filename Value="..\src\Request.pas"/>
+        <Caret Column="6"/>
+      </Position>
+      <Position>
+        <Filename Value="Request.Test.pas"/>
+        <Caret Line="51" Column="25" TopLine="40"/>
+      </Position>
+      <Position>
+        <Filename Value="Request.Test.pas"/>
+        <Caret Line="52" Column="6" TopLine="40"/>
+      </Position>
+      <Position>
+        <Filename Value="Request.Test.pas"/>
+        <Caret Line="90" Column="22" TopLine="77"/>
+      </Position>
+      <Position>
+        <Filename Value="..\src\Request.pas"/>
+        <Caret Line="136" Column="33" TopLine="125"/>
+      </Position>
+    </JumpHistory>
+    <RunParams>
+      <FormatVersion Value="2"/>
+      <Modes ActiveMode=""/>
+    </RunParams>
+  </ProjectSession>
+</CONFIG>
