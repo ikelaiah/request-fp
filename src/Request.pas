@@ -46,6 +46,9 @@ type
     property Text: string read GetText;
     property JSON: TJSONData read GetJSON;
     
+    { Helper method to set the response content and JSON data }
+    procedure SetContent(const AContent: string; AJSON: TJSONData = nil);
+    
     { Management operators for automatic initialization/cleanup }
     
     {
@@ -693,6 +696,22 @@ end;
 function TResponse.GetText: string;
 begin
   Result := FContent;
+end;
+
+procedure TResponse.SetContent(const AContent: string; AJSON: TJSONData = nil);
+begin
+  // Free existing JSON data if it exists
+  if Assigned(FJSON) then
+    FreeAndNil(FJSON);
+    
+  // Set the content
+  FContent := AContent;
+  
+  // Set the JSON data if provided
+  if Assigned(AJSON) then
+    FJSON := AJSON
+  else
+    FJSON := nil;
 end;
 
 function TResponse.GetJSON: TJSONData;

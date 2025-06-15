@@ -5,7 +5,8 @@ program TestRunner;
 uses
   Classes
   , consoletestrunner
-  , Request.Test;
+  , Request.Test
+  , Request.Session.Test;
 
 type
 
