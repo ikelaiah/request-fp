@@ -582,7 +582,7 @@ begin
   Self.FTimeout := 30000; // 30 seconds default timeout
 
   // FHeaders and FCookies will self-initialize when their methods are called
-  // since we added defensive nil checks to all TStringMap methods
+  // since we added defensive nil checks to all TSimpleMap methods
 
   // Set default headers
   Self.FHeaders.SetItem('Accept', 'application/json');

@@ -1,9 +1,9 @@
 # Request-FP
 
-A modern, memory-safe HTTP client for Free Pascal, inspired by Python's requests library. Built with advanced records for automatic memory management and a fluent interface for expressive HTTP requests.
+A modern, memory-safe HTTP client library for Free Pascal, inspired by Python's requests library. Now includes both `Request.pas` (stateless, fluent API) and `Request.Session.pas` (session-based, connection-pooling API). Built with advanced records for automatic memory management and a fluent interface for expressive HTTP requests.
 
 ```pascal
-// Simple GET request
+// Simple GET request (stateless)
 var
   Response: TResponse;
 begin
@@ -11,17 +11,59 @@ begin
   if Response.StatusCode = 200 then
     WriteLn('Response: ', Response.Text);
 end;
+
+// Session-based GET request
+var
+  Session: THttpSession;
+  Response: TResponse;
+begin
+  Session.Init;
+  Session.SetBaseURL('https://api.example.com');
+  Response := Session.Get('/data');
+  if Response.StatusCode = 200 then
+    WriteLn('Session Response: ', Response.Text);
+end;
 ```
 
 ## Features ✨
 
 - **Fluent Interface** - Chain methods for clean, readable code
+- **Session Support** - Persistent cookies, headers, and connection pooling via `THttpSession`
 - **Automatic Memory Management** - Uses advanced records for hassle-free cleanup
 - **JSON Support** - Built-in JSON parsing with FPC's standard `fpjson`
 - **Memory Safe** - Clear ownership model prevents memory leaks and access violations
 - **HTTPS/SSL** - Secure connections with OpenSSL
 - **Cross-Platform** - Works on Windows and Linux
 - **Tested** - Comprehensive test suite
+
+## Library Structure
+
+- `src/Request.pas` — Stateless, fluent HTTP API (like Python's `requests`)
+- `src/Request.Session.pas` — Session-based API with persistent cookies, headers, and connection reuse
+
+## How does Request-FP compare to Python's requests?
+
+| Feature                | Python requests         | Request-FP (Pascal)           |
+|------------------------|------------------------|-------------------------------|
+| Stateless API          | Yes                    | Yes (`Request.pas`)           |
+| Session API            | Yes (`requests.Session`)| Yes (`Request.Session.pas`)   |
+| Automatic cleanup      | Yes (GC)               | Yes (advanced records)        |
+| JSON support           | Yes                    | Yes (via `fpjson`)            |
+| Cookie persistence     | Yes                    | Yes (in `THttpSession`)       |
+| Connection pooling     | Yes                    | Yes (in `THttpSession`)       |
+| Fluent interface       | Yes                    | Yes                           |
+| Exception handling     | Yes                    | Yes (`ERequestError`)         |
+| Platform support       | Cross-platform         | Cross-platform                |
+| SSL/HTTPS              | Yes                    | Yes                           |
+| Memory safety          | Yes (GC)               | Yes (no leaks, no AVs)        |
+| Type safety            | Dynamic                | Strong static typing          |
+| Language               | Python                 | Free Pascal                   |
+
+- **Request-FP** provides both a stateless API (like `requests.get/post`) and a session API (like `requests.Session`).
+- Memory is managed automatically (no manual `Free`/`Dispose`), similar to Python's garbage collection.
+- Session cookies, headers, and connection reuse are supported via `THttpSession`.
+- JSON parsing is built-in and safe.
+- Exception handling is explicit via `ERequestError`.
 
 ## Dependencies
 
@@ -35,7 +77,7 @@ end;
 ## Memory Management ℹ️
 
 ### Request and Response Objects
-- `THttpRequest` and `TResponse` are implemented as **advanced records** with automatic memory management
+- `THttpRequest`, `THttpSession`, and `TResponse` are implemented as **advanced records** with automatic memory management
 - No need to manually create or free these objects
 - Memory is automatically managed when variables go out of scope
 
@@ -83,12 +125,12 @@ end;
 
 ### Installation
 1. Add the `src` directory to your project's search path
-2. Add `TidyKit.Request` to your uses clause
+2. Add `Request` and/or `Request.Session` to your uses clause
 3. For HTTPS support, ensure OpenSSL libraries are installed
 
 ### Examples
 
-### Basic GET Request
+#### Basic GET Request (stateless)
 ```pascal
 var
   Response: TResponse;
@@ -99,7 +141,21 @@ begin
 end;
 ```
 
-**POST with JSON**
+#### Session-based GET Request
+```pascal
+var
+  Session: THttpSession;
+  Response: TResponse;
+begin
+  Session.Init;
+  Session.SetBaseURL('https://httpbin.org');
+  Response := Session.Get('/get');
+  WriteLn('Status: ', Response.StatusCode);
+  WriteLn('Body: ', Response.Text);
+end;
+```
+
+#### POST with JSON
 ```pascal
 var
   Response: TResponse;
@@ -109,7 +165,6 @@ begin
   try
     UserData.Add('name', 'John');
     UserData.Add('email', 'john@example.com');
-    
     Response := Http.PostJSON('https://httpbin.org/post', UserData.AsJSON);
     WriteLn('Status: ', Response.StatusCode);
     WriteLn('Response: ', Response.Text);
@@ -119,7 +174,7 @@ begin
 end;
 ```
 
-**Using the Fluent Interface**
+#### Using the Fluent Interface
 ```pascal
 var
   Response: TResponse;
@@ -131,7 +186,6 @@ begin
     .AddHeader('X-Custom-Header', 'test')
     .WithTimeout(5000)
     .Send;
-    
   if Response.StatusCode = 200 then
     WriteLn('Response: ', Response.Text);
 end;
