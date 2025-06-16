@@ -1,0 +1,184 @@
+# Request.Session User Manual
+
+A robust, memory-safe HTTP session library for Free Pascal, providing persistent cookies, headers, and connection reuse. Built with advanced records for automatic memory management and a clear, session-oriented API. Inspired by Python's requests.Session, but with strong Pascal typing and safety.
+
+## Table of Contents
+- [Request.Session User Manual](#requestsession-user-manual)
+  - [Table of Contents](#table-of-contents)
+  - [Features](#features)
+  - [System Requirements](#system-requirements)
+  - [Design Philosophy](#design-philosophy)
+    - [Session-Oriented API](#session-oriented-api)
+  - [Memory Safety](#memory-safety)
+  - [Basic Usage](#basic-usage)
+    - [Session GET Request](#session-get-request)
+    - [Session POST Request](#session-post-request)
+    - [Working with Cookies and Headers](#working-with-cookies-and-headers)
+  - [Error Handling](#error-handling)
+  - [API Reference](#api-reference)
+    - [THttpSession Record](#thttpsession-record)
+    - [TSimpleMap Record](#tsimplemap-record)
+  - [Advanced Usage Examples](#advanced-usage-examples)
+    - [Authenticated Session](#authenticated-session)
+    - [Session with Custom Timeout](#session-with-custom-timeout)
+  - [Testing and Development](#testing-and-development)
+  - [Best Practices](#best-practices)
+
+## Features
+- Persistent cookies and headers across requests
+- Connection reuse for performance
+- Session configuration (base URL, user-agent, timeout)
+- Memory-safe: no manual cleanup required
+- Robust error handling with `ERequestError`
+- Cross-platform (Windows, Linux)
+- Simple, clear API for session-based HTTP
+
+## System Requirements
+- Free Pascal 3.2.2 or later
+- For HTTPS:
+  - Windows: OpenSSL libraries included
+  - Linux: `libssl-dev` or `openssl-devel` required
+
+## Design Philosophy
+### Session-Oriented API
+`Request.Session` provides a stateful HTTP client, similar to Python's `requests.Session`, but with Pascal's strong typing and memory safety. Sessions allow you to:
+- Reuse cookies and headers
+- Set a base URL for all requests
+- Maintain connection pooling for efficiency
+
+## Memory Safety
+- Uses advanced records for automatic initialization and cleanup
+- No manual memory management needed for sessions, headers, or cookies
+- Safe to use in try-except blocks
+
+## Basic Usage
+### Session GET Request
+```pascal
+var
+  Session: THttpSession;
+  Response: TResponse;
+begin
+  Session.Init;
+  Session.SetBaseURL('https://api.example.com');
+  Response := Session.Get('/data');
+  if Response.StatusCode = 200 then
+    WriteLn('Data: ', Response.Text);
+end;
+```
+
+### Session POST Request
+```pascal
+var
+  Session: THttpSession;
+  Response: TResponse;
+begin
+  Session.Init;
+  Session.SetBaseURL('https://api.example.com');
+  Session.SetHeader('Authorization', 'Bearer ...');
+  Response := Session.Post('/submit', '{"name":"John"}', 'application/json');
+  if Response.StatusCode = 201 then
+    WriteLn('Created: ', Response.Text);
+end;
+```
+
+### Working with Cookies and Headers
+```pascal
+var
+  Session: THttpSession;
+  Response: TResponse;
+begin
+  Session.Init;
+  Session.SetBaseURL('https://api.example.com');
+  Session.SetCookie('sessionid', 'abc123');
+  Session.SetHeader('X-API-Key', 'mykey');
+  Response := Session.Get('/profile');
+  WriteLn('Profile: ', Response.Text);
+end;
+```
+
+## Error Handling
+All HTTP errors raise `ERequestError`. Use try-except blocks for robust error handling:
+```pascal
+try
+  Response := Session.Get('/data');
+except
+  on E: ERequestError do
+    WriteLn('HTTP Error: ', E.Message);
+end;
+```
+
+## API Reference
+### THttpSession Record
+```pascal
+THttpSession = record
+  procedure Init;
+  function Get(const URL: string): TResponse;
+  function Post(const URL: string; const Body: string = ''; const ContentType: string = 'application/x-www-form-urlencoded'): TResponse;
+  function Put(const URL: string; const Body: string = ''; const ContentType: string = 'application/json'): TResponse;
+  function Delete(const URL: string): TResponse;
+  procedure SetHeader(const Name, Value: string);
+  procedure SetCookie(const Name, Value: string);
+  procedure SetBaseURL(const URL: string);
+  procedure SetUserAgent(const UserAgent: string);
+  procedure SetTimeout(Timeout: Integer);
+  procedure ClearCookies;
+  function GetCookie(const Name: string): string;
+  procedure ClearHeaders;
+end;
+```
+
+### TSimpleMap Record
+Used internally for headers and cookies. No manual management needed.
+```pascal
+TSimpleMap = record
+  procedure SetItem(const Key, Value: string);
+  function Get(const Key: string; const Default: string = ''): string;
+  function ContainsKey(const Key: string): Boolean;
+  procedure Remove(const Key: string);
+  procedure Clear;
+  function GetCount: Integer;
+end;
+```
+
+## Advanced Usage Examples
+### Authenticated Session
+```pascal
+var
+  Session: THttpSession;
+  Response: TResponse;
+begin
+  Session.Init;
+  Session.SetBaseURL('https://api.example.com');
+  Session.SetHeader('Authorization', 'Bearer mytoken');
+  Response := Session.Get('/secure-data');
+  if Response.StatusCode = 200 then
+    WriteLn('Secure: ', Response.Text);
+end;
+```
+
+### Session with Custom Timeout
+```pascal
+var
+  Session: THttpSession;
+  Response: TResponse;
+begin
+  Session.Init;
+  Session.SetBaseURL('https://api.example.com');
+  Session.SetTimeout(10000); // 10 seconds
+  Response := Session.Get('/slow-endpoint');
+  if Response.StatusCode = 200 then
+    WriteLn('Slow data: ', Response.Text);
+end;
+```
+
+## Testing and Development
+- Add the `src` directory to your project
+- Use `Request.Session` in your `uses` clause
+- Run tests in the `tests` directory for validation
+
+## Best Practices
+1. Always call `Session.Init` before use
+2. Set base URL and headers/cookies as needed
+3. Use try-except for error handling
+4. Let the session manage memory and cleanup
+5. Use `ClearCookies` and `ClearHeaders` to reset session state if needed
