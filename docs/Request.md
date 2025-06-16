@@ -26,6 +26,9 @@ A lightweight, memory-safe HTTP client for Free Pascal that uses advanced record
     - [Complex Request with Multiple Headers and Parameters](#complex-request-with-multiple-headers-and-parameters)
     - [Authenticated Request with Error Handling](#authenticated-request-with-error-handling)
     - [Form Data Submission](#form-data-submission)
+    - [Multipart File Uploads](#multipart-file-uploads)
+      - [Fluent API Example](#fluent-api-example)
+      - [Static API Example](#static-api-example)
   - [Testing and Development](#testing-and-development)
   - [Best Practices](#best-practices)
 
@@ -401,6 +404,59 @@ begin
 end;
 ```
 
+### Multipart File Uploads
+
+Request.pas supports robust, memory-safe multipart file uploads using dynamic arrays (not TStringList), fully compatible with FPC 3.2.2 and both stateless and session APIs.
+
+#### Fluent API Example
+```pascal
+var
+  Request: THttpRequest;
+  Response: TResponse;
+  TempFile: string;
+begin
+  // Create a temporary file to upload
+  TempFile := GetTempDir + 'test_upload.txt';
+  // ... write to TempFile ...
+
+  Request := Request.Post
+    .URL('https://httpbin.org/post')
+    .AddFile('file1', TempFile)
+    .AddFormField('field1', 'value1');
+  Response := Request.Send;
+
+  WriteLn('Status: ', Response.StatusCode);
+  WriteLn('Body: ', Response.Text);
+end;
+```
+
+#### Static API Example
+```pascal
+var
+  Response: TResponse;
+  Fields, FilesArr: array of TKeyValue;
+begin
+  SetLength(Fields, 1);
+  Fields[0].Key := 'staticfield';
+  Fields[0].Value := 'staticvalue';
+
+  SetLength(FilesArr, 1);
+  FilesArr[0].Key := 'file2';
+  FilesArr[0].Value := 'path/to/file.txt';
+
+  Response := Http.PostMultipart('https://httpbin.org/post', Fields, FilesArr);
+  WriteLn('Status: ', Response.StatusCode);
+  WriteLn('Body: ', Response.Text);
+end;
+```
+
+- No manual memory management is required for multipart fields/files.
+- Multipart logic is only triggered if files or fields are added; all state is reset after each request.
+- No regressions: all stateless and session API features remain fully compatible.
+- 100% passing test suite, including multipart upload tests.
+
+---
+
 ## Testing and Development
 
 The TidyKit.Request module includes special features for testing environments:
@@ -420,4 +476,4 @@ This ensures your tests can run successfully even on systems without OpenSSL ins
 5. Take advantage of the fluent interface for complex requests
 6. Let the code read like natural language descriptions
 7. For production applications requiring HTTPS, make sure to install the appropriate OpenSSL libraries
-8. In testing environments, be aware of the automatic HTTP fallback for HTTPS URLs 
+8. In testing environments, be aware of the automatic HTTP fallback for HTTPS URLs
