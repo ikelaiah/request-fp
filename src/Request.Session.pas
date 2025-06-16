@@ -16,26 +16,70 @@ type
     Value: string;
   end;
 
-  { TSimpleMap - Simple string map using dynamic arrays }
+  { TSimpleMap }
+  {
+    @description Simple key-value map for string pairs, used for headers and cookies.
+
+    @usage Use for storing and retrieving HTTP headers or cookies in a session.
+
+    @example
+
+      var 
+        Map: TSimpleMap;
+        
+      Map.SetItem('Key', 'Value');
+      if Map.ContainsKey('Key') then ...
+      Map.Remove('Key');
+
+    @note No manual memory management required; dynamic array is managed by Pascal.
+  }
   TSimpleMap = record
   private
     FItems: array of TKeyValue;
     function FindIndex(const Key: string): Integer;
   public
+    { Adds or updates a key-value pair (alias for SetItem) }
     procedure Add(const Key, Value: string);
+    { Removes all items }
     procedure Clear;
+    { Returns True if the key exists }
     function ContainsKey(const Key: string): Boolean;
+    { Gets the value for a key, or returns Default if not found }
     function Get(const Key: string; const Default: string = ''): string;
+    { Returns the number of items }
     function GetCount: Integer;
+    { Gets the key at the given index }
     function GetKey(Index: Integer): string;
+    { Gets the value at the given index }
     function GetValue(Index: Integer): string;
+    { Returns the index of a key, or -1 if not found }
     function IndexOf(const Key: string): Integer;
+    { Removes a key-value pair by key }
     procedure Remove(const Key: string);
+    { Adds or updates a key-value pair }
     procedure SetItem(const Key, Value: string);
   end;
 
   { THttpSession }
-  // HTTP session with connection pooling and cookie handling
+  {
+    @description HTTP session with connection pooling, header, and cookie management.
+
+    @usage Use for making multiple HTTP requests with shared headers, cookies, and connection reuse.
+
+    @example
+
+      var 
+        Session: THttpSession;
+
+      Session.Init;
+      Session.SetBaseURL('https://api.example.com');
+      Session.SetHeader('Authorization', 'Bearer ...');
+      Response := Session.Get('/endpoint');
+      WriteLn('Status: ', Response.StatusCode);
+
+    @note Advanced record: uses Initialize, Finalize, and Copy for safe resource management.
+          No manual cleanup needed; memory is managed automatically.
+  }
   THttpSession = record
   private
     FClient: TFPHTTPClient;
@@ -51,33 +95,42 @@ type
     procedure UpdateCookies(Headers: TStrings);
     
   public
+    { Advanced record management: see Initialize, Finalize, and Copy operators below. }
     class operator Initialize(var Session: THttpSession);
     class operator Finalize(var Session: THttpSession);
     class operator Copy(constref Source: THttpSession; var Dest: THttpSession);
     
-    // New explicit initialization method that can be called from tests
+    { Explicit initialization method (call before use) }
     procedure Init;
     
-    // HTTP Methods
+    { Performs a HTTP GET request }
     function Get(const URL: string): TResponse;
+    { Performs a HTTP POST request }
     function Post(const URL: string; const Body: string = ''; 
                  const ContentType: string = 'application/x-www-form-urlencoded'): TResponse;
+    { Performs a HTTP PUT request }
     function Put(const URL: string; const Body: string = ''; 
                 const ContentType: string = 'application/json'): TResponse;
+    { Performs a HTTP DELETE request }
     function Delete(const URL: string): TResponse;
     
-    // Session Configuration
+    { Sets a header for all requests }
     procedure SetHeader(const Name, Value: string);
+    { Sets a cookie for all requests }
     procedure SetCookie(const Name, Value: string);
+    { Sets the base URL for relative requests }
     procedure SetBaseURL(const URL: string);
+    { Sets the User-Agent header }
     procedure SetUserAgent(const UserAgent: string);
+    { Sets the timeout in milliseconds }
     procedure SetTimeout(Timeout: Integer);
     
-    // Cookie Management
+    { Clears all cookies }
     procedure ClearCookies;
+    { Gets a cookie value by name }
     function GetCookie(const Name: string): string;
     
-    // Header Management
+    { Clears all headers (except Accept) }
     procedure ClearHeaders;
   end;
 
