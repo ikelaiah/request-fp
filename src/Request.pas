@@ -686,6 +686,8 @@ end;
 
 { TResponse }
 
+// Advanced record management: TResponse uses Initialize, Finalize, and Copy operators
+// to ensure automatic cleanup of owned TJSONData and safe assignment/copying.
 class operator TResponse.Initialize(var Response: TResponse);
 begin
   // Called automatically when a TResponse is created
@@ -705,6 +707,8 @@ end;
 
 class operator TResponse.Copy(constref Source: TResponse; var Dest: TResponse);
 begin
+  if Assigned(Dest.FJSON) then
+    Dest.FJSON.Free;
   Dest.FContent := Source.FContent;
   Dest.FHeaders := Source.FHeaders;
   Dest.StatusCode := Source.StatusCode;
