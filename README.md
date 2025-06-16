@@ -53,6 +53,7 @@ end;
 | Connection pooling     | Yes                    | Yes (in `THttpSession`)       |
 | Fluent interface       | Yes                    | Yes                           |
 | Exception handling     | Yes                    | Yes (`ERequestError`)         |
+| Multipart upload       | Yes                    | Yes (stateless/session, memory-safe, dynamic arrays) |
 | Platform support       | Cross-platform         | Cross-platform                |
 | SSL/HTTPS              | Yes                    | Yes                           |
 | Memory safety          | Yes (GC)               | Yes (no leaks, no AVs)        |
@@ -190,6 +191,57 @@ begin
     WriteLn('Response: ', Response.Text);
 end;
 ```
+
+## Multipart File Uploads
+
+Request-FP supports robust, memory-safe multipart file uploads using dynamic arrays (not TStringList), fully compatible with FPC 3.2.2 and both stateless and session APIs.
+
+### Fluent API Example
+```pascal
+var
+  Request: THttpRequest;
+  Response: TResponse;
+  TempFile: string;
+begin
+  // Create a temporary file to upload
+  TempFile := GetTempDir + 'test_upload.txt';
+  // ... write to TempFile ...
+
+  Request := Request.Post
+    .URL('https://httpbin.org/post')
+    .AddFile('file1', TempFile)
+    .AddFormField('field1', 'value1');
+  Response := Request.Send;
+
+  WriteLn('Status: ', Response.StatusCode);
+  WriteLn('Body: ', Response.Text);
+end;
+```
+
+### Static API Example
+```pascal
+var
+  Response: TResponse;
+  Fields, FilesArr: array of TKeyValue;
+begin
+  SetLength(Fields, 1);
+  Fields[0].Key := 'staticfield';
+  Fields[0].Value := 'staticvalue';
+
+  SetLength(FilesArr, 1);
+  FilesArr[0].Key := 'file2';
+  FilesArr[0].Value := 'path/to/file.txt';
+
+  Response := Http.PostMultipart('https://httpbin.org/post', Fields, FilesArr);
+  WriteLn('Status: ', Response.StatusCode);
+  WriteLn('Body: ', Response.Text);
+end;
+```
+
+- No manual memory management is required for multipart fields/files.
+- Multipart logic is only triggered if files or fields are added; all state is reset after each request.
+- No regressions: all stateless and session API features remain fully compatible.
+- 100% passing test suite, including multipart upload tests.
 
 ## Documentation
 

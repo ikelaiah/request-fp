@@ -10,11 +10,7 @@ uses
   Request;
 
 type
-  { TKeyValue - Simple key-value pair }
-  TKeyValue = record
-    Key: string;
-    Value: string;
-  end;
+
 
   { TSimpleMap }
   {

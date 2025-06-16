@@ -14,6 +14,12 @@ type
   { Exception class for HTTP request operations }
   ERequestError = class(Exception);
 
+  { TKeyValue - Simple key-value pair }
+  TKeyValue = record
+    Key: string;
+    Value: string;
+  end;
+
   { Response record with automatic memory management }
   TResponse = record
   private
@@ -111,6 +117,10 @@ type
     FPassword: string;
     FJSON: string;
     FData: string;
+    
+    FFormFields: array of TKeyValue;
+    FFormFiles: array of TKeyValue;
+    FIsMultipart: Boolean;
     
     {
       @description Executes the HTTP request with all configured options
@@ -436,6 +446,9 @@ type
         end;
     }
     function Send: TResponse;
+    
+    function AddFormField(const Name, Value: string): THttpRequest;
+    function AddFile(const FieldName, FilePath: string): THttpRequest;
   end;
   
   { Global HTTP functions }
@@ -625,6 +638,37 @@ type
         end;
     }
     class function TryPost(const URL: string; const Data: string = ''): TRequestResult; static;
+    
+    {
+      @description Performs a simple HTTP POST request with multipart/form-data
+      
+      @usage Use for quick POST requests with file uploads without configuring many options
+      
+      @param URL The URL to send the POST request to
+      @param Fields Optional form fields to include in the request
+      @param Files Optional files to upload
+      
+      @returns TResponse containing the result of the HTTP request
+      
+      @warning May raise ERequestError for network or protocol errors.
+               Automatically sets Content-Type to multipart/form-data.
+      
+      @example
+        var
+          Response: TResponse;
+        begin
+          Response := THttp.PostMultipart('https://api.example.com/upload',
+                                         ['field1=value1', 'field2=value2'],
+                                         ['file1=/path/to/file1', 'file2=/path/to/file2']);
+          // Or using the global constant:
+          Response := Http.PostMultipart('https://api.example.com/upload',
+                                         ['field1=value1', 'field2=value2'],
+                                         ['file1=/path/to/file1', 'file2=/path/to/file2']);
+          
+          WriteLn('Status: ', Response.StatusCode);
+        end;
+    }
+    class function PostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TResponse; static;
   end;
 
 const
@@ -862,13 +906,17 @@ end;
 function THttpRequest.Execute: TResponse;
 var
   Client: TFPHTTPClient;
-  RequestStream: TStringStream;
+  RequestStream: TStream; // Now can be TStringStream or TMemoryStream
   ResponseStream: TMemoryStream;
   ContentStream: TStringStream;
   AuthStr: string;
   HeaderLines: TStringList;
   I: Integer;
   FinalURL: string;
+  Boundary: string;
+  FileStream: TFileStream;
+  UseMultipart: Boolean;
+  S: string;
 begin
   // Initialize result record
   Result.StatusCode := 0;
@@ -923,7 +971,8 @@ begin
       Client.RequestHeaders.Add('Authorization: Basic ' + AuthStr);
     end;
     
-    // Set content type for JSON
+    // Only use multipart if there are fields or files
+    UseMultipart := (Length(FFormFields) > 0) or (Length(FFormFiles) > 0);
     if FJSON <> '' then
     begin
       Client.RequestHeaders.Add('Content-Type: application/json');
@@ -933,6 +982,44 @@ begin
     begin
       Client.RequestHeaders.Add('Content-Type: application/x-www-form-urlencoded');
       RequestStream := TStringStream.Create(FData);
+    end
+    else if UseMultipart then
+    begin
+      Boundary := '----RequestFPBoundary' + IntToHex(Random(MaxInt), 8);
+      Client.RequestHeaders.Add('Content-Type: multipart/form-data; boundary=' + Boundary);
+      RequestStream := TMemoryStream.Create;
+      // Add form fields
+      for I := 0 to High(FFormFields) do
+      begin
+        S := '--' + Boundary + #13#10 +
+             'Content-Disposition: form-data; name="' + FFormFields[I].Key + '"' + #13#10#13#10 +
+             FFormFields[I].Value + #13#10;
+        RequestStream.Write(Pointer(S)^, Length(S));
+      end;
+      // Add files
+      for I := 0 to High(FFormFiles) do
+      begin
+        S := '--' + Boundary + #13#10 +
+             'Content-Disposition: form-data; name="' + FFormFiles[I].Key + '"; filename="' + ExtractFileName(FFormFiles[I].Value) + '"' + #13#10 +
+             'Content-Type: application/octet-stream' + #13#10#13#10;
+        RequestStream.Write(Pointer(S)^, Length(S));
+        if FileExists(FFormFiles[I].Value) then
+        begin
+          FileStream := TFileStream.Create(FFormFiles[I].Value, fmOpenRead or fmShareDenyNone);
+          try
+            RequestStream.CopyFrom(FileStream, 0);
+          finally
+            FileStream.Free;
+          end;
+        end
+        else
+          raise ERequestError.Create('File not found: ' + FFormFiles[I].Value);
+        S := #13#10;
+        RequestStream.Write(Pointer(S)^, Length(S));
+      end;
+      S := '--' + Boundary + '--' + #13#10;
+      RequestStream.Write(Pointer(S)^, Length(S));
+      RequestStream.Position := 0;
     end;
     
     // Build URL with params
@@ -949,7 +1036,6 @@ begin
     try
       if Assigned(RequestStream) then
         Client.RequestBody := RequestStream;
-
       // Set default User-Agent if none specified
       if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
         Client.AddHeader('User-Agent', 'TidyKit/1.0');
@@ -994,7 +1080,36 @@ begin
     Client.Free;
     if Assigned(RequestStream) then
       RequestStream.Free;
+    // --- Reset multipart state after each request ---
+    SetLength(FFormFields, 0);
+    SetLength(FFormFiles, 0);
+    FIsMultipart := False;
+    // ----------------------------------------------
   end;
+end;
+
+function THttpRequest.AddFormField(const Name, Value: string): THttpRequest;
+var
+  N: Integer;
+begin
+  N := Length(FFormFields);
+  SetLength(FFormFields, N + 1);
+  FFormFields[N].Key := Name;
+  FFormFields[N].Value := Value;
+  FIsMultipart := True;
+  Result := Self;
+end;
+
+function THttpRequest.AddFile(const FieldName, FilePath: string): THttpRequest;
+var
+  N: Integer;
+begin
+  N := Length(FFormFiles);
+  SetLength(FFormFiles, N + 1);
+  FFormFiles[N].Key := FieldName;
+  FFormFiles[N].Value := FilePath;
+  FIsMultipart := True;
+  Result := Self;
 end;
 
 { THttp }
@@ -1124,6 +1239,21 @@ begin
       Result.Response.FJSON := nil;
     end;
   end;
+end;
+
+class function THttp.PostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TResponse;
+var
+  Builder: THttpRequest;
+  I: Integer;
+begin
+  // Use local variable for advanced record (auto-initialized)
+  // Add fields
+  for I := 0 to High(Fields) do
+    Builder := Builder.AddFormField(Fields[I].Key, Fields[I].Value);
+  // Add files
+  for I := 0 to High(Files) do
+    Builder := Builder.AddFile(Files[I].Key, Files[I].Value);
+  Result := Builder.Post.URL(URL).Send;
 end;
 
 initialization

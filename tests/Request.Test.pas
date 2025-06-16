@@ -32,6 +32,10 @@ type
     // Error handling
     procedure Test11_TryGetSuccess;
     procedure Test12_TryGetFailure;
+    
+    // Multipart upload tests
+    procedure Test13_MultipartUpload_Fluent;
+    procedure Test14_MultipartUpload_Static;
   end;
 
 implementation
@@ -252,6 +256,103 @@ begin
   Result := Http.TryGet('https://nonexistent.example.com');
   AssertFalse('Request should fail', Result.Success);
   AssertTrue('Error message should not be empty', Result.Error <> '');
+end;
+
+procedure TRequestSimpleTests.Test13_MultipartUpload_Fluent;
+var
+  Request: THttpRequest;
+  Response: TResponse;
+  TempFile: string;
+  F: TextFile;
+  Form: TJSONObject;
+  Files: TJSONObject;
+begin
+  // Create a temporary file to upload
+  TempFile := GetTempDir + 'test_upload.txt';
+  AssignFile(F, TempFile);
+  Rewrite(F);
+  WriteLn(F, 'Hello, multipart!');
+  CloseFile(F);
+
+  Request := Request.Post
+    .URL('https://httpbin.org/post')
+    .AddFile('file1', TempFile)
+    .AddFormField('field1', 'value1');
+  Response := Request.Send;
+
+  AssertEquals('Status code should be 200', 200, Response.StatusCode);
+  AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
+
+  // Check form field
+  Form := TJSONObject(Response.JSON.FindPath('form'));
+  try
+    AssertTrue('Form field should exist', Form <> nil);
+    AssertEquals('Form field value', 'value1', Form.Get('field1', ''));
+  finally
+    // Don't free Form as it's owned by Response.JSON
+  end;
+
+  // Check file field
+  Files := TJSONObject(Response.JSON.FindPath('files'));
+  try
+    AssertTrue('Files should exist in response', Files <> nil);
+    AssertTrue('Uploaded file should be present', Files.Find('file1') <> nil);
+  finally
+    // Don't free Files as it's owned by Response.JSON
+  end;
+
+  // Clean up
+  DeleteFile(TempFile);
+end;
+
+procedure TRequestSimpleTests.Test14_MultipartUpload_Static;
+var
+  Response: TResponse;
+  TempFile: string;
+  F: TextFile;
+  Fields, FilesArr: array of TKeyValue;
+  Form, FilesObj: TJSONObject;
+begin
+  // Create a temporary file to upload
+  TempFile := GetTempDir + 'test_upload2.txt';
+  AssignFile(F, TempFile);
+  Rewrite(F);
+  WriteLn(F, 'Static multipart test!');
+  CloseFile(F);
+
+  SetLength(Fields, 1);
+  Fields[0].Key := 'staticfield';
+  Fields[0].Value := 'staticvalue';
+
+  SetLength(FilesArr, 1);
+  FilesArr[0].Key := 'file2';
+  FilesArr[0].Value := TempFile;
+
+  Response := Http.PostMultipart('https://httpbin.org/post', Fields, FilesArr);
+
+  AssertEquals('Status code should be 200', 200, Response.StatusCode);
+  AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
+
+  // Check form field
+  Form := TJSONObject(Response.JSON.FindPath('form'));
+  try
+    AssertTrue('Form field should exist', Form <> nil);
+    AssertEquals('Form field value', 'staticvalue', Form.Get('staticfield', ''));
+  finally
+    // Don't free Form as it's owned by Response.JSON
+  end;
+
+  // Check file field
+  FilesObj := TJSONObject(Response.JSON.FindPath('files'));
+  try
+    AssertTrue('Files should exist in response', FilesObj <> nil);
+    AssertTrue('Uploaded file should be present', FilesObj.Find('file2') <> nil);
+  finally
+    // Don't free FilesObj as it's owned by Response.JSON
+  end;
+
+  // Clean up
+  DeleteFile(TempFile);
 end;
 
 initialization
