@@ -201,6 +201,7 @@ end;
 
 class operator THttpSession.Finalize(var Session: THttpSession);
 begin
+  WriteLn('[DEBUG] Finalize called');
   if Assigned(Session.FClient) then
     FreeAndNil(Session.FClient);
   // TSimpleMap uses dynamic arrays and doesn't need manual cleanup
@@ -329,7 +330,16 @@ var
   Response: TStringStream;
   Headers: TStringList;
 begin
+  WriteLn('[DEBUG] Get called');
   Client := GetClient;
+  if Assigned(Client) then
+    WriteLn('[DEBUG] Client assigned')
+  else
+    WriteLn('[DEBUG] Client is nil!');
+  if Assigned(Client.RequestHeaders) then
+    WriteLn('[DEBUG] RequestHeaders assigned, count: ', Client.RequestHeaders.Count)
+  else
+    WriteLn('[DEBUG] RequestHeaders is nil!');
   SetupRequest(Client);
   
   Response := TStringStream.Create('');
@@ -549,14 +559,31 @@ procedure THttpSession.ClearCookies;
 var
   idx: Integer;
 begin
+  WriteLn('[DEBUG] ClearCookies called');
   FCookies.Clear;
-  // Explicitly remove Cookie header from request headers
+  WriteLn('[DEBUG] FCookies cleared');
   if Assigned(FClient) then
   begin
-    idx := FClient.RequestHeaders.IndexOfName('Cookie');
-    if idx >= 0 then
-      FClient.RequestHeaders.Delete(idx);
-  end;
+    WriteLn('[DEBUG] FClient is assigned');
+    if Assigned(FClient.RequestHeaders) then
+    begin
+      WriteLn('[DEBUG] RequestHeaders count before: ', FClient.RequestHeaders.Count);
+      idx := FClient.RequestHeaders.IndexOfName('Cookie');
+      WriteLn('[DEBUG] Cookie header index: ', idx);
+      if idx >= 0 then
+      begin
+        FClient.RequestHeaders.Delete(idx);
+        WriteLn('[DEBUG] Cookie header deleted');
+      end
+      else
+        WriteLn('[DEBUG] No Cookie header to delete');
+      WriteLn('[DEBUG] RequestHeaders count after: ', FClient.RequestHeaders.Count);
+    end
+    else
+      WriteLn('[DEBUG] FClient.RequestHeaders is nil!');
+  end
+  else
+    WriteLn('[DEBUG] FClient is nil!');
 end;
 
 function THttpSession.GetCookie(const Name: string): string;

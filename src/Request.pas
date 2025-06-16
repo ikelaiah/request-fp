@@ -74,6 +74,17 @@ type
       @warning No need to call this manually; Free Pascal handles this automatically
     }
     class operator Finalize(var Response: TResponse);
+    
+    {
+      @description Copies a TResponse record, performing a deep copy of fields
+      
+      @usage Called automatically when:
+             - A TResponse is assigned to another TResponse
+             - A TResponse is passed by value to a function or method
+      
+      @warning No need to call this manually; Free Pascal handles this automatically
+    }
+    class operator Copy(constref Source: TResponse; var Dest: TResponse);
   end;
   
   {
@@ -686,11 +697,18 @@ end;
 
 class operator TResponse.Finalize(var Response: TResponse);
 begin
-  // Called automatically when a TResponse goes out of scope
-  // Free the JSON data if it was created
+  WriteLn('[DEBUG] TResponse.Finalize called');
   if Assigned(Response.FJSON) then
     Response.FJSON.Free;
   Response.FJSON := nil;
+end;
+
+class operator TResponse.Copy(constref Source: TResponse; var Dest: TResponse);
+begin
+  Dest.FContent := Source.FContent;
+  Dest.FHeaders := Source.FHeaders;
+  Dest.StatusCode := Source.StatusCode;
+  Dest.FJSON := nil; // Prevent double-free
 end;
 
 function TResponse.GetText: string;
@@ -700,14 +718,9 @@ end;
 
 procedure TResponse.SetContent(const AContent: string; AJSON: TJSONData = nil);
 begin
-  // Free existing JSON data if it exists
   if Assigned(FJSON) then
     FreeAndNil(FJSON);
-    
-  // Set the content
   FContent := AContent;
-  
-  // Set the JSON data if provided
   if Assigned(AJSON) then
     FJSON := AJSON
   else
@@ -1131,4 +1144,4 @@ initialization
 finalization
   // OpenSSL cleanup is handled by opensslsockets unit
 
-end. 
+end.
