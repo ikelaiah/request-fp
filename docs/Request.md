@@ -1,10 +1,10 @@
-# TidyKit.Request Documentation
+# Request Unit Documentation
 
 A lightweight, memory-safe HTTP client for Free Pascal that uses advanced records for automatic cleanup. This module provides a fluent interface for making HTTP requests with built-in memory management and JSON integration through the standard FPC fpjson unit.
 
 ## Table of Contents
 
-- [TidyKit.Request Documentation](#tidykitrequest-documentation)
+- [Request Unit Documentation](#request-unit-documentation)
   - [Table of Contents](#table-of-contents)
   - [Features](#features)
   - [System Requirements](#system-requirements)
@@ -20,6 +20,7 @@ A lightweight, memory-safe HTTP client for Free Pascal that uses advanced record
     - [SSL/TLS Errors](#ssltls-errors)
   - [API Reference](#api-reference)
     - [TResponse Record](#tresponse-record)
+    - [TRequestResult Record](#trequestresult-record)
     - [THttpRequest Record](#thttprequest-record)
     - [Global HTTP Functions](#global-http-functions)
   - [Advanced Usage Examples](#advanced-usage-examples)
@@ -138,10 +139,12 @@ end;
 ```
 
 ### Working with JSON
+
 ```pascal
 var
   Response: TResponse;
   UserData: TJSONObject;
+  ResponseData: TJSONObject;
 begin
   // Create JSON request data
   UserData := TJSONObject.Create;
@@ -157,8 +160,13 @@ begin
     // Handle JSON response
     if Response.StatusCode = 201 then
     begin
-      WriteLn('User created with ID: ', TJSONObject(Response.JSON.FindPath('id')).AsString);
-      WriteLn('Created at: ', TJSONObject(Response.JSON.FindPath('created_at')).AsString);
+      ResponseData := TJSONObject(Response.JSON);
+      try
+        WriteLn('User created with ID: ', ResponseData.Get('id', 0));
+        WriteLn('Created at: ', ResponseData.Get('created_at', ''));
+      finally
+        // Do NOT free ResponseData - it's owned by Response.JSON
+      end;
     end;
   finally
     UserData.Free;
@@ -167,6 +175,7 @@ end;
 ```
 
 ### Using the Fluent Interface
+
 ```pascal
 var
   Request: THttpRequest;  // Automatically initialized when declared
@@ -193,7 +202,7 @@ begin
         WriteLn('Success: ', ResponseData.Get('success', False));
         WriteLn('Message: ', ResponseData.Get('message', ''));
       finally
-        ResponseData.Free;
+        // Do NOT free ResponseData - it's owned by Response.JSON
       end;
     end;
   finally
@@ -204,7 +213,7 @@ end;
 
 ## Error Handling
 
-The TidyKit.Request module uses a dedicated exception class, `ERequestError`, for handling HTTP-related errors. This allows you to specifically catch HTTP request errors while letting other types of exceptions propagate as normal.
+The Request module uses a dedicated exception class, `ERequestError`, for handling HTTP-related errors. This allows you to specifically catch HTTP request errors while letting other types of exceptions propagate as normal.
 
 ```pascal
 try
@@ -221,17 +230,24 @@ end;
 ```
 
 ### Using Try-Pattern
+
 For a more functional approach, you can use the built-in Try-pattern methods that handle exceptions for you:
 
 ```pascal
 var
   Result: TRequestResult;
+  ResponseData: TJSONObject;
 begin
   Result := Http.TryGet('https://api.example.com/data');
   if Result.Success then
   begin
-    WriteLn('Status: ', Result.Response.JSON.AsObject['status'].AsString);
-    WriteLn('Data: ', Result.Response.JSON.AsObject['data'].AsString);
+    ResponseData := TJSONObject(Result.Response.JSON);
+    try
+      WriteLn('Status: ', ResponseData.Get('status', ''));
+      WriteLn('Data: ', ResponseData.Get('data', ''));
+    finally
+      // Do NOT free ResponseData - it's owned by Result.Response.JSON
+    end;
   end
   else
     WriteLn('Error: ', Result.Error);
@@ -268,19 +284,34 @@ end;
 ## API Reference
 
 ### TResponse Record
+
 ```pascal
 TResponse = record
   StatusCode: Integer;
   property Text: string;              // Response body as text
-  property JSON: IJSONValue;          // Response parsed as JSON
+  property JSON: TJSONData;           // Response parsed as JSON
   
   // Memory management (called automatically)
   class operator Initialize(var Response: TResponse);  // Called when variable is created
   class operator Finalize(var Response: TResponse);    // Called when variable goes out of scope
+  class operator Copy(constref Source: TResponse; var Dest: TResponse); // Called when copying
 end;
 ```
 
+### TRequestResult Record
+
+```pascal
+TRequestResult = record
+  Success: Boolean;    // True if request completed successfully
+  Response: TResponse; // The HTTP response (automatically managed)
+  Error: string;       // Error message if Success is False
+end;
+```
+
+The `TRequestResult` record is used by the Try* methods to provide error handling without exceptions.
+
 ### THttpRequest Record
+
 ```pascal
 THttpRequest = record
   // HTTP Methods (each returns Self for chaining)
@@ -299,6 +330,10 @@ THttpRequest = record
   function WithJSON(const JsonStr: string): THttpRequest;
   function WithData(const Data: string): THttpRequest;
   
+  // Multipart/Form-data support
+  function AddFormField(const Name, Value: string): THttpRequest;
+  function AddFile(const FieldName, FilePath: string): THttpRequest;
+  
   // Execute the request
   function Send: TResponse;
   
@@ -309,6 +344,7 @@ end;
 ```
 
 ### Global HTTP Functions
+
 ```pascal
 THttp = record
   // Simple one-line request methods
@@ -318,7 +354,10 @@ THttp = record
   class function Delete(const URL: string): TResponse;
   class function PostJSON(const URL: string; const JSON: string): TResponse;
   
-  // Error handling variants
+  // Multipart form-data support
+  class function PostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TResponse;
+  
+  // Error handling variants (never raise exceptions)
   class function TryGet(const URL: string): TRequestResult;
   class function TryPost(const URL: string; const Data: string = ''): TRequestResult;
 end;
@@ -329,44 +368,54 @@ The global `Http` constant of type `THttp` provides convenient one-liner methods
 ## Advanced Usage Examples
 
 ### Complex Request with Multiple Headers and Parameters
+
 ```pascal
 var
   Request: THttpRequest;
   Response: TResponse;
-  UserData: IJSONObject;
-  CreatedUser: IJSONObject;
+  UserData: TJSONObject;
+  CreatedUser: TJSONObject;
 begin
   // Create request data
-  UserData := TJSON.Obj;
-  UserData.Add('name', 'John');
-  UserData.Add('email', 'john@example.com');
+  UserData := TJSONObject.Create;
+  try
+    UserData.Add('name', 'John');
+    UserData.Add('email', 'john@example.com');
 
-  Response := Request
-    .Post
-    .URL('https://api.example.com/users')
-    .AddHeader('X-API-Key', 'your-key')
-    .AddHeader('Accept', 'application/json')
-    .AddParam('version', '2.0')
-    .AddParam('format', 'detailed')
-    .WithJSON(UserData.ToString)
-    .WithTimeout(5000)
-    .Send;
+    Response := Request
+      .Post
+      .URL('https://api.example.com/users')
+      .AddHeader('X-API-Key', 'your-key')
+      .AddHeader('Accept', 'application/json')
+      .AddParam('version', '2.0')
+      .AddParam('format', 'detailed')
+      .WithJSON(UserData.AsJSON)
+      .WithTimeout(5000)
+      .Send;
 
-  if Response.StatusCode = 201 then
-  begin
-    CreatedUser := Response.JSON.AsObject;
-    WriteLn('User created with ID: ', CreatedUser['id'].AsString);
-    WriteLn('Created at: ', CreatedUser['created_at'].AsString);
+    if Response.StatusCode = 201 then
+    begin
+      CreatedUser := TJSONObject(Response.JSON);
+      try
+        WriteLn('User created with ID: ', CreatedUser.Get('id', ''));
+        WriteLn('Created at: ', CreatedUser.Get('created_at', ''));
+      finally
+        // Do NOT free CreatedUser - it's owned by Response.JSON
+      end;
+    end;
+  finally
+    UserData.Free;
   end;
 end;
 ```
 
 ### Authenticated Request with Error Handling
+
 ```pascal
 var
   Result: TRequestResult;
   Response: TResponse;
-  SecureData: IJSONObject;
+  SecureData: TJSONObject;
 begin
   // Using the Try-pattern for better error handling
   Result := Http.TryGet('https://api.example.com/secure');
@@ -377,8 +426,12 @@ begin
     Response := Result.Response;
     if Response.StatusCode = 200 then
     begin
-      SecureData := Response.JSON.AsObject;
-      WriteLn('Access granted to: ', SecureData['resource'].AsString);
+      SecureData := TJSONObject(Response.JSON);
+      try
+        WriteLn('Access granted to: ', SecureData.Get('resource', ''));
+      finally
+        // Do NOT free SecureData - it's owned by Response.JSON
+      end;
     end;
   end
   else

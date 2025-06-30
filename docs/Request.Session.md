@@ -111,7 +111,7 @@ end;
 ### THttpSession Record
 ```pascal
 THttpSession = record
-  procedure Init;
+  procedure Init;  // REQUIRED: Must be called before using the session
   function Get(const URL: string): TResponse;
   function Post(const URL: string; const Body: string = ''; const ContentType: string = 'application/x-www-form-urlencoded'): TResponse;
   function Put(const URL: string; const Body: string = ''; const ContentType: string = 'application/json'): TResponse;
@@ -124,19 +124,30 @@ THttpSession = record
   procedure ClearCookies;
   function GetCookie(const Name: string): string;
   procedure ClearHeaders;
+  
+  // Memory management (called automatically)
+  class operator Initialize(var Session: THttpSession);
+  class operator Finalize(var Session: THttpSession);
+  class operator Copy(constref Source: THttpSession; var Dest: THttpSession);
 end;
 ```
 
 ### TSimpleMap Record
+
 Used internally for headers and cookies. No manual management needed.
+
 ```pascal
 TSimpleMap = record
+  procedure Add(const Key, Value: string);        // Alias for SetItem
   procedure SetItem(const Key, Value: string);
   function Get(const Key: string; const Default: string = ''): string;
   function ContainsKey(const Key: string): Boolean;
   procedure Remove(const Key: string);
   procedure Clear;
   function GetCount: Integer;
+  function GetKey(Index: Integer): string;
+  function GetValue(Index: Integer): string;
+  function IndexOf(const Key: string): Integer;
 end;
 ```
 
