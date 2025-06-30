@@ -19,12 +19,6 @@ type
     procedure Test03_SimplePut;
     procedure Test04_SimpleDelete;
     
-    // Builder pattern tests
-    procedure Test05_BuilderWithHeaders;
-    procedure Test06_BuilderWithParams;
-    procedure Test07_BuilderWithTimeout;
-    procedure Test08_BuilderWithAuth;
-    
     // Content handling
     procedure Test09_JSONRequest;
     procedure Test10_FormDataRequest;
@@ -34,8 +28,10 @@ type
     procedure Test12_TryGetFailure;
     
     // Multipart upload tests
-    procedure Test13_MultipartUpload_Fluent;
     procedure Test14_MultipartUpload_Static;
+    
+    // Custom headers and parameters
+    procedure Test15_CustomHeadersAndParams;
   end;
 
 implementation
@@ -91,107 +87,6 @@ begin
   AssertTrue('Response should contain URL', Assigned(Response.JSON.FindPath('url')));
 end;
 
-procedure TRequestSimpleTests.Test05_BuilderWithHeaders;
-var
-  Response: TResponse;
-  Request: THttpRequest;  // Initialize is called automatically
-  Headers: TJSONObject;
-begin
-  Response := Request
-    .Get
-    .URL('https://httpbin.org/headers')
-    .AddHeader('X-Custom-Header', 'test')
-    .AddHeader('User-Agent', 'TidyKit-Test')
-    .Send;
-  
-  AssertEquals('Status code should be 200', 200, Response.StatusCode);
-  AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
-  
-  Headers := TJSONObject(Response.JSON.FindPath('headers'));
-  try
-    AssertTrue('Headers should exist in response', Headers <> nil);
-    AssertEquals('Custom header should be echoed back', 'test', Headers.Get('X-Custom-Header', ''));
-  finally
-    // Don't free Headers as it's owned by Response.JSON
-  end;
-end;
-
-procedure TRequestSimpleTests.Test06_BuilderWithParams;
-var
-  Response: TResponse;
-  Request: THttpRequest;  // Initialize is called automatically
-  Args: TJSONObject;
-begin
-  Response := Request
-    .Get
-    .URL('https://httpbin.org/get')
-    .AddParam('page', '1')
-    .AddParam('limit', '10')
-    .Send;
-  
-  AssertEquals('Status code should be 200', 200, Response.StatusCode);
-  AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
-  
-  Args := TJSONObject(Response.JSON.FindPath('args'));
-  try
-    AssertTrue('Args should exist in response', Args <> nil);
-    AssertEquals('Page param should be present', '1', Args.Get('page', ''));
-    AssertEquals('Limit param should be present', '10', Args.Get('limit', ''));
-  finally
-    // Don't free Args as it's owned by Response.JSON
-  end;
-end;
-
-procedure TRequestSimpleTests.Test07_BuilderWithTimeout;
-var
-  Response: TResponse;
-  Request: THttpRequest;  // Initialize is called automatically
-  ExceptionRaised: Boolean;
-begin
-  ExceptionRaised := False;
-  
-  try
-    Response := Request
-      .Get
-      .URL('https://httpbin.org/delay/2')
-      .WithTimeout(1)
-      .Send;
-  except
-    on E: ERequestError do
-      ExceptionRaised := True;
-  end;
-  
-  AssertTrue('Timeout exception should be raised', ExceptionRaised);
-end;
-
-procedure TRequestSimpleTests.Test08_BuilderWithAuth;
-var
-  Response: TResponse;
-  Request: THttpRequest;  // Initialize is called automatically
-  Headers: TJSONObject;
-begin
-  Response := Request
-    .Get
-    .URL('https://httpbin.org/basic-auth/username/password')
-    .BasicAuth('username', 'password')
-    .Send;
-  
-  AssertEquals('Status code should be 200', 200, Response.StatusCode);
-  AssertTrue('Response text should not be empty', Response.Text <> '');
-  AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
-  AssertTrue('Response should contain authenticated user', 
-    (Response.JSON.FindPath('authenticated') <> nil) and 
-    (Response.JSON.FindPath('user') <> nil));
-  
-  Headers := TJSONObject(Response.JSON.FindPath('headers'));
-  try
-    if Headers <> nil then
-      AssertTrue('Authorization header should exist', Headers.Find('Authorization') <> nil);
-  finally
-    Headers.Free;
-  end;
-end;
-
 procedure TRequestSimpleTests.Test09_JSONRequest;
 var
   Response: TResponse;
@@ -216,15 +111,9 @@ end;
 procedure TRequestSimpleTests.Test10_FormDataRequest;
 var
   Response: TResponse;
-  Request: THttpRequest;  // Initialize is called automatically
   FormData: TJSONObject;
 begin
-  Response := Request
-    .Post
-    .URL('https://httpbin.org/post')
-    .WithData('name=John&age=30')
-    .Send;
-    
+  Response := Http.Post('https://httpbin.org/post', 'name=John&age=30');
   AssertEquals('Status code should be 200', 200, Response.StatusCode);
   AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
   
@@ -258,59 +147,11 @@ begin
   AssertTrue('Error message should not be empty', Result.Error <> '');
 end;
 
-procedure TRequestSimpleTests.Test13_MultipartUpload_Fluent;
-var
-  Request: THttpRequest;
-  Response: TResponse;
-  TempFile: string;
-  F: TextFile;
-  Form: TJSONObject;
-  Files: TJSONObject;
-begin
-  // Create a temporary file to upload
-  TempFile := GetTempDir + 'test_upload.txt';
-  AssignFile(F, TempFile);
-  Rewrite(F);
-  WriteLn(F, 'Hello, multipart!');
-  CloseFile(F);
-
-  Request := Request.Post
-    .URL('https://httpbin.org/post')
-    .AddFile('file1', TempFile)
-    .AddFormField('field1', 'value1');
-  Response := Request.Send;
-
-  AssertEquals('Status code should be 200', 200, Response.StatusCode);
-  AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
-
-  // Check form field
-  Form := TJSONObject(Response.JSON.FindPath('form'));
-  try
-    AssertTrue('Form field should exist', Form <> nil);
-    AssertEquals('Form field value', 'value1', Form.Get('field1', ''));
-  finally
-    // Don't free Form as it's owned by Response.JSON
-  end;
-
-  // Check file field
-  Files := TJSONObject(Response.JSON.FindPath('files'));
-  try
-    AssertTrue('Files should exist in response', Files <> nil);
-    AssertTrue('Uploaded file should be present', Files.Find('file1') <> nil);
-  finally
-    // Don't free Files as it's owned by Response.JSON
-  end;
-
-  // Clean up
-  DeleteFile(TempFile);
-end;
-
 procedure TRequestSimpleTests.Test14_MultipartUpload_Static;
 var
   Response: TResponse;
   TempFile: string;
   F: TextFile;
-  Fields, FilesArr: array of TKeyValue;
   Form, FilesObj: TJSONObject;
 begin
   // Create a temporary file to upload
@@ -320,15 +161,9 @@ begin
   WriteLn(F, 'Static multipart test!');
   CloseFile(F);
 
-  SetLength(Fields, 1);
-  Fields[0].Key := 'staticfield';
-  Fields[0].Value := 'staticvalue';
-
-  SetLength(FilesArr, 1);
-  FilesArr[0].Key := 'file2';
-  FilesArr[0].Value := TempFile;
-
-  Response := Http.PostMultipart('https://httpbin.org/post', Fields, FilesArr);
+  Response := Http.PostMultipart('https://httpbin.org/post', 
+    [TKeyValue.Create('staticfield', 'staticvalue')],
+    [TKeyValue.Create('file2', TempFile)]);
 
   AssertEquals('Status code should be 200', 200, Response.StatusCode);
   AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
@@ -353,6 +188,26 @@ begin
 
   // Clean up
   DeleteFile(TempFile);
+end;
+
+procedure TRequestSimpleTests.Test15_CustomHeadersAndParams;
+var
+  Response: TResponse;
+  JsonObj: TJSONObject;
+begin
+  Response := Http.Get('https://httpbin.org/get', 
+    [TKeyValue.Create('X-Test-Header', 'HeaderValue')],
+    [TKeyValue.Create('foo', 'bar'), TKeyValue.Create('baz', 'qux')]);
+  AssertEquals('Status code should be 200', 200, Response.StatusCode);
+  AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
+  JsonObj := TJSONObject(Response.JSON);
+  try
+    AssertEquals('Header should be present', 'HeaderValue', JsonObj.FindPath('headers.X-Test-Header').AsString);
+    AssertEquals('Query param foo', 'bar', JsonObj.FindPath('args.foo').AsString);
+    AssertEquals('Query param baz', 'qux', JsonObj.FindPath('args.baz').AsString);
+  finally
+    // Do not free JsonObj
+  end;
 end;
 
 initialization

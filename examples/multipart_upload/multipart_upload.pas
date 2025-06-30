@@ -3,7 +3,6 @@ program multipart_upload;
 uses Request, SysUtils;
 
 var
-  RequestObj: THttpRequest;
   Response: TResponse;
   TempFile: string;
   F: TextFile;
@@ -15,11 +14,9 @@ begin
   WriteLn(F, 'This is a test file for multipart upload.');
   CloseFile(F);
 
-  RequestObj := RequestObj.Post
-    .URL('https://httpbin.org/post')
-    .AddFile('file1', TempFile)
-    .AddFormField('field1', 'value1');
-  Response := RequestObj.Send;
+  Response := Http.PostMultipart('https://httpbin.org/post',
+    [TKeyValue.Create('field1', 'value1')],
+    [TKeyValue.Create('file1', TempFile)]);
 
   WriteLn('Status: ', Response.StatusCode);
   WriteLn('Body: ', Response.Text);

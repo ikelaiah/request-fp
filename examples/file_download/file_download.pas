@@ -3,17 +3,12 @@ program file_download;
 uses Request, SysUtils, Classes;
 
 var
-  HttpReq: THttpRequest;
   Response: TResponse;
   FileStream: TFileStream;
   FileName: string;
 begin
   FileName := GetTempDir + 'downloaded_image.png';
-  Response := HttpReq
-    .Get
-    .URL('https://httpbin.org/image/png')
-    .Send;
-
+  Response := Http.Get('https://httpbin.org/image/png');
   if (Response.StatusCode = 200) and (Length(Response.Text) > 0) then
   begin
     FileStream := TFileStream.Create(FileName, fmCreate);

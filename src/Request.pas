@@ -18,6 +18,9 @@ type
   TKeyValue = record
     Key: string;
     Value: string;
+    
+    { Helper constructor for creating key-value pairs }
+    class function Create(const AKey, AValue: string): TKeyValue; static;
   end;
 
   { Response record with automatic memory management }
@@ -107,353 +110,7 @@ type
     Response: TResponse;  // Will be automatically initialized and finalized
     Error: string;
   end;
-  
-  { HTTP request with fluent interface and automatic memory management }
-  THttpRequest = record
-  private
-    FURL: string;
-    FMethod: string;
-    FHeaders: string;
-    FParams: string;
-    FTimeout: Integer;
-    FUsername: string;
-    FPassword: string;
-    FJSON: string;
-    FData: string;
-    
-    FFormFields: array of TKeyValue;
-    FFormFiles: array of TKeyValue;
-    FIsMultipart: Boolean;
-    
-    {
-      @description Executes the HTTP request with all configured options
-      
-      @usage Internal method called by Send() to perform the actual HTTP request
-      
-      @returns TResponse containing the result of the HTTP request
-      
-      @warning May raise ERequestError for network or protocol errors
-    }
-    function Execute: TResponse;
-  public
-    { Management operators for automatic initialization/cleanup }
-    
-    {
-      @description Initializes a THttpRequest record with default values
-      
-      @usage Called automatically when a THttpRequest is created:
-             - When a variable of this type is declared
-             - When memory for this type is allocated
-             - When this type is used as a field in another record
-      
-      @warning No need to call this manually; Free Pascal handles this automatically
-    }
-    class operator Initialize(var Request: THttpRequest);
-    
-    {
-      @description Finalizes a THttpRequest record, releasing resources
-      
-      @usage Called automatically when:
-             - A variable goes out of scope
-             - Memory for this type is freed
-             - The containing record is finalized
-      
-      @warning No need to call this manually; Free Pascal handles this automatically
-    }
-    class operator Finalize(var Request: THttpRequest);
-    
-    {
-      @description Sets the HTTP method to GET
-      
-      @usage Use to configure a GET request in a fluent interface chain
-      
-      @returns Self reference for method chaining
-      
-      @example
-        var
-          Request: THttpRequest;
-          Response: TResponse;
-        begin
-          Response := Request.Get.URL('https://api.example.com/users').Send;
-          WriteLn('Status: ', Response.StatusCode);
-          WriteLn('Body: ', Response.Text);
-        end;
-    }
-    function Get: THttpRequest;
-    
-    {
-      @description Sets the HTTP method to POST
-      
-      @usage Use to configure a POST request in a fluent interface chain
-      
-      @returns Self reference for method chaining
-      
-      @example
-        var
-          Request: THttpRequest;
-          Response: TResponse;
-        begin
-          Response := Request.Post.URL('https://api.example.com/users')
-                             .WithData('name=John&age=30')
-                             .Send;
-          WriteLn('Status: ', Response.StatusCode);
-        end;
-    }
-    function Post: THttpRequest;
-    
-    {
-      @description Sets the HTTP method to PUT
-      
-      @usage Use to configure a PUT request in a fluent interface chain
-      
-      @returns Self reference for method chaining
-      
-      @example
-        var
-          Request: THttpRequest;
-          Response: TResponse;
-        begin
-          Response := Request.Put.URL('https://api.example.com/users/1')
-                            .WithJSON('{"name":"John","age":30}')
-                            .Send;
-        end;
-    }
-    function Put: THttpRequest;
-    
-    {
-      @description Sets the HTTP method to DELETE
-      
-      @usage Use to configure a DELETE request in a fluent interface chain
-      
-      @returns Self reference for method chaining
-      
-      @example
-        var
-          Request: THttpRequest;
-          Response: TResponse;
-        begin
-          Response := Request.Delete.URL('https://api.example.com/users/1').Send;
-        end;
-    }
-    function Delete: THttpRequest;
-    
-    {
-      @description Sets the HTTP method to PATCH
-      
-      @usage Use to configure a PATCH request in a fluent interface chain
-      
-      @returns Self reference for method chaining
-      
-      @example
-        var
-          Request: THttpRequest;
-          Response: TResponse;
-        begin
-          Response := Request.Patch.URL('https://api.example.com/users/1')
-                             .WithJSON('{"age":31}')
-                             .Send;
-        end;
-    }
-    function Patch: THttpRequest;
-    
-    {
-      @description Sets the URL for the HTTP request
-      
-      @usage Use to specify the target URL in a fluent interface chain
-      
-      @param AUrl The full URL to send the request to (including protocol)
-      
-      @returns Self reference for method chaining
-      
-      @example
-        var
-          Request: THttpRequest;
-          Response: TResponse;
-        begin
-          Response := Request.Get.URL('https://api.example.com/users').Send;
-        end;
-    }
-    function URL(const AUrl: string): THttpRequest;
-    
-    {
-      @description Adds a header to the HTTP request
-      
-      @usage Use to add custom headers like Authorization, Content-Type, etc.
-      
-      @param Name The header name
-      @param Value The header value
-      
-      @returns Self reference for method chaining
-      
-      @example
-        var
-          Request: THttpRequest;
-          Response: TResponse;
-        begin
-          Response := Request.Get.URL('https://api.example.com/users')
-                             .AddHeader('Accept', 'application/json')
-                             .AddHeader('X-API-Key', 'my-api-key')
-                             .Send;
-        end;
-    }
-    function AddHeader(const Name, Value: string): THttpRequest;
-    
-    {
-      @description Adds a URL parameter to the request
-      
-      @usage Use to add query string parameters that will be URL-encoded
-             and appended to the URL
-      
-      @param Name The parameter name
-      @param Value The parameter value
-      
-      @returns Self reference for method chaining
-      
-      @warning Parameters are added to the URL when the request is executed.
-               They're appended after any existing query string with proper
-               '?' or '&' separators.
-      
-      @example
-        var
-          Request: THttpRequest;
-          Response: TResponse;
-        begin
-          Response := Request.Get.URL('https://api.example.com/users')
-                             .AddParam('page', '1')
-                             .AddParam('limit', '10')
-                             .Send;
-          // Will request https://api.example.com/users?page=1&limit=10
-        end;
-    }
-    function AddParam(const Name, Value: string): THttpRequest;
-    
-    {
-      @description Sets a timeout for the HTTP request
-      
-      @usage Use to specify how long to wait for a response before giving up
-      
-      @param Milliseconds Timeout duration in milliseconds
-      
-      @returns Self reference for method chaining
-      
-      @warning Sets both connect timeout and IO timeout for the underlying
-               TFPHTTPClient
-      
-      @example
-        var
-          Request: THttpRequest;
-          Response: TResponse;
-        begin
-          Response := Request.Get.URL('https://api.example.com/users')
-                             .WithTimeout(5000) // 5 seconds
-                             .Send;
-        end;
-    }
-    function WithTimeout(const Milliseconds: Integer): THttpRequest;
-    
-    {
-      @description Sets HTTP Basic Authentication credentials
-      
-      @usage Use when an API requires Basic Authentication
-      
-      @param Username The username for authentication
-      @param Password The password for authentication
-      
-      @returns Self reference for method chaining
-      
-      @warning Credentials are base64 encoded but not encrypted, so this is
-               not secure over non-HTTPS connections
-      
-      @example
-        var
-          Request: THttpRequest;
-          Response: TResponse;
-        begin
-          Response := Request.Get.URL('https://api.example.com/protected')
-                             .BasicAuth('username', 'password')
-                             .Send;
-        end;
-    }
-    function BasicAuth(const Username, Password: string): THttpRequest;
-    
-    {
-      @description Sets the request body to a JSON string
-      
-      @usage Use when sending JSON data to an API
-      
-      @param JsonStr The JSON string to send as the request body
-      
-      @returns Self reference for method chaining
-      
-      @warning Automatically sets the Content-Type header to application/json
-      
-      @example
-        var
-          Request: THttpRequest;
-          Response: TResponse;
-          JSON: string;
-        begin
-          JSON := '{"name":"John","age":30}';
-          Response := Request.Post.URL('https://api.example.com/users')
-                             .WithJSON(JSON)
-                             .Send;
-        end;
-    }
-    function WithJSON(const JsonStr: string): THttpRequest;
-    
-    {
-      @description Sets the request body to form data
-      
-      @usage Use when sending form data to an API
-      
-      @param Data The data string to send (typically in key=value format)
-      
-      @returns Self reference for method chaining
-      
-      @warning Automatically sets the Content-Type header to 
-               application/x-www-form-urlencoded
-      
-      @example
-        var
-          Request: THttpRequest;
-          Response: TResponse;
-        begin
-          Response := Request.Post.URL('https://api.example.com/users')
-                             .WithData('name=John&age=30')
-                             .Send;
-        end;
-    }
-    function WithData(const Data: string): THttpRequest;
-    
-    {
-      @description Executes the HTTP request with all configured options
-      
-      @usage Use as the final call in a fluent interface chain to perform the request
-      
-      @returns TResponse containing the result of the HTTP request
-      
-      @warning May raise ERequestError for network or protocol errors
-      
-      @example
-        var
-          Request: THttpRequest;
-          Response: TResponse;
-        begin
-          Response := Request.Get.URL('https://api.example.com/users').Send;
-          
-          // Check for successful response
-          if (Response.StatusCode >= 200) and (Response.StatusCode < 300) then
-            WriteLn('Success: ', Response.Text)
-          else
-            WriteLn('Error: ', Response.StatusCode, ' ', Response.Text);
-        end;
-    }
-    function Send: TResponse;
-    
-    function AddFormField(const Name, Value: string): THttpRequest;
-    function AddFile(const FieldName, FilePath: string): THttpRequest;
-  end;
-  
+
   { Global HTTP functions }
   THttp = record
     {
@@ -479,7 +136,7 @@ type
           WriteLn('Body: ', Response.Text);
         end;
     }
-    class function Get(const URL: string): TResponse; static;
+    class function Get(const URL: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse; static;
     
     {
       @description Performs a simple HTTP POST request
@@ -505,7 +162,7 @@ type
           WriteLn('Status: ', Response.StatusCode);
         end;
     }
-    class function Post(const URL: string; const Data: string = ''): TResponse; static;
+    class function Post(const URL: string; const Data: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse; static;
     
     {
       @description Performs a simple HTTP PUT request
@@ -531,7 +188,7 @@ type
           WriteLn('Status: ', Response.StatusCode);
         end;
     }
-    class function Put(const URL: string; const Data: string = ''): TResponse; static;
+    class function Put(const URL: string; const Data: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse; static;
     
     {
       @description Performs a simple HTTP DELETE request
@@ -555,7 +212,7 @@ type
           WriteLn('Status: ', Response.StatusCode);
         end;
     }
-    class function Delete(const URL: string): TResponse; static;
+    class function Delete(const URL: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse; static;
     
     {
       @description Performs a simple HTTP POST request with JSON data
@@ -583,7 +240,7 @@ type
           WriteLn('Status: ', Response.StatusCode);
         end;
     }
-    class function PostJSON(const URL: string; const JSON: string): TResponse; static;
+    class function PostJSON(const URL: string; const JSON: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse; static;
     
     {
       @description Performs a HTTP GET request with error handling
@@ -611,7 +268,7 @@ type
             WriteLn('Error: ', Result.Error);
         end;
     }
-    class function TryGet(const URL: string): TRequestResult; static;
+    class function TryGet(const URL: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult; static;
     
     {
       @description Performs a HTTP POST request with error handling
@@ -640,7 +297,7 @@ type
             WriteLn('Error: ', Result.Error);
         end;
     }
-    class function TryPost(const URL: string; const Data: string = ''): TRequestResult; static;
+    class function TryPost(const URL: string; const Data: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult; static;
     
     {
       @description Performs a simple HTTP POST request with multipart/form-data
@@ -671,7 +328,27 @@ type
           WriteLn('Status: ', Response.StatusCode);
         end;
     }
-    class function PostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TResponse; static;
+    class function PostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse; static;
+    
+    // Ergonomic overloads for procedural API
+    class function Get(const URL: string): TResponse; static; overload;
+    class function Get(const URL: string; const Headers: array of TKeyValue): TResponse; static; overload;
+    class function Post(const URL: string; const Data: string): TResponse; static; overload;
+    class function Post(const URL: string; const Data: string; const Headers: array of TKeyValue): TResponse; static; overload;
+    class function Put(const URL: string; const Data: string): TResponse; static; overload;
+    class function Put(const URL: string; const Data: string; const Headers: array of TKeyValue): TResponse; static; overload;
+    class function Delete(const URL: string): TResponse; static; overload;
+    class function Delete(const URL: string; const Headers: array of TKeyValue): TResponse; static; overload;
+    class function PostJSON(const URL: string; const JSON: string): TResponse; static; overload;
+    class function PostJSON(const URL: string; const JSON: string; const Headers: array of TKeyValue): TResponse; static; overload;
+    // Ergonomic overloads for TryGet and TryPost
+    class function TryGet(const URL: string): TRequestResult; static; overload;
+    class function TryGet(const URL: string; const Headers: array of TKeyValue): TRequestResult; static; overload;
+    class function TryPost(const URL: string; const Data: string): TRequestResult; static; overload;
+    class function TryPost(const URL: string; const Data: string; const Headers: array of TKeyValue): TRequestResult; static; overload;
+    // Ergonomic overloads for PostMultipart
+    class function PostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TResponse; static; overload;
+    class function PostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue): TResponse; static; overload;
   end;
 
 const
@@ -730,6 +407,14 @@ begin
   end;
 end;
 {$ENDIF}
+
+{ TKeyValue }
+
+class function TKeyValue.Create(const AKey, AValue: string): TKeyValue;
+begin
+  Result.Key := AKey;
+  Result.Value := AValue;
+end;
 
 { TResponse }
 
@@ -835,120 +520,15 @@ begin
   end;
 end;
 
-{ THttpRequest }
+{ THttp }
 
-class operator THttpRequest.Initialize(var Request: THttpRequest);
-begin
-  // Called automatically when a THttpRequest is created
-  Request.FHeaders := '';
-  Request.FParams := '';
-  Request.FTimeout := 0;
-  Request.FJSON := '';
-  Request.FData := '';
-end;
-
-class operator THttpRequest.Finalize(var Request: THttpRequest);
-begin
-  // Called automatically when a THttpRequest goes out of scope
-  // All fields are managed types (string), so no manual cleanup needed
-end;
-
-function THttpRequest.Get: THttpRequest;
-begin
-  FMethod := 'GET';
-  Result := Self;
-end;
-
-function THttpRequest.Post: THttpRequest;
-begin
-  FMethod := 'POST';
-  Result := Self;
-end;
-
-function THttpRequest.Put: THttpRequest;
-begin
-  FMethod := 'PUT';
-  Result := Self;
-end;
-
-function THttpRequest.Delete: THttpRequest;
-begin
-  FMethod := 'DELETE';
-  Result := Self;
-end;
-
-function THttpRequest.Patch: THttpRequest;
-begin
-  FMethod := 'PATCH';
-  Result := Self;
-end;
-
-function THttpRequest.URL(const AUrl: string): THttpRequest;
-begin
-  FURL := AUrl;
-  Result := Self;
-end;
-
-function THttpRequest.AddHeader(const Name, Value: string): THttpRequest;
-begin
-  if FHeaders <> '' then
-    FHeaders := FHeaders + #13#10;
-  FHeaders := FHeaders + Format('%s: %s', [Name, Value]);
-  Result := Self;
-end;
-
-function THttpRequest.AddParam(const Name, Value: string): THttpRequest;
-begin
-  if FParams <> '' then
-    FParams := FParams + '&';
-  FParams := FParams + Format('%s=%s', [Name, Value]);
-  Result := Self;
-end;
-
-function THttpRequest.WithTimeout(const Milliseconds: Integer): THttpRequest;
-begin
-  FTimeout := Milliseconds;
-  Result := Self;
-end;
-
-function THttpRequest.BasicAuth(const Username, Password: string): THttpRequest;
-begin
-  FUsername := Username;
-  FPassword := Password;
-  Result := Self;
-end;
-
-function THttpRequest.WithJSON(const JsonStr: string): THttpRequest;
-begin
-  FJSON := JsonStr;
-  Result := Self;
-end;
-
-function THttpRequest.WithData(const Data: string): THttpRequest;
-begin
-  FData := Data;
-  Result := Self;
-end;
-
-function THttpRequest.Send: TResponse;
-begin
-  Result := Execute;
-end;
-
-function THttpRequest.Execute: TResponse;
+class function THttp.Get(const URL: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse;
 var
   Client: TFPHTTPClient;
-  RequestStream: TStream; // Now can be TStringStream or TMemoryStream
   ResponseStream: TMemoryStream;
   ContentStream: TStringStream;
-  AuthStr: string;
-  HeaderLines: TStringList;
   I: Integer;
-  FinalURL: string;
-  Boundary: string;
-  FileStream: TFileStream;
-  UseMultipart: Boolean;
-  S: string;
+  FinalURL, QueryStr, MutableURL: string;
 begin
   // Initialize result record
   Result.StatusCode := 0;
@@ -956,8 +536,11 @@ begin
   Result.FHeaders := '';
   Result.FJSON := nil;
 
+  // Use a mutable local variable for URL
+  MutableURL := URL;
+
   // First, ensure SSL is initialized for HTTPS requests
-  if (Pos('https://', LowerCase(FURL)) = 1) then
+  if (Pos('https://', LowerCase(MutableURL)) = 1) then
   begin
     try
       InitSSL;
@@ -965,10 +548,10 @@ begin
       on E: ERequestError do
       begin
         // For testing environments, try to fallback to HTTP
-        if FallbackToHttp and (Pos('httpbin.org', FURL) > 0) then
+        if FallbackToHttp and (Pos('httpbin.org', MutableURL) > 0) then
         begin
           // Replace https:// with http:// for test cases
-          FURL := StringReplace(FURL, 'https://', 'http://', [rfIgnoreCase]);
+          MutableURL := StringReplace(MutableURL, 'https://', 'http://', [rfIgnoreCase]);
         end
         else
           raise; // Re-raise ERequestError exceptions as is
@@ -977,102 +560,150 @@ begin
   end;
 
   Client := TFPHTTPClient.Create(nil);
-  RequestStream := nil;
   ResponseStream := TMemoryStream.Create;
-  HeaderLines := TStringList.Create;
   try
-    // Set headers
-    if FHeaders <> '' then
+    // Add custom headers
+    for I := 0 to High(Headers) do
+      Client.RequestHeaders.Add(Headers[I].Key + ': ' + Headers[I].Value);
+    // Build query string from Params
+    QueryStr := '';
+    for I := 0 to High(Params) do
     begin
-      HeaderLines.Text := FHeaders;
-      for I := 0 to HeaderLines.Count - 1 do
-        Client.RequestHeaders.Add(HeaderLines[I]);
+      if QueryStr <> '' then QueryStr := QueryStr + '&';
+      QueryStr := QueryStr + Params[I].Key + '=' + Params[I].Value;
     end;
-      
-    // Set timeout
-    if FTimeout > 0 then
-    begin
-      Client.ConnectTimeout := FTimeout;
-      Client.IOTimeout := FTimeout;  // Also set IO timeout
-    end;
-      
-    // Set auth
-    if (FUsername <> '') then
-    begin
-      AuthStr := EncodeStringBase64(FUsername + ':' + FPassword);
-      Client.RequestHeaders.Add('Authorization: Basic ' + AuthStr);
-    end;
-    
-    // Only use multipart if there are fields or files
-    UseMultipart := (Length(FFormFields) > 0) or (Length(FFormFiles) > 0);
-    if FJSON <> '' then
-    begin
-      Client.RequestHeaders.Add('Content-Type: application/json');
-      RequestStream := TStringStream.Create(FJSON);
-    end
-    else if FData <> '' then
-    begin
-      Client.RequestHeaders.Add('Content-Type: application/x-www-form-urlencoded');
-      RequestStream := TStringStream.Create(FData);
-    end
-    else if UseMultipart then
-    begin
-      Boundary := '----RequestFPBoundary' + IntToHex(Random(MaxInt), 8);
-      Client.RequestHeaders.Add('Content-Type: multipart/form-data; boundary=' + Boundary);
-      RequestStream := TMemoryStream.Create;
-      // Add form fields
-      for I := 0 to High(FFormFields) do
-      begin
-        S := '--' + Boundary + #13#10 +
-             'Content-Disposition: form-data; name="' + FFormFields[I].Key + '"' + #13#10#13#10 +
-             FFormFields[I].Value + #13#10;
-        RequestStream.Write(Pointer(S)^, Length(S));
-      end;
-      // Add files
-      for I := 0 to High(FFormFiles) do
-      begin
-        S := '--' + Boundary + #13#10 +
-             'Content-Disposition: form-data; name="' + FFormFiles[I].Key + '"; filename="' + ExtractFileName(FFormFiles[I].Value) + '"' + #13#10 +
-             'Content-Type: application/octet-stream' + #13#10#13#10;
-        RequestStream.Write(Pointer(S)^, Length(S));
-        if FileExists(FFormFiles[I].Value) then
-        begin
-          FileStream := TFileStream.Create(FFormFiles[I].Value, fmOpenRead or fmShareDenyNone);
-          try
-            RequestStream.CopyFrom(FileStream, 0);
-          finally
-            FileStream.Free;
-          end;
-        end
-        else
-          raise ERequestError.Create('File not found: ' + FFormFiles[I].Value);
-        S := #13#10;
-        RequestStream.Write(Pointer(S)^, Length(S));
-      end;
-      S := '--' + Boundary + '--' + #13#10;
-      RequestStream.Write(Pointer(S)^, Length(S));
-      RequestStream.Position := 0;
-    end;
-    
-    // Build URL with params
-    FinalURL := FURL;
-    if FParams <> '' then
+    // Build final URL
+    FinalURL := MutableURL;
+    if QueryStr <> '' then
     begin
       if Pos('?', FinalURL) > 0 then
-        FinalURL := FinalURL + '&' + FParams
+        FinalURL := FinalURL + '&' + QueryStr
       else
-        FinalURL := FinalURL + '?' + FParams;
+        FinalURL := FinalURL + '?' + QueryStr;
     end;
-    
     // Execute request
     try
-      if Assigned(RequestStream) then
-        Client.RequestBody := RequestStream;
       // Set default User-Agent if none specified
       if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
         Client.AddHeader('User-Agent', 'TidyKit/1.0');
-        
-      Client.HTTPMethod(FMethod, FinalURL, ResponseStream, []);
+      Client.HTTPMethod('GET', FinalURL, ResponseStream, []);
+      Result.StatusCode := Client.ResponseStatusCode;
+      Result.FHeaders := Client.ResponseHeaders.Text;
+      // Convert response to string
+      ContentStream := TStringStream.Create('');
+      try
+        ResponseStream.Position := 0;
+        ContentStream.LoadFromStream(ResponseStream);
+        Result.FContent := ContentStream.DataString;
+      finally
+        ContentStream.Free;
+      end;
+    except
+      on E: Exception do
+      begin
+        // Clear result
+        Result.FContent := '';
+        Result.FHeaders := '';
+        Result.FJSON := nil;
+        Result.StatusCode := 0;
+        // Determine if it's likely a network error based on the exception message
+        if (Pos('socket', LowerCase(E.Message)) > 0) or 
+           (Pos('connection', LowerCase(E.Message)) > 0) or
+           (Pos('timeout', LowerCase(E.Message)) > 0) then
+          raise ERequestError.Create('Network Error: ' + E.Message)
+        else
+          raise ERequestError.Create('HTTP Request Error: ' + E.Message);
+      end;
+    end;
+  finally
+    ResponseStream.Free;
+    Client.Free;
+  end;
+end;
+
+class function THttp.Post(const URL: string; const Data: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse;
+var
+  Client: TFPHTTPClient;
+  ResponseStream: TMemoryStream;
+  ContentStream: TStringStream;
+  RequestStream: TStringStream;
+  I: Integer;
+  FinalURL, QueryStr, MutableURL: string;
+begin
+  // Initialize result record
+  Result.StatusCode := 0;
+  Result.FContent := '';
+  Result.FHeaders := '';
+  Result.FJSON := nil;
+
+  // Use a mutable local variable for URL
+  MutableURL := URL;
+
+  // First, ensure SSL is initialized for HTTPS requests
+  if (Pos('https://', LowerCase(MutableURL)) = 1) then
+  begin
+    try
+      InitSSL;
+    except
+      on E: ERequestError do
+      begin
+        // For testing environments, try to fallback to HTTP
+        if FallbackToHttp and (Pos('httpbin.org', MutableURL) > 0) then
+        begin
+          // Replace https:// with http:// for test cases
+          MutableURL := StringReplace(MutableURL, 'https://', 'http://', [rfIgnoreCase]);
+        end
+        else
+          raise; // Re-raise ERequestError exceptions as is
+      end;
+    end;
+  end;
+
+  Client := TFPHTTPClient.Create(nil);
+  ResponseStream := TMemoryStream.Create;
+  try
+    // Add custom headers
+    for I := 0 to High(Headers) do
+      Client.RequestHeaders.Add(Headers[I].Key + ': ' + Headers[I].Value);
+    // Build query string from Params
+    QueryStr := '';
+    for I := 0 to High(Params) do
+    begin
+      if QueryStr <> '' then QueryStr := QueryStr + '&';
+      QueryStr := QueryStr + Params[I].Key + '=' + Params[I].Value;
+    end;
+    // Build final URL
+    FinalURL := MutableURL;
+    if QueryStr <> '' then
+    begin
+      if Pos('?', FinalURL) > 0 then
+        FinalURL := FinalURL + '&' + QueryStr
+      else
+        FinalURL := FinalURL + '?' + QueryStr;
+    end;
+    // Execute request
+    try
+      // Set default User-Agent if none specified
+      if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
+        Client.AddHeader('User-Agent', 'TidyKit/1.0');
+      
+      // Set Content-Type for form data if not already set
+      if (Data <> '') and (Client.RequestHeaders.IndexOfName('Content-Type') < 0) then
+        Client.RequestHeaders.Add('Content-Type: application/x-www-form-urlencoded');
+      
+      // Set request body using TStringStream
+      if Data <> '' then
+      begin
+        RequestStream := TStringStream.Create(Data);
+        try
+          Client.RequestBody := RequestStream;
+          Client.HTTPMethod('POST', FinalURL, ResponseStream, []);
+        finally
+          RequestStream.Free;
+        end;
+      end
+      else
+        Client.HTTPMethod('POST', FinalURL, ResponseStream, []);
       
       Result.StatusCode := Client.ResponseStatusCode;
       Result.FHeaders := Client.ResponseHeaders.Text;
@@ -1107,185 +738,635 @@ begin
     end;
     
   finally
-    HeaderLines.Free;
     ResponseStream.Free;
     Client.Free;
-    if Assigned(RequestStream) then
-      RequestStream.Free;
-    // --- Reset multipart state after each request ---
-    SetLength(FFormFields, 0);
-    SetLength(FFormFiles, 0);
-    FIsMultipart := False;
-    // ----------------------------------------------
   end;
 end;
 
-function THttpRequest.AddFormField(const Name, Value: string): THttpRequest;
+class function THttp.Put(const URL: string; const Data: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse;
 var
-  N: Integer;
+  Client: TFPHTTPClient;
+  ResponseStream: TMemoryStream;
+  ContentStream: TStringStream;
+  RequestStream: TStringStream;
+  I: Integer;
+  FinalURL, QueryStr, MutableURL: string;
 begin
-  N := Length(FFormFields);
-  SetLength(FFormFields, N + 1);
-  FFormFields[N].Key := Name;
-  FFormFields[N].Value := Value;
-  FIsMultipart := True;
-  Result := Self;
+  // Initialize result record
+  Result.StatusCode := 0;
+  Result.FContent := '';
+  Result.FHeaders := '';
+  Result.FJSON := nil;
+
+  // Use a mutable local variable for URL
+  MutableURL := URL;
+
+  // First, ensure SSL is initialized for HTTPS requests
+  if (Pos('https://', LowerCase(MutableURL)) = 1) then
+  begin
+    try
+      InitSSL;
+    except
+      on E: ERequestError do
+      begin
+        // For testing environments, try to fallback to HTTP
+        if FallbackToHttp and (Pos('httpbin.org', MutableURL) > 0) then
+        begin
+          // Replace https:// with http:// for test cases
+          MutableURL := StringReplace(MutableURL, 'https://', 'http://', [rfIgnoreCase]);
+        end
+        else
+          raise; // Re-raise ERequestError exceptions as is
+      end;
+    end;
+  end;
+
+  Client := TFPHTTPClient.Create(nil);
+  ResponseStream := TMemoryStream.Create;
+  try
+    // Add custom headers
+    for I := 0 to High(Headers) do
+      Client.RequestHeaders.Add(Headers[I].Key + ': ' + Headers[I].Value);
+    // Build query string from Params
+    QueryStr := '';
+    for I := 0 to High(Params) do
+    begin
+      if QueryStr <> '' then QueryStr := QueryStr + '&';
+      QueryStr := QueryStr + Params[I].Key + '=' + Params[I].Value;
+    end;
+    // Build final URL
+    FinalURL := MutableURL;
+    if QueryStr <> '' then
+    begin
+      if Pos('?', FinalURL) > 0 then
+        FinalURL := FinalURL + '&' + QueryStr
+      else
+        FinalURL := FinalURL + '?' + QueryStr;
+    end;
+    // Execute request
+    try
+      // Set default User-Agent if none specified
+      if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
+        Client.AddHeader('User-Agent', 'TidyKit/1.0');
+      
+      // Set Content-Type for form data if not already set
+      if (Data <> '') and (Client.RequestHeaders.IndexOfName('Content-Type') < 0) then
+        Client.RequestHeaders.Add('Content-Type: application/x-www-form-urlencoded');
+      
+      // Set request body using TStringStream
+      if Data <> '' then
+      begin
+        RequestStream := TStringStream.Create(Data);
+        try
+          Client.RequestBody := RequestStream;
+          Client.HTTPMethod('PUT', FinalURL, ResponseStream, []);
+        finally
+          RequestStream.Free;
+        end;
+      end
+      else
+        Client.HTTPMethod('PUT', FinalURL, ResponseStream, []);
+      
+      Result.StatusCode := Client.ResponseStatusCode;
+      Result.FHeaders := Client.ResponseHeaders.Text;
+      
+      // Convert response to string
+      ContentStream := TStringStream.Create('');
+      try
+        ResponseStream.Position := 0;
+        ContentStream.LoadFromStream(ResponseStream);
+        Result.FContent := ContentStream.DataString;
+      finally
+        ContentStream.Free;
+      end;
+      
+    except
+      on E: Exception do
+      begin
+        // Clear result
+        Result.FContent := '';
+        Result.FHeaders := '';
+        Result.FJSON := nil;
+        Result.StatusCode := 0;
+        
+        // Determine if it's likely a network error based on the exception message
+        if (Pos('socket', LowerCase(E.Message)) > 0) or 
+           (Pos('connection', LowerCase(E.Message)) > 0) or
+           (Pos('timeout', LowerCase(E.Message)) > 0) then
+          raise ERequestError.Create('Network Error: ' + E.Message)
+        else
+          raise ERequestError.Create('HTTP Request Error: ' + E.Message);
+      end;
+    end;
+    
+  finally
+    ResponseStream.Free;
+    Client.Free;
+  end;
 end;
 
-function THttpRequest.AddFile(const FieldName, FilePath: string): THttpRequest;
+class function THttp.Delete(const URL: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse;
 var
-  N: Integer;
+  Client: TFPHTTPClient;
+  ResponseStream: TMemoryStream;
+  ContentStream: TStringStream;
+  I: Integer;
+  FinalURL, QueryStr, MutableURL: string;
 begin
-  N := Length(FFormFiles);
-  SetLength(FFormFiles, N + 1);
-  FFormFiles[N].Key := FieldName;
-  FFormFiles[N].Value := FilePath;
-  FIsMultipart := True;
-  Result := Self;
+  // Initialize result record
+  Result.StatusCode := 0;
+  Result.FContent := '';
+  Result.FHeaders := '';
+  Result.FJSON := nil;
+
+  // Use a mutable local variable for URL
+  MutableURL := URL;
+
+  // First, ensure SSL is initialized for HTTPS requests
+  if (Pos('https://', LowerCase(MutableURL)) = 1) then
+  begin
+    try
+      InitSSL;
+    except
+      on E: ERequestError do
+      begin
+        // For testing environments, try to fallback to HTTP
+        if FallbackToHttp and (Pos('httpbin.org', MutableURL) > 0) then
+        begin
+          // Replace https:// with http:// for test cases
+          MutableURL := StringReplace(MutableURL, 'https://', 'http://', [rfIgnoreCase]);
+        end
+        else
+          raise; // Re-raise ERequestError exceptions as is
+      end;
+    end;
+  end;
+
+  Client := TFPHTTPClient.Create(nil);
+  ResponseStream := TMemoryStream.Create;
+  try
+    // Add custom headers
+    for I := 0 to High(Headers) do
+      Client.RequestHeaders.Add(Headers[I].Key + ': ' + Headers[I].Value);
+    // Build query string from Params
+    QueryStr := '';
+    for I := 0 to High(Params) do
+    begin
+      if QueryStr <> '' then QueryStr := QueryStr + '&';
+      QueryStr := QueryStr + Params[I].Key + '=' + Params[I].Value;
+    end;
+    // Build final URL
+    FinalURL := MutableURL;
+    if QueryStr <> '' then
+    begin
+      if Pos('?', FinalURL) > 0 then
+        FinalURL := FinalURL + '&' + QueryStr
+      else
+        FinalURL := FinalURL + '?' + QueryStr;
+    end;
+    // Execute request
+    try
+      // Set default User-Agent if none specified
+      if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
+        Client.AddHeader('User-Agent', 'TidyKit/1.0');
+        
+      Client.HTTPMethod('DELETE', FinalURL, ResponseStream, []);
+      
+      Result.StatusCode := Client.ResponseStatusCode;
+      Result.FHeaders := Client.ResponseHeaders.Text;
+      
+      // Convert response to string
+      ContentStream := TStringStream.Create('');
+      try
+        ResponseStream.Position := 0;
+        ContentStream.LoadFromStream(ResponseStream);
+        Result.FContent := ContentStream.DataString;
+      finally
+        ContentStream.Free;
+      end;
+      
+    except
+      on E: Exception do
+      begin
+        // Clear result
+        Result.FContent := '';
+        Result.FHeaders := '';
+        Result.FJSON := nil;
+        Result.StatusCode := 0;
+        
+        // Determine if it's likely a network error based on the exception message
+        if (Pos('socket', LowerCase(E.Message)) > 0) or 
+           (Pos('connection', LowerCase(E.Message)) > 0) or
+           (Pos('timeout', LowerCase(E.Message)) > 0) then
+          raise ERequestError.Create('Network Error: ' + E.Message)
+        else
+          raise ERequestError.Create('HTTP Request Error: ' + E.Message);
+      end;
+    end;
+    
+  finally
+    ResponseStream.Free;
+    Client.Free;
+  end;
 end;
 
-{ THttp }
+class function THttp.PostJSON(const URL: string; const JSON: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse;
+var
+  Client: TFPHTTPClient;
+  ResponseStream: TMemoryStream;
+  ContentStream: TStringStream;
+  RequestStream: TStringStream;
+  I: Integer;
+  FinalURL, QueryStr, MutableURL: string;
+begin
+  // Initialize result record
+  Result.StatusCode := 0;
+  Result.FContent := '';
+  Result.FHeaders := '';
+  Result.FJSON := nil;
+
+  // Use a mutable local variable for URL
+  MutableURL := URL;
+
+  // First, ensure SSL is initialized for HTTPS requests
+  if (Pos('https://', LowerCase(MutableURL)) = 1) then
+  begin
+    try
+      InitSSL;
+    except
+      on E: ERequestError do
+      begin
+        // For testing environments, try to fallback to HTTP
+        if FallbackToHttp and (Pos('httpbin.org', MutableURL) > 0) then
+        begin
+          // Replace https:// with http:// for test cases
+          MutableURL := StringReplace(MutableURL, 'https://', 'http://', [rfIgnoreCase]);
+        end
+        else
+          raise; // Re-raise ERequestError exceptions as is
+      end;
+    end;
+  end;
+
+  Client := TFPHTTPClient.Create(nil);
+  ResponseStream := TMemoryStream.Create;
+  try
+    // Add custom headers
+    for I := 0 to High(Headers) do
+      Client.RequestHeaders.Add(Headers[I].Key + ': ' + Headers[I].Value);
+    // Build query string from Params
+    QueryStr := '';
+    for I := 0 to High(Params) do
+    begin
+      if QueryStr <> '' then QueryStr := QueryStr + '&';
+      QueryStr := QueryStr + Params[I].Key + '=' + Params[I].Value;
+    end;
+    // Build final URL
+    FinalURL := MutableURL;
+    if QueryStr <> '' then
+    begin
+      if Pos('?', FinalURL) > 0 then
+        FinalURL := FinalURL + '&' + QueryStr
+      else
+        FinalURL := FinalURL + '?' + QueryStr;
+    end;
+    // Execute request
+    try
+      Client.RequestHeaders.Add('Content-Type: application/json');
+      // Set default User-Agent if none specified
+      if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
+        Client.AddHeader('User-Agent', 'TidyKit/1.0');
+      
+      // Set request body with JSON data using TStringStream
+      RequestStream := TStringStream.Create(JSON);
+      try
+        Client.RequestBody := RequestStream;
+        Client.HTTPMethod('POST', FinalURL, ResponseStream, []);
+      finally
+        RequestStream.Free;
+      end;
+      
+      Result.StatusCode := Client.ResponseStatusCode;
+      Result.FHeaders := Client.ResponseHeaders.Text;
+      
+      // Convert response to string
+      ContentStream := TStringStream.Create('');
+      try
+        ResponseStream.Position := 0;
+        ContentStream.LoadFromStream(ResponseStream);
+        Result.FContent := ContentStream.DataString;
+      finally
+        ContentStream.Free;
+      end;
+      
+    except
+      on E: Exception do
+      begin
+        // Clear result
+        Result.FContent := '';
+        Result.FHeaders := '';
+        Result.FJSON := nil;
+        Result.StatusCode := 0;
+        
+        // Determine if it's likely a network error based on the exception message
+        if (Pos('socket', LowerCase(E.Message)) > 0) or 
+           (Pos('connection', LowerCase(E.Message)) > 0) or
+           (Pos('timeout', LowerCase(E.Message)) > 0) then
+          raise ERequestError.Create('Network Error: ' + E.Message)
+        else
+          raise ERequestError.Create('HTTP Request Error: ' + E.Message);
+      end;
+    end;
+    
+  finally
+    ResponseStream.Free;
+    Client.Free;
+  end;
+end;
+
+class function THttp.TryGet(const URL: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult;
+begin
+  try
+    Result.Response := Get(URL, Headers, Params);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+    begin
+      Result.Success := False;
+      Result.Error := E.Message;
+      Result.Response.FContent := '';
+      Result.Response.FHeaders := '';
+      Result.Response.StatusCode := 0;
+      Result.Response.FJSON := nil;
+    end;
+  end;
+end;
+
+class function THttp.TryPost(const URL: string; const Data: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult;
+begin
+  try
+    Result.Response := Post(URL, Data, Headers, Params);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+    begin
+      Result.Success := False;
+      Result.Error := E.Message;
+      Result.Response.FContent := '';
+      Result.Response.FHeaders := '';
+      Result.Response.StatusCode := 0;
+      Result.Response.FJSON := nil;
+    end;
+  end;
+end;
+
+class function THttp.PostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse;
+var
+  Client: TFPHTTPClient;
+  ResponseStream: TMemoryStream;
+  ContentStream: TStringStream;
+  Boundary, CRLF, ContentDisp, ContentType, FieldStr: string;
+  I: Integer;
+  FieldStream: TStringStream;
+  FileStream: TFileStream;
+  MultipartStream: TMemoryStream;
+  FileName: string;
+  FinalURL, QueryStr, MutableURL: string;
+begin
+  // Initialize result record
+  Result.StatusCode := 0;
+  Result.FContent := '';
+  Result.FHeaders := '';
+  Result.FJSON := nil;
+
+  // Use a mutable local variable for URL
+  MutableURL := URL;
+
+  // First, ensure SSL is initialized for HTTPS requests
+  if (Pos('https://', LowerCase(MutableURL)) = 1) then
+  begin
+    try
+      InitSSL;
+    except
+      on E: ERequestError do
+      begin
+        if FallbackToHttp and (Pos('httpbin.org', MutableURL) > 0) then
+        begin
+          MutableURL := StringReplace(MutableURL, 'https://', 'http://', [rfIgnoreCase]);
+        end
+        else
+          raise;
+      end;
+    end;
+  end;
+
+  Boundary := '----RequestFP' + IntToStr(Random(1000000));
+  CRLF := #13#10;
+  MultipartStream := TMemoryStream.Create;
+  Client := TFPHTTPClient.Create(nil);
+  ResponseStream := TMemoryStream.Create;
+  try
+    // Write form fields
+    for I := 0 to High(Fields) do
+    begin
+      FieldStr := '--' + Boundary + CRLF +
+                  'Content-Disposition: form-data; name="' + Fields[I].Key + '"' + CRLF + CRLF +
+                  Fields[I].Value + CRLF;
+      FieldStream := TStringStream.Create(FieldStr);
+      try
+        MultipartStream.CopyFrom(FieldStream, FieldStream.Size);
+      finally
+        FieldStream.Free;
+      end;
+    end;
+    // Write files
+    for I := 0 to High(Files) do
+    begin
+      FileName := ExtractFileName(Files[I].Value);
+      ContentDisp := 'Content-Disposition: form-data; name="' + Files[I].Key + '"; filename="' + FileName + '"';
+      ContentType := 'Content-Type: application/octet-stream';
+      FieldStr := '--' + Boundary + CRLF +
+                  ContentDisp + CRLF +
+                  ContentType + CRLF + CRLF;
+      FieldStream := TStringStream.Create(FieldStr);
+      try
+        MultipartStream.CopyFrom(FieldStream, FieldStream.Size);
+      finally
+        FieldStream.Free;
+      end;
+      FileStream := TFileStream.Create(Files[I].Value, fmOpenRead or fmShareDenyWrite);
+      try
+        MultipartStream.CopyFrom(FileStream, FileStream.Size);
+      finally
+        FileStream.Free;
+      end;
+      // Add CRLF after file
+      FieldStream := TStringStream.Create(CRLF);
+      try
+        MultipartStream.CopyFrom(FieldStream, FieldStream.Size);
+      finally
+        FieldStream.Free;
+      end;
+    end;
+    // Write final boundary
+    FieldStr := '--' + Boundary + '--' + CRLF;
+    FieldStream := TStringStream.Create(FieldStr);
+    try
+      MultipartStream.CopyFrom(FieldStream, FieldStream.Size);
+    finally
+      FieldStream.Free;
+    end;
+    MultipartStream.Position := 0;
+
+    // Set headers
+    Client.RequestHeaders.Add('Content-Type: multipart/form-data; boundary=' + Boundary);
+    if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
+      Client.AddHeader('User-Agent', 'Request-FP/1.0');
+
+    // Execute request
+    try
+      // Add custom headers
+      for I := 0 to High(Headers) do
+        Client.RequestHeaders.Add(Headers[I].Key + ': ' + Headers[I].Value);
+      
+      // Build query string from Params
+      QueryStr := '';
+      for I := 0 to High(Params) do
+      begin
+        if QueryStr <> '' then QueryStr := QueryStr + '&';
+        QueryStr := QueryStr + Params[I].Key + '=' + Params[I].Value;
+      end;
+      
+      // Build final URL
+      FinalURL := MutableURL;
+      if QueryStr <> '' then
+      begin
+        if Pos('?', FinalURL) > 0 then
+          FinalURL := FinalURL + '&' + QueryStr
+        else
+          FinalURL := FinalURL + '?' + QueryStr;
+      end;
+      
+      Client.RequestBody := MultipartStream;
+      Client.HTTPMethod('POST', FinalURL, ResponseStream, []);
+      Result.StatusCode := Client.ResponseStatusCode;
+      Result.FHeaders := Client.ResponseHeaders.Text;
+      // Read response body into FContent (same as other methods)
+      ContentStream := TStringStream.Create('');
+      try
+        ResponseStream.Position := 0;
+        ContentStream.LoadFromStream(ResponseStream);
+        Result.FContent := ContentStream.DataString;
+      finally
+        ContentStream.Free;
+      end;
+      
+    except
+      on E: Exception do
+      begin
+        Result.FContent := '';
+        Result.FHeaders := '';
+        Result.FJSON := nil;
+        Result.StatusCode := 0;
+        if (Pos('socket', LowerCase(E.Message)) > 0) or 
+           (Pos('connection', LowerCase(E.Message)) > 0) or
+           (Pos('timeout', LowerCase(E.Message)) > 0) then
+          raise ERequestError.Create('Network Error: ' + E.Message)
+        else
+          raise ERequestError.Create('HTTP Request Error: ' + E.Message);
+      end;
+    end;
+  finally
+    MultipartStream.Free;
+    ResponseStream.Free;
+    Client.Free;
+  end;
+end;
+
+// --- Overloads for ergonomic procedural API ---
 
 class function THttp.Get(const URL: string): TResponse;
-var
-  Builder: THttpRequest;  // Initialize is called automatically
 begin
-  Result := Builder.Get.URL(URL).Send;
+  Result := Get(URL, [], []);
+end;
+
+class function THttp.Get(const URL: string; const Headers: array of TKeyValue): TResponse;
+begin
+  Result := Get(URL, Headers, []);
 end;
 
 class function THttp.Post(const URL: string; const Data: string): TResponse;
-var
-  Builder: THttpRequest;  // Initialize is called automatically
 begin
-  Result := Builder.Post.URL(URL).WithData(Data).Send;
+  Result := Post(URL, Data, [], []);
+end;
+
+class function THttp.Post(const URL: string; const Data: string; const Headers: array of TKeyValue): TResponse;
+begin
+  Result := Post(URL, Data, Headers, []);
 end;
 
 class function THttp.Put(const URL: string; const Data: string): TResponse;
-var
-  Builder: THttpRequest;  // Initialize is called automatically
 begin
-  Result := Builder.Put.URL(URL).WithData(Data).Send;
+  Result := Put(URL, Data, [], []);
+end;
+
+class function THttp.Put(const URL: string; const Data: string; const Headers: array of TKeyValue): TResponse;
+begin
+  Result := Put(URL, Data, Headers, []);
 end;
 
 class function THttp.Delete(const URL: string): TResponse;
-var
-  Builder: THttpRequest;  // Initialize is called automatically
 begin
-  Result := Builder.Delete.URL(URL).Send;
+  Result := Delete(URL, [], []);
+end;
+
+class function THttp.Delete(const URL: string; const Headers: array of TKeyValue): TResponse;
+begin
+  Result := Delete(URL, Headers, []);
 end;
 
 class function THttp.PostJSON(const URL: string; const JSON: string): TResponse;
-var
-  Builder: THttpRequest;  // Initialize is called automatically
 begin
-  Result := Builder.Post.URL(URL).WithJSON(JSON).Send;
+  Result := PostJSON(URL, JSON, [], []);
 end;
 
-class function THttp.TryGet(const URL: string): TRequestResult;
-var
-  OldFallback: Boolean;
+class function THttp.PostJSON(const URL: string; const JSON: string; const Headers: array of TKeyValue): TResponse;
 begin
-  try
-    // Try to initialize SSL first before making the request
-    try
-      InitSSL;
-    except
-      // If SSL initialization fails and we're testing, enable HTTP fallback
-      on E: ERequestError do
-      begin
-        if Pos('httpbin.org', URL) > 0 then
-          FallbackToHttp := True;
-        // Continue execution - the execute method will handle fallback
-      end;
-    end;
-    
-    // Save old fallback state and temporarily enable fallback for this call
-    OldFallback := FallbackToHttp;
-    if Pos('httpbin.org', URL) > 0 then
-      FallbackToHttp := True;
-      
-    try
-      Result.Response := Get(URL);
-      Result.Success := True;
-      Result.Error := '';
-    finally
-      // Restore fallback state
-      FallbackToHttp := OldFallback;
-    end;
-  except
-    on E: Exception do
-    begin
-      Result.Success := False;
-      Result.Error := E.Message;
-      
-      // Initialize an empty response to avoid nil references
-      Result.Response.FContent := '';
-      Result.Response.FHeaders := '';
-      Result.Response.StatusCode := 0;
-      Result.Response.FJSON := nil;
-    end;
-  end;
+  Result := PostJSON(URL, JSON, Headers, []);
+end;
+
+// Ergonomic overloads for TryGet and TryPost
+class function THttp.TryGet(const URL: string): TRequestResult;
+begin
+  Result := TryGet(URL, [], []);
+end;
+
+class function THttp.TryGet(const URL: string; const Headers: array of TKeyValue): TRequestResult;
+begin
+  Result := TryGet(URL, Headers, []);
 end;
 
 class function THttp.TryPost(const URL: string; const Data: string): TRequestResult;
-var
-  OldFallback: Boolean;
 begin
-  try
-    // Try to initialize SSL first before making the request
-    try
-      InitSSL;
-    except
-      // If SSL initialization fails and we're testing, enable HTTP fallback
-      on E: ERequestError do
-      begin
-        if Pos('httpbin.org', URL) > 0 then
-          FallbackToHttp := True;
-        // Continue execution - the execute method will handle fallback
-      end;
-    end;
-    
-    // Save old fallback state and temporarily enable fallback for this call
-    OldFallback := FallbackToHttp;
-    if Pos('httpbin.org', URL) > 0 then
-      FallbackToHttp := True;
-      
-    try
-      Result.Response := Post(URL, Data);
-      Result.Success := True;
-      Result.Error := '';
-    finally
-      // Restore fallback state
-      FallbackToHttp := OldFallback;
-    end;
-  except
-    on E: Exception do
-    begin
-      Result.Success := False;
-      Result.Error := E.Message;
-      
-      // Initialize an empty response to avoid nil references
-      Result.Response.FContent := '';
-      Result.Response.FHeaders := '';
-      Result.Response.StatusCode := 0;
-      Result.Response.FJSON := nil;
-    end;
-  end;
+  Result := TryPost(URL, Data, [], []);
 end;
 
-class function THttp.PostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TResponse;
-var
-  Builder: THttpRequest;
-  I: Integer;
+class function THttp.TryPost(const URL: string; const Data: string; const Headers: array of TKeyValue): TRequestResult;
 begin
-  // Use local variable for advanced record (auto-initialized)
-  // Add fields
-  for I := 0 to High(Fields) do
-    Builder := Builder.AddFormField(Fields[I].Key, Fields[I].Value);
-  // Add files
-  for I := 0 to High(Files) do
-    Builder := Builder.AddFile(Files[I].Key, Files[I].Value);
-  Result := Builder.Post.URL(URL).Send;
+  Result := TryPost(URL, Data, Headers, []);
+end;
+
+// Ergonomic overloads for PostMultipart
+class function THttp.PostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TResponse;
+begin
+  Result := PostMultipart(URL, Fields, Files, [], []);
+end;
+
+class function THttp.PostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue): TResponse;
+begin
+  Result := PostMultipart(URL, Fields, Files, Headers, []);
 end;
 
 initialization

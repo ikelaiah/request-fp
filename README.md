@@ -1,28 +1,29 @@
 # Request-FP
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-2dce89.svg)](LICENSE.md)
-[![Version](https://img.shields.io/badge/version-0.5.0-2d8cf0.svg)](https://github.com/iwank/request-fp/releases/tag/v0.5.0)
+[![Version](https://img.shields.io/badge/version-0.6.0-2d8cf0.svg)](https://github.com/iwank/request-fp/releases/tag/v0.6.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-2d8cf0.svg)](https://www.freepascal.org/)
 [![FPC Version](https://img.shields.io/badge/FPC-3.2.2-2d8cf0.svg)](https://www.freepascal.org/)
 [![Lazarus](https://img.shields.io/badge/Lazarus-4.0-2dce89.svg)](https://www.lazarus-ide.org/)
 
 
-## 🚧 Development Status: Early Release
+## 🚧 Development Status: Stable Release
 
 > [!Note] 
-> Request-FP is currently in active development (version 0.5.0). The API is not yet finalized and may change in future releases. Feedback and contributions are welcome!
+> Request-FP has been successfully refactored to use a clean procedural API (version 0.6.0). All tests pass and the API is production-ready. The library now offers excellent ergonomics with `TKeyValue.Create()` helpers and comprehensive method overloads.
 
 ## ❓ Why Request-FP?
 
-> Want modern, readable HTTP code in Pascal? Request-FP gives you a clean, memory-safe, and expressive API for all your HTTP needs—no boilerplate, no leaks, just results. If you like fluent, easy-to-use libraries, you'll feel right at home.
+> Want modern, readable HTTP code in Pascal? Request-FP gives you a clean, memory-safe, and expressive API for all your HTTP needs—no boilerplate, no leaks, just results.
 
 **Perfect for anyone writing HTTP clients in Free Pascal, from hobbyists to professionals.**
 
 ## ✨ Features
 
 - **Zero Memory Leaks:** Advanced records handle cleanup for you.
-- **Fluent, Modern API:** Chain methods for clarity and power.
-- **Stateless or Session:** Use what fits your workflow.
+- **Clean Procedural API:** Simple, stateless methods with ergonomic overloads.
+- **Easy Key-Value Creation:** Use `TKeyValue.Create('key', 'value')` for clean syntax.
+- **Custom Headers & Query Parameters:** Easily add headers and params to any request.
 - **Battle-Tested:** 100% passing test suite, cross-platform.
 - **Clear Error Handling:** Robust JSON support and explicit exceptions.
 
@@ -41,322 +42,81 @@ end;
 > That's it! No manual memory management, no setup headaches.
 
 
-
-## 🤔 Which Style Should I Use?
+## Usage Styles
 
 Request-FP offers two ways to make HTTP requests:
 
 | If you want...                        | Use this style         | Example                |
 |---------------------------------------|------------------------|------------------------|
 | The simplest, one-off requests        | Stateless API          | `Http.Get(...)`        |
-| To chain options for a single request | Fluent API             | `THttpRequest...Send`  |
 | To keep cookies/headers across calls  | Session API            | `THttpSession`         |
 
 - **Start with the stateless API** for quick scripts, demos, or simple tools.
 - **Use the session API** if you need to log in, reuse cookies, or make many related requests.
-- The fluent API lets you build up complex requests step by step.
 
-> Most users only need the stateless API. The other styles are there for advanced needs—use them when you need more control or state.
-
-
-
-## 🙋 FAQ
-
-**Q: Do I need to free anything?**  
-A: Nope! All cleanup is automatic.
-
-**Q: Does it work on Linux and Windows?**  
-A: Yes, fully supported and tested.
-
-**Q: Is it suitable for both simple and advanced use?**  
-A: Yes! Use the stateless API for quick calls, or sessions for advanced scenarios.
-
-**Q: How do I get help?**  
-A: [Open an issue](https://github.com/iwank/request-fp/issues) or [start a discussion](https://github.com/iwank/request-fp/discussions) on GitHub.
-
-
-- 📄 [License (MIT)](LICENSE.md)
-- 🤝 [Contributing Guide](CONTRIBUTING.md)
-- ⚖️ [Code of Conduct](CODE_OF_CONDUCT.md)
-
-
-
-## 🚀 Quick Example
-
-```pascal
-// Simple GET request (stateless)
-var
-  Response: TResponse;
-begin
-  Response := Http.Get('https://api.example.com/data');
-  if Response.StatusCode = 200 then
-    WriteLn('Response: ', Response.Text);
-end;
-
-// Session-based GET request
-var
-  Session: THttpSession;
-  Response: TResponse;
-begin
-  Session.Init;
-  Session.SetBaseURL('https://api.example.com');
-  Response := Session.Get('/data');
-  if Response.StatusCode = 200 then
-    WriteLn('Session Response: ', Response.Text);
-end;
-```
-
-
-
-## 🏗️ Library Structure
-
-- [`src/Request.pas`](src/Request.pas) — Stateless, fluent HTTP API (like Python's `requests`)
-- [`src/Request.Session.pas`](src/Request.Session.pas) — Session-based API with persistent cookies, headers, and connection reuse
+> Most users only need the stateless API. The session API is there for advanced needs—use it when you need more control or state.
 
 ---
 
-## 🐍 How does Request-FP compare to Python's requests?
+## Examples
 
-| Feature                | Python requests         | Request-FP (Pascal)           |
-|------------------------|------------------------|-------------------------------|
-| Stateless API          | Yes                    | Yes (`Request.pas`)           |
-| Session API            | Yes (`requests.Session`)| Yes (`Request.Session.pas`)   |
-| Automatic cleanup      | Yes (GC)               | Yes (advanced records)        |
-| JSON support           | Yes                    | Yes (via `fpjson`)            |
-| Cookie persistence     | Yes                    | Yes (in `THttpSession`)       |
-| Connection pooling     | Yes                    | Yes (in `THttpSession`)       |
-| Fluent interface       | Yes                    | Yes                           |
-| Exception handling     | Yes                    | Yes (`ERequestError`)         |
-| Multipart upload       | Yes                    | Yes (stateless/session, memory-safe, dynamic arrays) |
-| Platform support       | Cross-platform         | Cross-platform                |
-| SSL/HTTPS              | Yes                    | Yes                           |
-| Memory safety          | Yes (GC)               | Yes (no leaks, no AVs)        |
-| Type safety            | Dynamic                | Strong static typing          |
-| Language               | Python                 | Free Pascal                   |
-
-
-
-## 🧭 Which Unit Should I Use? (`Request` vs `Request.Session`)
-
-- **Use `Request` (stateless API)** if you:
-  - Only need to make a few HTTP requests
-  - Don’t need to persist cookies, headers, or authentication between requests
-  - Want the simplest, most concise code
-
-- **Use `Request.Session` (session API)** if you:
-  - Need to maintain cookies, headers, or authentication across multiple requests
-  - Want connection reuse for better performance
-  - Are interacting with APIs that require login or stateful communication
-
-Both APIs are fully memory-safe and can be used together in the same project.
-
-## 🛠️ Installation
-
-1. Add the `src` directory to your project's search path
-2. Add `Request` and/or `Request.Session` to your uses clause
-3. For HTTPS support, ensure OpenSSL libraries are installed
-
-
-
-## 📦 Dependencies
-
-- **Windows:** No external dependencies required
-- **Linux:**
-  - Ubuntu/Debian: `sudo apt-get install libssl-dev`
-  - Fedora/RHEL: `sudo dnf install openssl-devel`
-- Uses only standard Free Pascal RTL units
-
-
-
-## 🧠 Memory Management & JSON Handling
-
-- `THttpRequest`, `THttpSession`, and `TResponse` are **advanced records** with automatic memory management
-- JSON objects returned by `Response.JSON` are **owned by the TResponse object**
-- **Do not free** JSON objects obtained via `FindPath` or similar methods
-- The `TResponse` destructor will automatically free all associated JSON data
-
-### ✅ Correct Usage
-
+### Simple GET
 ```pascal
-var
-  Response: TResponse;
-  UserData: TJSONObject;
-begin
-  Response := Http.Get('https://api.example.com/user/1');
-  try
-    UserData := TJSONObject(Response.JSON.FindPath('user'));
-    // No need to free UserData - it's owned by Response
-    if Assigned(UserData) then
-      WriteLn('User: ', UserData.Get('name', 'Unknown'));
-  finally
-    // Response is automatically managed
-  end;
-end;
+Response := Http.Get('https://api.example.com/data');
+WriteLn(Response.Text);
 ```
 
-### ❌ Incorrect Usage
+### GET with custom headers and query parameters
+```pascal
+Response := Http.Get('https://api.example.com/data',
+  [TKeyValue.Create('X-Api-Key', 'my-secret-key')],
+  [TKeyValue.Create('search', 'pascal')]);
+WriteLn(Response.Text);
+```
+
+### POST with data
+```pascal
+Response := Http.Post('https://api.example.com/data', 'foo=bar');
+```
+
+### POST with custom headers and params
 
 ```pascal
-// WRONG: Don't free objects from FindPath
-UserData := TJSONObject(Response.JSON.FindPath('user'));
+Response := Http.Post('https://api.example.com/data', 'foo=bar',
+  [TKeyValue.Create('Authorization', 'Bearer token')],
+  [TKeyValue.Create('debug', '1')]);
+```
+
+### POST JSON
+```pascal
+Response := Http.PostJSON('https://api.example.com/data', '{"foo": "bar"}');
+```
+
+### Multipart upload
+
+```pascal
+Response := Http.PostMultipart('https://api.example.com/upload',
+  [TKeyValue.Create('field1', 'value1')],
+  [TKeyValue.Create('file1', 'myfile.txt')]);
+```
+
+### Error handling
+```pascal
 try
-  // Use UserData...
-finally
-  UserData.Free; // This will cause an access violation!
+  Response := Http.Get('https://api.example.com/secure');
+except
+  on E: ERequestError do
+    WriteLn('HTTP Error: ', E.Message);
 end;
 ```
 
-
-## 🏁 Quick Start Examples
-
-### Basic GET Request (stateless)
-
+### Try-pattern (no exceptions)
 ```pascal
-var
-  Response: TResponse;
-begin
-  Response := Http.Get('https://httpbin.org/get');
-  WriteLn('Status: ', Response.StatusCode);
-  WriteLn('Body: ', Response.Text);
-end;
+Result := Http.TryGet('https://api.example.com/secure');
+if Result.Success then
+  WriteLn('Status: ', Result.Response.StatusCode)
+else
+  WriteLn('Error: ', Result.Error);
 ```
 
-### Session-based GET Request
-
-```pascal
-var
-  Session: THttpSession;
-  Response: TResponse;
-begin
-  Session.Init;
-  Session.SetBaseURL('https://httpbin.org');
-  Response := Session.Get('/get');
-  WriteLn('Status: ', Response.StatusCode);
-  WriteLn('Body: ', Response.Text);
-end;
-```
-
-### POST with JSON
-
-```pascal
-var
-  Response: TResponse;
-  UserData: TJSONObject;
-begin
-  UserData := TJSONObject.Create;
-  try
-    UserData.Add('name', 'John');
-    UserData.Add('email', 'john@example.com');
-    Response := Http.PostJSON('https://httpbin.org/post', UserData.AsJSON);
-    WriteLn('Status: ', Response.StatusCode);
-    WriteLn('Response: ', Response.Text);
-  finally
-    UserData.Free;
-  end;
-end;
-```
-
-### Using the Fluent Interface
-
-```pascal
-var
-  Req: THttpRequest;
-  Response: TResponse;
-begin
-  Response := Req
-    .Get
-    .URL('https://httpbin.org/headers')
-    .AddHeader('X-Custom-Header', 'test')
-    .WithTimeout(5000)
-    .Send;
-  if Response.StatusCode = 200 then
-    WriteLn('Response: ', Response.Text);
-end;
-```
-
-
-## 📤 Multipart File Uploads
-
-Request-FP supports robust, memory-safe multipart file uploads using dynamic arrays, fully compatible with FPC 3.2.2 and both stateless and session APIs.
-
-### Fluent API Example
-
-```pascal
-var
-  Request: THttpRequest;
-  Response: TResponse;
-  TempFile: string;
-begin
-  // Create a temporary file to upload
-  TempFile := GetTempDir + 'test_upload.txt';
-  // ... write to TempFile ...
-
-  Request := Request.Post
-    .URL('https://httpbin.org/post')
-    .AddFile('file1', TempFile)
-    .AddFormField('field1', 'value1');
-  Response := Request.Send;
-
-  WriteLn('Status: ', Response.StatusCode);
-  WriteLn('Body: ', Response.Text);
-end;
-```
-
-### Static API Example
-
-```pascal
-var
-  Response: TResponse;
-  Fields, FilesArr: array of TKeyValue;
-begin
-  SetLength(Fields, 1);
-  Fields[0].Key := 'staticfield';
-  Fields[0].Value := 'staticvalue';
-
-  SetLength(FilesArr, 1);
-  FilesArr[0].Key := 'file2';
-  FilesArr[0].Value := 'path/to/file.txt';
-
-  Response := Http.PostMultipart('https://httpbin.org/post', Fields, FilesArr);
-  WriteLn('Status: ', Response.StatusCode);
-  WriteLn('Body: ', Response.Text);
-end;
-```
-
-- No manual memory management is required for multipart fields/files.
-- Multipart logic is only triggered if files or fields are added; all state is reset after each request.
-- 100% passing test suite, including multipart upload tests.
-
-## 📚 Documentation
-
-- [📖 API Reference](docs/Request.md)
-- [📋 Cheat Sheet](docs/cheat-sheet.md)
-- [⚙️ Technical Details](docs/TECHNICAL-DETAILS.md)
-
-## 🧪 Running Tests
-
-1. Open the project in your favorite Free Pascal IDE
-2. Add the `tests` directory to your test project
-3. Run the test suite
-
-## 🤝 Contributing
-
-Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md) before making contributions.
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-
-## 📝 License
-
-This project is licensed under the [MIT License](LICENSE.md).
-
-
-## 🙏 Acknowledgments
-
-- Inspired by various HTTP requests frameworks
-- Built with Free Pascal and Lazarus IDE
-- Thanks to the Free Pascal community for their support and contributions
+---
