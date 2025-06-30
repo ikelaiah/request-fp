@@ -7,11 +7,6 @@
 [![Lazarus](https://img.shields.io/badge/Lazarus-4.0-2dce89.svg)](https://www.lazarus-ide.org/)
 
 
-## 🚧 Development Status: Stable Release
-
-> [!Note] 
-> Request-FP has been successfully refactored to use a clean procedural API (version 0.6.0). All tests pass and the API is production-ready. The library now offers excellent ergonomics with `TKeyValue.Create()` helpers and comprehensive method overloads.
-
 ## ❓ Why Request-FP?
 
 > Want modern, readable HTTP code in Pascal? Request-FP gives you a clean, memory-safe, and expressive API for all your HTTP needs—no boilerplate, no leaks, just results.
