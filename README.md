@@ -75,11 +75,6 @@ A: Yes! Use the stateless API for quick calls, or sessions for advanced scenario
 A: [Open an issue](https://github.com/iwank/request-fp/issues) or [start a discussion](https://github.com/iwank/request-fp/discussions) on GitHub.
 
 
-
-**Request-FP** is a modern, memory-safe HTTP client library for Free Pascal, inspired by Python's legendary [requests](https://docs.python-requests.org/) library. Effortlessly make HTTP requests with a clean, fluent API—stateless or session-based—while enjoying automatic memory management and robust JSON support.
-
-
-
 - 📄 [License (MIT)](LICENSE.md)
 - 🤝 [Contributing Guide](CONTRIBUTING.md)
 - ⚖️ [Code of Conduct](CODE_OF_CONDUCT.md)
@@ -211,7 +206,6 @@ finally
 end;
 ```
 
----
 
 ## 🏁 Quick Start Examples
 
