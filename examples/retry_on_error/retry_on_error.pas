@@ -1,4 +1,4 @@
-// Niche Example: Custom error handling and retry logic
+// Custom error handling and retry logic
 program retry_on_error;
 
 uses Request, SysUtils;
