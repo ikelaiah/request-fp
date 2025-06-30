@@ -6,6 +6,54 @@
 [![FPC Version](https://img.shields.io/badge/FPC-3.2.2-2d8cf0.svg)](https://www.freepascal.org/)
 [![Lazarus](https://img.shields.io/badge/Lazarus-4.0-2dce89.svg)](https://www.lazarus-ide.org/)
 
+---
+
+## ❓ Why Request-FP?
+
+> Want modern, readable HTTP code in Pascal? Request-FP gives you a clean, memory-safe, and expressive API for all your HTTP needs—no boilerplate, no leaks, just results. If you like fluent, easy-to-use libraries, you'll feel right at home.
+
+**Perfect for anyone writing HTTP clients in Free Pascal, from hobbyists to professionals.**
+
+---
+
+## ✨ Features
+
+- **Zero Memory Leaks:** Advanced records handle cleanup for you.
+- **Fluent, Modern API:** Chain methods for clarity and power.
+- **Stateless or Session:** Use what fits your workflow.
+- **Battle-Tested:** 100% passing test suite, cross-platform.
+- **Clear Error Handling:** Robust JSON support and explicit exceptions.
+
+---
+
+## ⚡ Getting Started in 30 Seconds
+
+```pascal
+uses Request;
+var
+  R: TResponse;
+begin
+  R := Http.Get('https://httpbin.org/get');
+  WriteLn(R.Text);
+end;
+```
+> That's it! No manual memory management, no setup headaches.
+
+---
+
+## 🙋 FAQ
+
+**Q: Do I need to free anything?**  
+A: Nope! All cleanup is automatic.
+
+**Q: Does it work on Linux and Windows?**  
+A: Yes, fully supported and tested.
+
+**Q: Is it suitable for both simple and advanced use?**  
+A: Yes! Use the stateless API for quick calls, or sessions for advanced scenarios.
+
+**Q: How do I get help?**  
+A: [Open an issue](https://github.com/iwank/request-fp/issues) or [start a discussion](https://github.com/iwank/request-fp/discussions) on GitHub.
 
 ---
 
@@ -43,19 +91,6 @@ begin
     WriteLn('Session Response: ', Response.Text);
 end;
 ```
-
----
-
-## ✨ Features
-
-- **Fluent Interface** – Chain methods for clean, readable code
-- **Session Support** – Persistent cookies, headers, and connection pooling via `THttpSession`
-- **Automatic Memory Management** – Advanced records for hassle-free cleanup
-- **JSON Support** – Built-in JSON parsing with FPC's standard `fpjson`
-- **Memory Safe** – Clear ownership model prevents memory leaks and access violations
-- **HTTPS/SSL** – Secure connections with OpenSSL
-- **Cross-Platform** – Works on Windows and Linux
-- **Battle-Tested** – Comprehensive test suite, 100% passing
 
 ---
 
