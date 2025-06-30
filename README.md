@@ -117,6 +117,20 @@ end;
 
 
 
+## 🧭 Which Unit Should I Use? (`Request` vs `Request.Session`)
+
+- **Use `Request` (stateless API)** if you:
+  - Only need to make a few HTTP requests
+  - Don’t need to persist cookies, headers, or authentication between requests
+  - Want the simplest, most concise code
+
+- **Use `Request.Session` (session API)** if you:
+  - Need to maintain cookies, headers, or authentication across multiple requests
+  - Want connection reuse for better performance
+  - Are interacting with APIs that require login or stateful communication
+
+Both APIs are fully memory-safe and can be used together in the same project.
+
 ## 🛠️ Installation
 
 1. Add the `src` directory to your project's search path
