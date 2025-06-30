@@ -10,6 +10,9 @@ uses
   URIParser, HTTPDefs, sockets, fpjson, jsonparser, jsonscanner
   {$IFDEF UNIX}, BaseUnix{$ENDIF};
 
+const
+  DEBUG_MODE = False;  // Set to True for debug output
+
 type
   { Exception class for HTTP request operations }
   ERequestError = class(Exception);
@@ -431,7 +434,9 @@ end;
 
 class operator TResponse.Finalize(var Response: TResponse);
 begin
-  WriteLn('[DEBUG] TResponse.Finalize called');
+  if DEBUG_MODE then WriteLn('[DEBUG] TResponse.Finalize called');
+
+  // Called automatically when a TResponse goes out of scope or is freed
   if Assigned(Response.FJSON) then
     Response.FJSON.Free;
   Response.FJSON := nil;
