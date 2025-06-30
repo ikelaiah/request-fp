@@ -51,6 +51,9 @@ type
     
     property Text: string read GetText;
     property JSON: TJSONData read GetJSON;
+
+    // Returns the value of a response header (case-insensitive), or empty string if not found
+    function HeaderValue(const Name: string): string;
     
     { Helper method to set the response content and JSON data }
     procedure SetContent(const AContent: string; AJSON: TJSONData = nil);
@@ -801,6 +804,35 @@ begin
     end;
   end;
   Result := FJSON;
+end;
+
+function TResponse.HeaderValue(const Name: string): string;
+var
+  Lines: TStringList;
+  I, P: Integer;
+  Key, Value: string;
+begin
+  Result := '';
+  Lines := TStringList.Create;
+  try
+    Lines.Text := FHeaders;
+    for I := 0 to Lines.Count - 1 do
+    begin
+      P := Pos(':', Lines[I]);
+      if P > 0 then
+      begin
+        Key := Trim(Copy(Lines[I], 1, P - 1));
+        Value := Trim(Copy(Lines[I], P + 1, MaxInt));
+        if SameText(Key, Name) then
+        begin
+          Result := Value;
+          Exit;
+        end;
+      end;
+    end;
+  finally
+    Lines.Free;
+  end;
 end;
 
 { THttpRequest }
