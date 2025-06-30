@@ -228,10 +228,10 @@ end;
 
 ```pascal
 var
+  Req: THttpRequest;
   Response: TResponse;
 begin
-  Response := THttpRequest
-    .Create
+  Response := Req
     .Get
     .URL('https://httpbin.org/headers')
     .AddHeader('X-Custom-Header', 'test')

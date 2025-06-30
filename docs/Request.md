@@ -88,12 +88,13 @@ end;
 ```
 
 2. **Readable, SQL-like Syntax**: The API reads almost like English:
+
 ```pascal
 var
-  Request: THttpRequest;  // Automatically initialized when declared
+  HttpRequest: THttpRequest;  // Automatically initialized when declared
   Response: TResponse;
 begin
-  Response := Request
+  Response := HttpRequest
     .Get
     .URL('https://api.example.com/secure')
     .BasicAuth('username', 'password')
@@ -102,9 +103,9 @@ begin
 end;
 ```
 
-3. **Context Preservation**: Each method call preserves and adds to the context, with the final state resolved only when `Send` is called.
+1. **Context Preservation**: Each method call preserves and adds to the context, with the final state resolved only when `Send` is called.
 
-4. **Self-Documenting Code**: The fluent interface makes the intent clear and reduces the need for additional documentation.
+2. **Self-Documenting Code**: The fluent interface makes the intent clear and reduces the need for additional documentation.
 
 ## Memory Safety
 
@@ -119,6 +120,7 @@ This module uses Free Pascal's advanced records feature to provide automatic mem
 ## Basic Usage
 
 ### Simple GET Request
+
 ```pascal
 var
   Response: TResponse;
@@ -178,7 +180,7 @@ end;
 
 ```pascal
 var
-  Request: THttpRequest;  // Automatically initialized when declared
+  HttpReq: THttpRequest;  // Automatically initialized when declared
   Response: TResponse;
   UserData, ResponseData: TJSONObject;
 begin
@@ -188,7 +190,7 @@ begin
     UserData.Add('name', 'John');
     UserData.Add('email', 'john@example.com');
 
-    Response := Request
+    Response := HttpReq
       .Post                                // Chain HTTP method
       .URL('https://api.example.com')      // Chain URL
       .AddHeader('X-API-Key', 'your-key')  // Chain headers
@@ -440,6 +442,7 @@ end;
 ```
 
 ### Form Data Submission
+
 ```pascal
 var
   Request: THttpRequest;
@@ -462,6 +465,7 @@ end;
 Request.pas supports robust, memory-safe multipart file uploads using dynamic arrays (not TStringList), fully compatible with FPC 3.2.2 and both stateless and session APIs.
 
 #### Fluent API Example
+
 ```pascal
 var
   Request: THttpRequest;
@@ -472,18 +476,21 @@ begin
   TempFile := GetTempDir + 'test_upload.txt';
   // ... write to TempFile ...
 
-  Request := Request.Post
+  Response := Request.Post
     .URL('https://httpbin.org/post')
     .AddFile('file1', TempFile)
-    .AddFormField('field1', 'value1');
-  Response := Request.Send;
+    .AddFormField('field1', 'value1')
+    .Send;
 
   WriteLn('Status: ', Response.StatusCode);
   WriteLn('Body: ', Response.Text);
 end;
 ```
 
+> **Note:** When using the fluent interface, do not assign the result of a chained call back to the same variable (e.g., `Request := Request.Post...`). Instead, declare the variable and chain methods directly as shown above.
+
 #### Static API Example
+
 ```pascal
 var
   Response: TResponse;

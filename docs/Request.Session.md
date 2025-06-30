@@ -3,6 +3,7 @@
 A robust, memory-safe HTTP session library for Free Pascal, providing persistent cookies, headers, and connection reuse. Built with advanced records for automatic memory management and a clear, session-oriented API. Inspired by Python's requests.Session, but with strong Pascal typing and safety.
 
 ## Table of Contents
+
 - [Request.Session User Manual](#requestsession-user-manual)
   - [Table of Contents](#table-of-contents)
   - [Features](#features)
@@ -14,6 +15,7 @@ A robust, memory-safe HTTP session library for Free Pascal, providing persistent
     - [Session GET Request](#session-get-request)
     - [Session POST Request](#session-post-request)
     - [Working with Cookies and Headers](#working-with-cookies-and-headers)
+    - [Working with Cookies, Headers, and JSON](#working-with-cookies-headers-and-json)
   - [Error Handling](#error-handling)
   - [API Reference](#api-reference)
     - [THttpSession Record](#thttpsession-record)
@@ -25,6 +27,7 @@ A robust, memory-safe HTTP session library for Free Pascal, providing persistent
   - [Best Practices](#best-practices)
 
 ## Features
+
 - Persistent cookies and headers across requests
 - Connection reuse for performance
 - Session configuration (base URL, user-agent, timeout)
@@ -34,25 +37,31 @@ A robust, memory-safe HTTP session library for Free Pascal, providing persistent
 - Simple, clear API for session-based HTTP
 
 ## System Requirements
+
 - Free Pascal 3.2.2 or later
 - For HTTPS:
   - Windows: OpenSSL libraries included
   - Linux: `libssl-dev` or `openssl-devel` required
 
 ## Design Philosophy
+
 ### Session-Oriented API
+
 `Request.Session` provides a stateful HTTP client, similar to Python's `requests.Session`, but with Pascal's strong typing and memory safety. Sessions allow you to:
 - Reuse cookies and headers
 - Set a base URL for all requests
 - Maintain connection pooling for efficiency
 
 ## Memory Safety
+
 - Uses advanced records for automatic initialization and cleanup
 - No manual memory management needed for sessions, headers, or cookies
 - Safe to use in try-except blocks
 
 ## Basic Usage
+
 ### Session GET Request
+
 ```pascal
 var
   Session: THttpSession;
@@ -67,6 +76,7 @@ end;
 ```
 
 ### Session POST Request
+
 ```pascal
 var
   Session: THttpSession;
@@ -82,6 +92,7 @@ end;
 ```
 
 ### Working with Cookies and Headers
+
 ```pascal
 var
   Session: THttpSession;
@@ -96,7 +107,41 @@ begin
 end;
 ```
 
+### Working with Cookies, Headers, and JSON
+
+```pascal
+var
+  Session: THttpSession;
+  Response: TResponse;
+  UserData, ResponseData: TJSONObject;
+begin
+  Session.Init;
+  Session.SetBaseURL('https://api.example.com');
+  Session.SetCookie('sessionid', 'abc123');
+  Session.SetHeader('X-API-Key', 'mykey');
+
+  // Send JSON data
+  UserData := TJSONObject.Create;
+  try
+    UserData.Add('name', 'John');
+    UserData.Add('email', 'john@example.com');
+    Response := Session.Post('/profile', UserData.AsJSON, 'application/json');
+    if Response.StatusCode = 200 then
+    begin
+      ResponseData := TJSONObject(Response.JSON);
+      // No need to free ResponseData - it's owned by Response
+      WriteLn('Profile: ', ResponseData.Get('name', ''));
+    end;
+  finally
+    UserData.Free;
+  end;
+end;
+```
+
+> **Note:** JSON objects returned by `Response.JSON` are owned by the response. Do not free them manually.
+
 ## Error Handling
+
 All HTTP errors raise `ERequestError`. Use try-except blocks for robust error handling:
 ```pascal
 try
@@ -108,7 +153,9 @@ end;
 ```
 
 ## API Reference
+
 ### THttpSession Record
+
 ```pascal
 THttpSession = record
   procedure Init;  // REQUIRED: Must be called before using the session
@@ -152,7 +199,9 @@ end;
 ```
 
 ## Advanced Usage Examples
+
 ### Authenticated Session
+
 ```pascal
 var
   Session: THttpSession;
@@ -168,6 +217,7 @@ end;
 ```
 
 ### Session with Custom Timeout
+
 ```pascal
 var
   Session: THttpSession;
@@ -183,11 +233,13 @@ end;
 ```
 
 ## Testing and Development
+
 - Add the `src` directory to your project
 - Use `Request.Session` in your `uses` clause
 - Run tests in the `tests` directory for validation
 
 ## Best Practices
+
 1. Always call `Session.Init` before use
 2. Set base URL and headers/cookies as needed
 3. Use try-except for error handling
