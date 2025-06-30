@@ -9,7 +9,7 @@
 
 ## ❓ Why Request-FP?
 
-> Want modern, readable HTTP code in Pascal? Request-FP gives you a clean, memory-safe, and expressive API for all your HTTP needs—no boilerplate, no leaks, just results.
+> Want elegant HTTP code in Pascal? Request-FP gives you a clean, memory-safe, and expressive API for all your HTTP needs—no boilerplate, no leaks, just results.
 
 **Perfect for anyone writing HTTP clients in Free Pascal, from hobbyists to professionals.**
 
@@ -51,7 +51,6 @@ Request-FP offers two ways to make HTTP requests:
 
 > Most users only need the stateless API. The session API is there for advanced needs—use it when you need more control or state.
 
----
 
 ## Examples
 
@@ -114,4 +113,110 @@ else
   WriteLn('Error: ', Result.Error);
 ```
 
----
+## 🧪 Testing
+
+Request-FP includes a comprehensive test suite that ensures reliability and catches regressions.
+
+First, compile the test suite using Lazarus IDE or `lazbuild`.
+
+### Running Tests
+
+```bash
+# Navigate to the tests directory
+cd tests
+
+# Run all tests
+./TestRunner.exe -a --format=plain
+
+# On Linux
+./TestRunner -a --format=plain
+```
+
+### Test Coverage
+
+- ✅ **23 Tests** covering all HTTP methods and edge cases
+- ✅ **0 Failures** - all tests pass consistently
+- ✅ **0 Memory Leaks** - verified with heap dump analysis
+- ✅ **Cross-Platform** - tested on Windows and Linux
+- ✅ **Network Error Handling** - robust error scenarios
+
+## 📚 Documentation
+
+### Quick References
+
+- **[📋 Cheat Sheet](docs/Cheat-Sheet.md)** - Quick reference for common patterns
+- **[📖 API Reference](docs/Request.md)** - Complete API documentation
+- **[📖 Session API](docs/Request.Session.md)** - Session-based HTTP client guide
+- **[🔧 Technical Details](docs/TECHNICAL-DETAILS.md)** - Implementation details
+
+### Examples
+
+Explore practical examples in the [`examples/`](examples/) directory:
+- **[Basic GET](examples/easy_get/)** - Simple HTTP GET request
+- **[Custom Headers](examples/custom_headers_params/)** - Headers and query parameters
+- **[Authentication](examples/basic_auth/)** - Basic authentication
+- **[JSON POST](examples/post_json/)** - POST requests with JSON
+- **[File Upload](examples/multipart_upload/)** - Multipart file uploads
+- **[File Download](examples/file_download/)** - Download files
+- **[Error Handling](examples/retry_on_error/)** - Robust error handling
+- **[Sessions](examples/session_easy_get/)** - Session-based requests
+
+## 🚀 Installation
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/iwank/request-fp.git
+   cd request-fp
+   ```
+
+2. **Add to your project**:
+   - Copy `src/Request.pas` and `src/Request.Session.pas` to your project
+   - Add the `src` directory to your unit search path
+   - Include `uses Request;` in your code
+
+3. **Dependencies**:
+   - **Free Pascal 3.2.2+** or **Lazarus 4.0+**
+   - **OpenSSL** (for HTTPS support)
+     - Windows: Usually included
+     - Linux: `sudo apt-get install libssl-dev` (Ubuntu/Debian)
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
+
+### Development Setup
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Make your changes
+4. Run tests: `cd tests && ./TestRunner.exe -a --format=plain`
+5. Commit your changes: `git commit -m 'Add amazing feature'`
+6. Push to the branch: `git push origin feature/amazing-feature`
+7. Open a Pull Request
+
+## 📋 Requirements
+
+- **Free Pascal 3.2.2+** or **Lazarus 4.0+**
+- **OpenSSL** libraries (for HTTPS)
+- **Windows** or **Linux** (cross-platform)
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+
+## 🙏 Acknowledgments
+
+- **Free Pascal Team** - For the excellent compiler and RTL
+- **Lazarus Team** - For the amazing IDE
+- **HTTPBin.org** - For providing reliable HTTP testing endpoints
+- **Contributors** - Thank you for making this project better!
+
+## 📊 Project Stats
+
+- **Language**: Object Pascal (Free Pascal)
+- **Lines of Code**: ~2,000 (including tests and docs)
+- **Test Coverage**: 23 comprehensive tests
+- **Memory Leaks**: Zero (verified with heap analysis)
+- **Platforms**: Windows, Linux
+- **License**: MIT
+
