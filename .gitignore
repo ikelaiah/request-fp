@@ -104,3 +104,6 @@ Thumbs.db
 
 # Ignore documentation build output
 docs/_build/
+
+# Ignore all backup folders recursively
+**/backup/
