@@ -6,15 +6,11 @@
 [![FPC Version](https://img.shields.io/badge/FPC-3.2.2-2d8cf0.svg)](https://www.freepascal.org/)
 [![Lazarus](https://img.shields.io/badge/Lazarus-4.0-2dce89.svg)](https://www.lazarus-ide.org/)
 
----
-
 ## ❓ Why Request-FP?
 
 > Want modern, readable HTTP code in Pascal? Request-FP gives you a clean, memory-safe, and expressive API for all your HTTP needs—no boilerplate, no leaks, just results. If you like fluent, easy-to-use libraries, you'll feel right at home.
 
 **Perfect for anyone writing HTTP clients in Free Pascal, from hobbyists to professionals.**
-
----
 
 ## ✨ Features
 
@@ -23,8 +19,6 @@
 - **Stateless or Session:** Use what fits your workflow.
 - **Battle-Tested:** 100% passing test suite, cross-platform.
 - **Clear Error Handling:** Robust JSON support and explicit exceptions.
-
----
 
 ## ⚡ Getting Started in 30 Seconds
 
@@ -37,9 +31,10 @@ begin
   WriteLn(R.Text);
 end;
 ```
+
 > That's it! No manual memory management, no setup headaches.
 
----
+
 
 ## 🙋 FAQ
 
@@ -55,17 +50,17 @@ A: Yes! Use the stateless API for quick calls, or sessions for advanced scenario
 **Q: How do I get help?**  
 A: [Open an issue](https://github.com/iwank/request-fp/issues) or [start a discussion](https://github.com/iwank/request-fp/discussions) on GitHub.
 
----
+
 
 **Request-FP** is a modern, memory-safe HTTP client library for Free Pascal, inspired by Python's legendary [requests](https://docs.python-requests.org/) library. Effortlessly make HTTP requests with a clean, fluent API—stateless or session-based—while enjoying automatic memory management and robust JSON support.
 
----
+
 
 - 📄 [License (MIT)](LICENSE.md)
 - 🤝 [Contributing Guide](CONTRIBUTING.md)
 - ⚖️ [Code of Conduct](CODE_OF_CONDUCT.md)
 
----
+
 
 ## 🚀 Quick Example
 
@@ -92,7 +87,7 @@ begin
 end;
 ```
 
----
+
 
 ## 🏗️ Library Structure
 
@@ -120,7 +115,7 @@ end;
 | Type safety            | Dynamic                | Strong static typing          |
 | Language               | Python                 | Free Pascal                   |
 
----
+
 
 ## 🛠️ Installation
 
@@ -128,7 +123,7 @@ end;
 2. Add `Request` and/or `Request.Session` to your uses clause
 3. For HTTPS support, ensure OpenSSL libraries are installed
 
----
+
 
 ## 📦 Dependencies
 
@@ -138,7 +133,7 @@ end;
   - Fedora/RHEL: `sudo dnf install openssl-devel`
 - Uses only standard Free Pascal RTL units
 
----
+
 
 ## 🧠 Memory Management & JSON Handling
 
@@ -147,7 +142,7 @@ end;
 - **Do not free** JSON objects obtained via `FindPath` or similar methods
 - The `TResponse` destructor will automatically free all associated JSON data
 
-#### ✅ Correct Usage
+### ✅ Correct Usage
 
 ```pascal
 var
@@ -166,7 +161,7 @@ begin
 end;
 ```
 
-#### ❌ Incorrect Usage
+### ❌ Incorrect Usage
 
 ```pascal
 // WRONG: Don't free objects from FindPath
@@ -182,7 +177,7 @@ end;
 
 ## 🏁 Quick Start Examples
 
-#### Basic GET Request (stateless)
+### Basic GET Request (stateless)
 
 ```pascal
 var
@@ -194,7 +189,7 @@ begin
 end;
 ```
 
-#### Session-based GET Request
+### Session-based GET Request
 
 ```pascal
 var
@@ -209,7 +204,7 @@ begin
 end;
 ```
 
-#### POST with JSON
+### POST with JSON
 
 ```pascal
 var
@@ -229,7 +224,7 @@ begin
 end;
 ```
 
-#### Using the Fluent Interface
+### Using the Fluent Interface
 
 ```pascal
 var
@@ -247,13 +242,12 @@ begin
 end;
 ```
 
----
 
 ## 📤 Multipart File Uploads
 
 Request-FP supports robust, memory-safe multipart file uploads using dynamic arrays, fully compatible with FPC 3.2.2 and both stateless and session APIs.
 
-#### Fluent API Example
+### Fluent API Example
 
 ```pascal
 var
@@ -276,7 +270,7 @@ begin
 end;
 ```
 
-#### Static API Example
+### Static API Example
 
 ```pascal
 var
@@ -301,15 +295,11 @@ end;
 - Multipart logic is only triggered if files or fields are added; all state is reset after each request.
 - 100% passing test suite, including multipart upload tests.
 
----
-
 ## 📚 Documentation
 
 - [📖 API Reference](docs/Request.md)
 - [📋 Cheat Sheet](docs/cheat-sheet.md)
 - [⚙️ Technical Details](docs/TECHNICAL-DETAILS.md)
-
----
 
 ## 🧪 Running Tests
 
@@ -317,14 +307,24 @@ end;
 2. Add the `tests` directory to your test project
 3. Run the test suite
 
----
+## 🤝 Contributing
+
+Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md) before making contributions.
+
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
 
 ## 📝 License
 
 This project is licensed under the [MIT License](LICENSE.md).
 
----
 
-## 🤝 Contributing
+## 🙏 Acknowledgments
 
-Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md) before making contributions.
+- Inspired by various HTTP requests frameworks
+- Built with Free Pascal and Lazarus IDE
+- Thanks to the Free Pascal community for their support and contributions
