@@ -6,6 +6,12 @@
 [![FPC Version](https://img.shields.io/badge/FPC-3.2.2-2d8cf0.svg)](https://www.freepascal.org/)
 [![Lazarus](https://img.shields.io/badge/Lazarus-4.0-2dce89.svg)](https://www.lazarus-ide.org/)
 
+
+## 🚧 Development Status: Early Release
+
+> [!Note] 
+> Request-FP is currently in active development (version 0.5.0). The API is not yet finalized and may change in future releases. Feedback and contributions are welcome!
+
 ## ❓ Why Request-FP?
 
 > Want modern, readable HTTP code in Pascal? Request-FP gives you a clean, memory-safe, and expressive API for all your HTTP needs—no boilerplate, no leaks, just results. If you like fluent, easy-to-use libraries, you'll feel right at home.
@@ -33,6 +39,24 @@ end;
 ```
 
 > That's it! No manual memory management, no setup headaches.
+
+
+
+## 🤔 Which Style Should I Use?
+
+Request-FP offers two ways to make HTTP requests:
+
+| If you want...                        | Use this style         | Example                |
+|---------------------------------------|------------------------|------------------------|
+| The simplest, one-off requests        | Stateless API          | `Http.Get(...)`        |
+| To chain options for a single request | Fluent API             | `THttpRequest...Send`  |
+| To keep cookies/headers across calls  | Session API            | `THttpSession`         |
+
+- **Start with the stateless API** for quick scripts, demos, or simple tools.
+- **Use the session API** if you need to log in, reuse cookies, or make many related requests.
+- The fluent API lets you build up complex requests step by step.
+
+> Most users only need the stateless API. The other styles are there for advanced needs—use them when you need more control or state.
 
 
 
