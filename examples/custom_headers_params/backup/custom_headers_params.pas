@@ -5,15 +5,9 @@ uses Request;
 var
   Response: TResponse;
 begin
-  Response := THttpRequest
-    .Create
-    .Get
-    .URL('https://httpbin.org/get')
-    .AddHeader('X-Custom-Header', 'RequestFP')
-    .AddParam('foo', 'bar')
-    .AddParam('baz', 'qux')
-    .Send;
-
+  Response := Http.Get('https://httpbin.org/get',
+    [TKeyValue.Create('X-Custom-Header', 'MyValue')],
+    [TKeyValue.Create('foo', 'bar'), TKeyValue.Create('baz', 'qux')]);
   WriteLn('Status: ', Response.StatusCode);
   WriteLn('Body: ', Response.Text);
 end.
