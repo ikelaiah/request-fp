@@ -567,6 +567,9 @@ begin
   Client := TFPHTTPClient.Create(nil);
   ResponseStream := TMemoryStream.Create;
   try
+    // Enable automatic redirect handling
+    Client.AllowRedirect := true;
+    
     // Add custom headers
     for I := 0 to High(Headers) do
       Client.RequestHeaders.Add(Headers[I].Key + ': ' + Headers[I].Value);
@@ -667,6 +670,9 @@ begin
   Client := TFPHTTPClient.Create(nil);
   ResponseStream := TMemoryStream.Create;
   try
+    // Enable automatic redirect handling
+    Client.AllowRedirect := true;
+    
     // Add custom headers
     for I := 0 to High(Headers) do
       Client.RequestHeaders.Add(Headers[I].Key + ': ' + Headers[I].Value);
@@ -789,6 +795,9 @@ begin
   Client := TFPHTTPClient.Create(nil);
   ResponseStream := TMemoryStream.Create;
   try
+    // Enable automatic redirect handling
+    Client.AllowRedirect := true;
+    
     // Add custom headers
     for I := 0 to High(Headers) do
       Client.RequestHeaders.Add(Headers[I].Key + ': ' + Headers[I].Value);
@@ -910,6 +919,9 @@ begin
   Client := TFPHTTPClient.Create(nil);
   ResponseStream := TMemoryStream.Create;
   try
+    // Enable automatic redirect handling
+    Client.AllowRedirect := true;
+    
     // Add custom headers
     for I := 0 to High(Headers) do
       Client.RequestHeaders.Add(Headers[I].Key + ': ' + Headers[I].Value);
@@ -1016,6 +1028,9 @@ begin
   Client := TFPHTTPClient.Create(nil);
   ResponseStream := TMemoryStream.Create;
   try
+    // Enable automatic redirect handling
+    Client.AllowRedirect := true;
+    
     // Add custom headers
     for I := 0 to High(Headers) do
       Client.RequestHeaders.Add(Headers[I].Key + ': ' + Headers[I].Value);
@@ -1173,6 +1188,9 @@ begin
   Client := TFPHTTPClient.Create(nil);
   ResponseStream := TMemoryStream.Create;
   try
+    // Enable automatic redirect handling
+    Client.AllowRedirect := true;
+    
     // Write form fields
     for I := 0 to High(Fields) do
     begin
