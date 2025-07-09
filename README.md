@@ -1,11 +1,12 @@
 # Request-FP
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-2dce89.svg)](LICENSE.md)
-[![Version](https://img.shields.io/badge/version-0.6.0-2d8cf0.svg)](https://github.com/iwank/request-fp/releases/tag/v0.6.0)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-2d8cf0.svg)](https://www.freepascal.org/)
-[![FPC Version](https://img.shields.io/badge/FPC-3.2.2-2d8cf0.svg)](https://www.freepascal.org/)
-[![Lazarus](https://img.shields.io/badge/Lazarus-4.0-2dce89.svg)](https://www.lazarus-ide.org/)
-
+[![License: MIT](https://img.shields.io/badge/License-MIT-1E3A8A.svg)](https://opensource.org/licenses/MIT)
+[![Free Pascal](https://img.shields.io/badge/Free%20Pascal-3.2.2+-3B82F6.svg)](https://www.freepascal.org/)
+[![Lazarus](https://img.shields.io/badge/Lazarus-4.0+-60A5FA.svg)](https://www.lazarus-ide.org/)
+![Supports Windows](https://img.shields.io/badge/support-Windows-F59E0B?logo=Windows)
+![Supports Linux](https://img.shields.io/badge/support-Linux-F59E0B?logo=Linux)
+[![Version](https://img.shields.io/badge/version-0.6.0-8B5CF6.svg)](CHANGELOG.md)
+![No Dependencies](https://img.shields.io/badge/dependencies-none-10B981.svg)
 
 ## ❓ Why Request-FP?
 
@@ -204,9 +205,15 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
 
+
 ## 🙏 Acknowledgments
 
-- **Free Pascal Team** - For the excellent compiler and RTL
-- **Lazarus Team** - For the amazing IDE
-- **HTTPBin.org** - For providing reliable HTTP testing endpoints
-- **Contributors** - Thank you for making this project better!
+- [Free Pascal Dev Team](https://www.freepascal.org/) for the Pascal compiler
+- [Lazarus IDE Team](https://www.lazarus-ide.org/) for such an amazing IDE
+- The kind and helpful individuals on various online platforms such as:
+    - [Unofficial Free Pascal discord server](https://discord.com/channels/570025060312547359/570091337173696513)
+    - [Free Pascal & Lazarus forum](https://forum.lazarus.freepascal.org/index.php)
+    - [Tweaking4All Delphi, Lazarus, Free Pascal forum](https://www.tweaking4all.com/forum/delphi-lazarus-free-pascal/)
+    - [Laz Planet - Blogspot](https://lazplanet.blogspot.com/) / [Laz Planet - GitLab](https://lazplanet.gitlab.io/)
+    - [Delphi Basics](https://www.delphibasics.co.uk/index.html)
+- All contributors who have helped improve this project
