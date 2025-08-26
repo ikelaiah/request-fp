@@ -8,20 +8,26 @@
 [![Version](https://img.shields.io/badge/version-0.6.0-8B5CF6.svg)](CHANGELOG.md)
 ![No Dependencies](https://img.shields.io/badge/dependencies-none-10B981.svg)
 
+Zero‑memory‑leak, high‑level HTTP client for Free Pascal. Built on top of FPC's HTTP stack with a clean API and zero boilerplate.
+
 ## ❓ Why Request-FP?
 
-> Want elegant HTTP code in Pascal? Request-FP gives you a clean, memory-safe, and expressive API for all your HTTP needs—no boilerplate, no leaks, just results.
+Request-FP is a thin, high-level wrapper around the Free Pascal HTTP client. If you like the built-in client but want fewer lines of code and safer lifetimes, this library gives you:
 
-**Perfect for anyone writing HTTP clients in Free Pascal, from hobbyists to professionals.**
+- Less boilerplate with expressive, procedural helpers.
+- RAII-style advanced records for automatic cleanup (no leaks).
+- A consistent, predictable API for common tasks (headers, params, JSON, multipart).
+
+Use it when you want the power of FPC's HTTP client without the repetitive setup and manual memory management.
 
 ## ✨ Features
 
-- **Zero Memory Leaks:** Advanced records handle cleanup for you.
-- **Clean Procedural API:** Simple, stateless methods with ergonomic overloads.
-- **Easy Key-Value Creation:** Use `TKeyValue.Create('key', 'value')` for clean syntax.
-- **Custom Headers & Query Parameters:** Easily add headers and params to any request.
-- **Battle-Tested:** 100% passing test suite, cross-platform.
-- **Clear Error Handling:** Robust JSON support and explicit exceptions.
+- **Zero memory leaks:** RAII-style advanced records handle cleanup for you.
+- **High-level API over FPC:** Built on the stock Free Pascal HTTP client—no extra runtime deps.
+- **Stateless or session-based:** `Http.Get(...)` for quick calls, `THttpSession` for cookies/state.
+- **Headers, params, JSON, multipart:** First-class helpers for common patterns.
+- **Simple error handling:** Exceptions or try-pattern results—your choice.
+- **Battle-tested:** Cross-platform with a comprehensive test suite.
 
 ## ⚡ Getting Started in 30 Seconds
 
