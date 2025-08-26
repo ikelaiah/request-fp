@@ -58,6 +58,7 @@ Request-FP offers two ways to make HTTP requests:
 
 > Most users only need the stateless API. The session API is there for advanced needs—use it when you need more control or state.
 
+> Note: `THttpSession` is an advanced record—call `Session.Init` before using methods like `Session.Get(...)`.
 
 ## Examples
 
@@ -141,11 +142,9 @@ cd tests
 
 ### Test Coverage
 
-- ✅ **23 Tests** covering all HTTP methods and edge cases
-- ✅ **0 Failures** - all tests pass consistently
-- ✅ **0 Memory Leaks** - verified with heap dump analysis
-- ✅ **Cross-Platform** - tested on Windows and Linux
-- ✅ **Network Error Handling** - robust error scenarios
+- ✅ Comprehensive tests for HTTP methods, headers/params, JSON, multipart, and error handling
+- ✅ Cross-platform: Windows and Linux
+- ✅ Memory-safe by construction: advanced records manage lifetimes; JSON parse errors raise `ERequestError`
 
 ## 📚 Documentation
 
