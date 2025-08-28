@@ -240,7 +240,7 @@ class operator THttpSession.Initialize(var Session: THttpSession);
 begin
   Session.FClient := nil;
   Session.FBaseURL := '';
-  Session.FUserAgent := 'Request-FP/1.0';
+  Session.FUserAgent := DEFAULT_USER_AGENT;
   Session.FTimeout := 30000; // 30 seconds default timeout
 
   // Set default headers - TSimpleMap doesn't need explicit initialization
@@ -291,7 +291,7 @@ begin
     Self.FTimeout := 30000;
     
   if Self.FUserAgent = '' then
-    Self.FUserAgent := 'Request-FP/1.0';
+    Self.FUserAgent := DEFAULT_USER_AGENT;
     
   // Create client if needed
   if Self.FClient = nil then
@@ -299,7 +299,6 @@ begin
     Self.FClient := TFPHTTPClient.Create(nil);
     Self.FClient.AllowRedirect := True;
     Self.FClient.IOTimeout := Self.FTimeout;
-    Self.FClient.AddHeader('User-Agent', Self.FUserAgent);
   end;
   Result := Self.FClient;
 end;
@@ -340,9 +339,9 @@ begin
   // Set timeout
   Client.IOTimeout := FTimeout;
 
-  // Preserve Content-Type if already set
-  if Client.RequestHeaders.IndexOfName('Content-Type') = -1 then
-    Client.RequestHeaders.Values['Content-Type'] := 'application/x-www-form-urlencoded';
+  // Ensure User-Agent is present (session default unless overridden)
+  if Client.RequestHeaders.IndexOfName('User-Agent') = -1 then
+    Client.AddHeader('User-Agent', FUserAgent);
 end;
 
 procedure THttpSession.UpdateCookies(Headers: TStrings);
@@ -582,7 +581,6 @@ begin
 
   // Set default headers
   Self.FHeaders.SetItem('Accept', 'application/json');
-  Self.FHeaders.SetItem('Content-Type', 'application/json');
 end;
 
 end.

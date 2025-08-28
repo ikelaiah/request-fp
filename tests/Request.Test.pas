@@ -26,12 +26,18 @@ type
     // Error handling
     procedure Test11_TryGetSuccess;
     procedure Test12_TryGetFailure;
+    procedure Test13_TryPostSuccess;
+    procedure Test13b_TryPostFailure;
     
     // Multipart upload tests
     procedure Test14_MultipartUpload_Static;
     
     // Custom headers and parameters
     procedure Test15_CustomHeadersAndParams;
+    procedure Test16_TryPutSuccess;
+    procedure Test16b_TryPutFailure;
+    procedure Test17_TryDeleteSuccess;
+    procedure Test17b_TryDeleteFailure;
   end;
 
 implementation
@@ -147,6 +153,26 @@ begin
   AssertTrue('Error message should not be empty', Result.Error <> '');
 end;
 
+procedure TRequestSimpleTests.Test13_TryPostSuccess;
+var
+  R: TRequestResult;
+begin
+  R := Http.TryPost('https://httpbin.org/post', 'x=1&y=2');
+  AssertTrue('TryPost should succeed', R.Success);
+  AssertEquals('Status code should be 200', 200, R.Response.StatusCode);
+  AssertTrue('Response should be valid JSON', Assigned(R.Response.JSON));
+  AssertEquals('No error message expected', '', R.Error);
+end;
+
+procedure TRequestSimpleTests.Test13b_TryPostFailure;
+var
+  R: TRequestResult;
+begin
+  R := Http.TryPost('https://nonexistent.example.com', 'x=1');
+  AssertFalse('TryPost should fail', R.Success);
+  AssertTrue('Error should be populated', R.Error <> '');
+end;
+
 procedure TRequestSimpleTests.Test14_MultipartUpload_Static;
 var
   Response: TResponse;
@@ -208,6 +234,46 @@ begin
   finally
     // Do not free JsonObj
   end;
+end;
+
+procedure TRequestSimpleTests.Test16_TryPutSuccess;
+var
+  R: TRequestResult;
+begin
+  R := Http.TryPut('https://httpbin.org/put', 'a=updated');
+  AssertTrue('TryPut should succeed', R.Success);
+  AssertEquals('Status code should be 200', 200, R.Response.StatusCode);
+  AssertTrue('Response should be valid JSON', Assigned(R.Response.JSON));
+  AssertEquals('No error message expected', '', R.Error);
+end;
+
+procedure TRequestSimpleTests.Test16b_TryPutFailure;
+var
+  R: TRequestResult;
+begin
+  R := Http.TryPut('https://nonexistent.example.com', 'a=b');
+  AssertFalse('TryPut should fail', R.Success);
+  AssertTrue('Error should be populated', R.Error <> '');
+end;
+
+procedure TRequestSimpleTests.Test17_TryDeleteSuccess;
+var
+  R: TRequestResult;
+begin
+  R := Http.TryDelete('https://httpbin.org/delete');
+  AssertTrue('TryDelete should succeed', R.Success);
+  AssertEquals('Status code should be 200', 200, R.Response.StatusCode);
+  AssertTrue('Response should be valid JSON', Assigned(R.Response.JSON));
+  AssertEquals('No error message expected', '', R.Error);
+end;
+
+procedure TRequestSimpleTests.Test17b_TryDeleteFailure;
+var
+  R: TRequestResult;
+begin
+  R := Http.TryDelete('https://nonexistent.example.com');
+  AssertFalse('TryDelete should fail', R.Success);
+  AssertTrue('Error should be populated', R.Error <> '');
 end;
 
 initialization

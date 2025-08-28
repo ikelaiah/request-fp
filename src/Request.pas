@@ -11,6 +11,8 @@ uses
   {$IFDEF UNIX}, BaseUnix{$ENDIF};
 
 const
+  REQUEST_FP_VERSION = '1.0.0';
+  DEFAULT_USER_AGENT = 'Request-FP/' + REQUEST_FP_VERSION;
   DEBUG_MODE = False;  // Set to True for debug output
 
 type
@@ -301,6 +303,14 @@ type
         end;
     }
     class function TryPost(const URL: string; const Data: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult; static;
+    {
+      @description Performs a HTTP PUT request with error handling
+    }
+    class function TryPut(const URL: string; const Data: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult; static;
+    {
+      @description Performs a HTTP DELETE request with error handling
+    }
+    class function TryDelete(const URL: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult; static;
     
     {
       @description Performs a simple HTTP POST request with multipart/form-data
@@ -349,10 +359,16 @@ type
     class function TryGet(const URL: string; const Headers: array of TKeyValue): TRequestResult; static; overload;
     class function TryPost(const URL: string; const Data: string): TRequestResult; static; overload;
     class function TryPost(const URL: string; const Data: string; const Headers: array of TKeyValue): TRequestResult; static; overload;
+    class function TryPut(const URL: string; const Data: string): TRequestResult; static; overload;
+    class function TryPut(const URL: string; const Data: string; const Headers: array of TKeyValue): TRequestResult; static; overload;
+    class function TryDelete(const URL: string): TRequestResult; static; overload;
+    class function TryDelete(const URL: string; const Headers: array of TKeyValue): TRequestResult; static; overload;
     // Ergonomic overloads for PostMultipart
     class function PostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TResponse; static; overload;
     class function PostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue): TResponse; static; overload;
   end;
+
+
 
 const
   Http: THttp = ();
@@ -362,6 +378,26 @@ implementation
 var
   SSLInitialized: Boolean = False;
   FallbackToHttp: Boolean = False;  // For testing environments without OpenSSL
+  
+function EncodeURIComponent(const S: string): string;
+const
+  Unreserved = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~';
+var
+  I: Integer;
+  Ch: Char;
+begin
+  Result := '';
+  for I := 1 to Length(S) do
+  begin
+    Ch := S[I];
+    if Pos(Ch, Unreserved) > 0 then
+      Result := Result + Ch
+    else if Ch = ' ' then
+      Result := Result + '%20'
+    else
+      Result := Result + '%' + IntToHex(Ord(Ch), 2);
+  end;
+end;
 
 {
   @description Initializes the OpenSSL library for HTTPS requests
@@ -527,6 +563,78 @@ end;
 
 { THttp }
 
+class function THttp.TryPut(const URL: string; const Data: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult;
+begin
+  try
+    Result.Response := Put(URL, Data, Headers, Params);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+    begin
+      Result.Success := False;
+      Result.Error := E.Message;
+      Result.Response.FContent := '';
+      Result.Response.FHeaders := '';
+      Result.Response.StatusCode := 0;
+      Result.Response.FJSON := nil;
+    end;
+  end;
+end;
+
+class function THttp.TryDelete(const URL: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult;
+begin
+  try
+    Result.Response := Delete(URL, Headers, Params);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+    begin
+      Result.Success := False;
+      Result.Error := E.Message;
+      Result.Response.FContent := '';
+      Result.Response.FHeaders := '';
+      Result.Response.StatusCode := 0;
+      Result.Response.FJSON := nil;
+    end;
+  end;
+end;
+
+// Overload: TryPut without headers/params
+class function THttp.TryPut(const URL: string; const Data: string): TRequestResult;
+const
+  EmptyHeaders: array of TKeyValue = nil;
+  EmptyParams: array of TKeyValue = nil;
+begin
+  Result := TryPut(URL, Data, EmptyHeaders, EmptyParams);
+end;
+
+// Overload: TryPut with headers only
+class function THttp.TryPut(const URL: string; const Data: string; const Headers: array of TKeyValue): TRequestResult;
+const
+  EmptyParams: array of TKeyValue = nil;
+begin
+  Result := TryPut(URL, Data, Headers, EmptyParams);
+end;
+
+// Overload: TryDelete without headers/params
+class function THttp.TryDelete(const URL: string): TRequestResult;
+const
+  EmptyHeaders: array of TKeyValue = nil;
+  EmptyParams: array of TKeyValue = nil;
+begin
+  Result := TryDelete(URL, EmptyHeaders, EmptyParams);
+end;
+
+// Overload: TryDelete with headers only
+class function THttp.TryDelete(const URL: string; const Headers: array of TKeyValue): TRequestResult;
+const
+  EmptyParams: array of TKeyValue = nil;
+begin
+  Result := TryDelete(URL, Headers, EmptyParams);
+end;
+
 class function THttp.Get(const URL: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse;
 var
   Client: TFPHTTPClient;
@@ -578,7 +686,7 @@ begin
     for I := 0 to High(Params) do
     begin
       if QueryStr <> '' then QueryStr := QueryStr + '&';
-      QueryStr := QueryStr + Params[I].Key + '=' + Params[I].Value;
+      QueryStr := QueryStr + EncodeURIComponent(Params[I].Key) + '=' + EncodeURIComponent(Params[I].Value);
     end;
     // Build final URL
     FinalURL := MutableURL;
@@ -593,7 +701,7 @@ begin
     try
       // Set default User-Agent if none specified
       if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
-        Client.AddHeader('User-Agent', 'TidyKit/1.0');
+        Client.AddHeader('User-Agent', DEFAULT_USER_AGENT);
       Client.HTTPMethod('GET', FinalURL, ResponseStream, []);
       Result.StatusCode := Client.ResponseStatusCode;
       Result.FHeaders := Client.ResponseHeaders.Text;
@@ -681,7 +789,7 @@ begin
     for I := 0 to High(Params) do
     begin
       if QueryStr <> '' then QueryStr := QueryStr + '&';
-      QueryStr := QueryStr + Params[I].Key + '=' + Params[I].Value;
+      QueryStr := QueryStr + EncodeURIComponent(Params[I].Key) + '=' + EncodeURIComponent(Params[I].Value);
     end;
     // Build final URL
     FinalURL := MutableURL;
@@ -696,7 +804,7 @@ begin
     try
       // Set default User-Agent if none specified
       if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
-        Client.AddHeader('User-Agent', 'TidyKit/1.0');
+        Client.AddHeader('User-Agent', DEFAULT_USER_AGENT);
       
       // Set Content-Type for form data if not already set
       if (Data <> '') and (Client.RequestHeaders.IndexOfName('Content-Type') < 0) then
@@ -806,7 +914,7 @@ begin
     for I := 0 to High(Params) do
     begin
       if QueryStr <> '' then QueryStr := QueryStr + '&';
-      QueryStr := QueryStr + Params[I].Key + '=' + Params[I].Value;
+      QueryStr := QueryStr + EncodeURIComponent(Params[I].Key) + '=' + EncodeURIComponent(Params[I].Value);
     end;
     // Build final URL
     FinalURL := MutableURL;
@@ -821,7 +929,7 @@ begin
     try
       // Set default User-Agent if none specified
       if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
-        Client.AddHeader('User-Agent', 'TidyKit/1.0');
+        Client.AddHeader('User-Agent', DEFAULT_USER_AGENT);
       
       // Set Content-Type for form data if not already set
       if (Data <> '') and (Client.RequestHeaders.IndexOfName('Content-Type') < 0) then
@@ -930,7 +1038,7 @@ begin
     for I := 0 to High(Params) do
     begin
       if QueryStr <> '' then QueryStr := QueryStr + '&';
-      QueryStr := QueryStr + Params[I].Key + '=' + Params[I].Value;
+      QueryStr := QueryStr + EncodeURIComponent(Params[I].Key) + '=' + EncodeURIComponent(Params[I].Value);
     end;
     // Build final URL
     FinalURL := MutableURL;
@@ -945,7 +1053,7 @@ begin
     try
       // Set default User-Agent if none specified
       if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
-        Client.AddHeader('User-Agent', 'TidyKit/1.0');
+        Client.AddHeader('User-Agent', DEFAULT_USER_AGENT);
         
       Client.HTTPMethod('DELETE', FinalURL, ResponseStream, []);
       
@@ -1039,7 +1147,7 @@ begin
     for I := 0 to High(Params) do
     begin
       if QueryStr <> '' then QueryStr := QueryStr + '&';
-      QueryStr := QueryStr + Params[I].Key + '=' + Params[I].Value;
+      QueryStr := QueryStr + EncodeURIComponent(Params[I].Key) + '=' + EncodeURIComponent(Params[I].Value);
     end;
     // Build final URL
     FinalURL := MutableURL;
@@ -1055,7 +1163,7 @@ begin
       Client.RequestHeaders.Add('Content-Type: application/json');
       // Set default User-Agent if none specified
       if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
-        Client.AddHeader('User-Agent', 'TidyKit/1.0');
+        Client.AddHeader('User-Agent', DEFAULT_USER_AGENT);
       
       // Set request body with JSON data using TStringStream
       RequestStream := TStringStream.Create(JSON);
@@ -1245,21 +1353,23 @@ begin
 
     // Set headers
     Client.RequestHeaders.Add('Content-Type: multipart/form-data; boundary=' + Boundary);
-    if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
-      Client.AddHeader('User-Agent', 'Request-FP/1.0');
+    // Note: default User-Agent will be added after custom headers to avoid duplicates
 
     // Execute request
     try
       // Add custom headers
       for I := 0 to High(Headers) do
         Client.RequestHeaders.Add(Headers[I].Key + ': ' + Headers[I].Value);
+      // Set default User-Agent if none specified (after applying custom headers)
+      if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
+        Client.AddHeader('User-Agent', DEFAULT_USER_AGENT);
       
-      // Build query string from Params
+      // Build query string from Params (URL-encoded)
       QueryStr := '';
       for I := 0 to High(Params) do
       begin
         if QueryStr <> '' then QueryStr := QueryStr + '&';
-        QueryStr := QueryStr + Params[I].Key + '=' + Params[I].Value;
+        QueryStr := QueryStr + EncodeURIComponent(Params[I].Key) + '=' + EncodeURIComponent(Params[I].Value);
       end;
       
       // Build final URL
