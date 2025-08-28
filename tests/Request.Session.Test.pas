@@ -136,7 +136,18 @@ begin
   FSession.SetCookie('testcookie', 'session-value');
   
   // Request to verify cookie was sent back
-  Response := FSession.Get('/cookies');
+  try
+    Response := FSession.Get('/cookies');
+  except
+    on E: ERequestError do
+    begin
+      // If it was a transient 502, retry once
+      if Pos('502', E.Message) > 0 then
+        Response := FSession.Get('/cookies')
+      else
+        raise;
+    end;
+  end;
   try
     AssertEquals('Status code should be 200', 200, Response.StatusCode);
     AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
@@ -307,11 +318,15 @@ begin
 
   // First request
   Response1 := FSession.Get('/get');
+  if Response1.StatusCode = 502 then
+    Response1 := FSession.Get('/get');
   AssertEquals('First request status code should be 200', 200, Response1.StatusCode);
   URL1 := Response1.JSON.GetPath('url').AsString;
   
   // Second request - should reuse connection
   Response2 := FSession.Get('/get');
+  if Response2.StatusCode = 502 then
+    Response2 := FSession.Get('/get');
   AssertEquals('Second request status code should be 200', 200, Response2.StatusCode);
   URL2 := Response2.JSON.GetPath('url').AsString;
   

@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0] - 2025-07-10
+
+### Added
+
+- Test suite enhancements and coverage: URL encoding, JSON access errors, Try* behavior, and header extraction via `Response.HeaderValue`.
+
+### Changed
+
+- Documentation updates across `README.md`, `docs/Request.md`, `docs/Request.Session.md`, and `docs/Cheat-Sheet.md`:
+  - Clarified Try* behavior (never raises; uses `TRequestResult`).
+  - Documented JSON parse errors raising `ERequestError` with a clear prefix.
+  - Added examples for `Response.HeaderValue()`.
+  - Added CI/testing notes about `httpbin.org` usage and intermittent upstream 502.
+
+### Fixed
+
+- Stabilized flaky HTTP tests by adding a minimal one-time retry on transient HTTP 502 responses in tests only (no change to core library behavior).
+
 ## [0.6.0] - 2025-07-01
 
 ### Added

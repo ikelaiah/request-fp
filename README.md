@@ -5,7 +5,7 @@
 [![Lazarus](https://img.shields.io/badge/Lazarus-4.0+-60A5FA.svg)](https://www.lazarus-ide.org/)
 ![Supports Windows](https://img.shields.io/badge/support-Windows-F59E0B?logo=Windows)
 ![Supports Linux](https://img.shields.io/badge/support-Linux-F59E0B?logo=Linux)
-[![Version](https://img.shields.io/badge/version-0.6.0-8B5CF6.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.0.0-8B5CF6.svg)](CHANGELOG.md)
 ![No Dependencies](https://img.shields.io/badge/dependencies-none-10B981.svg)
 
 Zero‑memory‑leak, high‑level HTTP client for Free Pascal. Built on top of FPC's HTTP stack with a clean API and zero boilerplate.
@@ -121,6 +121,21 @@ else
   WriteLn('Error: ', Result.Error);
 ```
 
+### Behavior: Try* vs Exceptions
+
+- **Procedural methods (`Http.Get/Post/...`)**: Raise `ERequestError` on transport failures (network/SSL) and may still return non-2xx responses (e.g., 404/500) without raising.
+- **Try-pattern methods (`Http.TryGet/TryPost/...`)**: Never raise; return `TRequestResult` with `Success`, `Response`, and `Error` populated. Non-2xx status codes are treated as successful transports.
+- **JSON parsing**: Accessing `Response.JSON` on non-JSON content raises `ERequestError` with a clear "JSON Parse Error" prefix.
+
+### Reading response headers
+
+```pascal
+var CT: string;
+CT := Response.HeaderValue('Content-Type');
+if Pos('application/json', LowerCase(CT)) > 0 then
+  WriteLn('Looks like JSON');
+```
+
 ## 🧪 Testing
 
 Request-FP includes a comprehensive test suite that ensures reliability and catches regressions.
@@ -145,6 +160,11 @@ cd tests
 - ✅ Comprehensive tests for HTTP methods, headers/params, JSON, multipart, and error handling
 - ✅ Cross-platform: Windows and Linux
 - ✅ Memory-safe by construction: advanced records manage lifetimes; JSON parse errors raise `ERequestError`
+
+### CI / Network Requirements
+
+- Tests target `https://httpbin.org` and assume outbound network access.
+- Some endpoints can intermittently return `502` from httpbin's upstream. Tests include a minimal 1x retry on 502 to reduce flakiness. No core library behavior is altered by this.
 
 ## 📚 Documentation
 

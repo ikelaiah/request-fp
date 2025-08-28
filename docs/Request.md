@@ -92,6 +92,12 @@ else
   WriteLn('Error: ', Result.Error);
 ```
 
+### Behavior Summary
+
+- The procedural methods like `Http.Get/Post/Put/Delete/...` may raise `ERequestError` for transport issues (network/SSL/timeout). They still return non-2xx responses without raising.
+- The Try* methods like `Http.TryGet/TryPost/TryPut/TryDelete` never raise exceptions. Inspect `Result.Success`, `Result.Error`, and `Result.Response`.
+- Accessing `Response.JSON` parses the current `Response.Text`. If content is not valid JSON, an `ERequestError` is raised with prefix "JSON Parse Error".
+
 ### SSL/TLS Errors
 
 If SSL libraries are missing, the library will provide a clear error message with installation instructions.
@@ -141,6 +147,15 @@ Response := Http.Get('https://api.example.com/data',
   [TKeyValue.Create('X-Api-Key', 'my-key'), TKeyValue.Create('Accept', 'application/json')],
   [TKeyValue.Create('lang', 'en')]);
 WriteLn(Response.Text);
+```
+
+### Reading Response Headers
+
+```pascal
+var CT: string;
+CT := Response.HeaderValue('Content-Type');
+if Pos('application/json', LowerCase(CT)) > 0 then
+  WriteLn('Looks like JSON');
 ```
 
 ---

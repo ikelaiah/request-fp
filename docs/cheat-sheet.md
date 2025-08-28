@@ -1,6 +1,6 @@
-# 📋 Cheat Sheet
+# 📋 Request-FP Cheat Sheet
 
-A comprehensive reference of TidyKit's features and usage examples.
+Quick reference for Request-FP features and usage examples.
  
 ## Table of Contents
 
@@ -56,6 +56,17 @@ if Result.Success then
   WriteLn('Status: ', Result.Response.StatusCode)             // Access successful response
 else
   WriteLn('Error: ', Result.Error);                           // Get error message
+
+// Behavior summary
+// - Http.Get/Post/... may raise ERequestError on transport errors
+// - Try* methods never raise; inspect Result fields
+// - Response.JSON raises ERequestError if body is not valid JSON
+
+// Reading a response header
+var CT: string;
+CT := Response.HeaderValue("Content-Type");
+if Pos('application/json', LowerCase(CT)) > 0 then
+  WriteLn('Looks like JSON');
 
 // Multipart upload
 Response := Http.PostMultipart('https://api.example.com/upload',
