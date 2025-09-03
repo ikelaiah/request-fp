@@ -7,7 +7,8 @@ interface
 
 uses
   Classes, SysUtils, fphttpclient, opensslsockets, openssl, base64,
-  URIParser, HTTPDefs, sockets, fpjson, jsonparser, jsonscanner
+  URIParser, HTTPDefs, sockets, fpjson, jsonparser, jsonscanner,
+  httpprotocol
   {$IFDEF UNIX}, BaseUnix{$ENDIF};
 
 const
@@ -378,24 +379,46 @@ implementation
 var
   SSLInitialized: Boolean = False;
   FallbackToHttp: Boolean = False;  // For testing environments without OpenSSL
+ 
+function ReadStreamAsUTF8String(AStream: TStream): string;
+var
+  Raw: RawByteString;
+  Len: SizeInt;
+begin
+  Len := AStream.Size;
+  SetLength(Raw, Len);
+  if Len > 0 then
+  begin
+    AStream.Position := 0;
+    AStream.ReadBuffer(Pointer(Raw)^, Len);
+  end;
+  // Mark bytes as UTF-8 without conversion
+  SetCodePage(Raw, CP_UTF8, False);
+  Result := string(Raw);
+end;
   
 function EncodeURIComponent(const S: string): string;
 const
   Unreserved = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~';
 var
-  I: Integer;
-  Ch: Char;
+  Bytes: RawByteString;
+  I: SizeInt;
+  B: Byte;
 begin
+  // Convert to UTF-8 bytes explicitly
+  Bytes := UTF8Encode(S);
   Result := '';
-  for I := 1 to Length(S) do
+  for I := 1 to Length(Bytes) do
   begin
-    Ch := S[I];
-    if Pos(Ch, Unreserved) > 0 then
-      Result := Result + Ch
-    else if Ch = ' ' then
+    B := Byte(Bytes[I]);
+    if Chr(B) in [
+      'A'..'Z','a'..'z','0'..'9','-','_','.','~'
+    ] then
+      Result := Result + Chr(B)
+    else if B = Ord(' ') then
       Result := Result + '%20'
     else
-      Result := Result + '%' + IntToHex(Ord(Ch), 2);
+      Result := Result + '%' + IntToHex(B, 2);
   end;
 end;
 
@@ -705,15 +728,8 @@ begin
       Client.HTTPMethod('GET', FinalURL, ResponseStream, []);
       Result.StatusCode := Client.ResponseStatusCode;
       Result.FHeaders := Client.ResponseHeaders.Text;
-      // Convert response to string
-      ContentStream := TStringStream.Create('');
-      try
-        ResponseStream.Position := 0;
-        ContentStream.LoadFromStream(ResponseStream);
-        Result.FContent := ContentStream.DataString;
-      finally
-        ContentStream.Free;
-      end;
+      // Convert response bytes to UTF-8 string explicitly
+      Result.FContent := ReadStreamAsUTF8String(ResponseStream);
     except
       on E: Exception do
       begin
@@ -827,15 +843,8 @@ begin
       Result.StatusCode := Client.ResponseStatusCode;
       Result.FHeaders := Client.ResponseHeaders.Text;
       
-      // Convert response to string
-      ContentStream := TStringStream.Create('');
-      try
-        ResponseStream.Position := 0;
-        ContentStream.LoadFromStream(ResponseStream);
-        Result.FContent := ContentStream.DataString;
-      finally
-        ContentStream.Free;
-      end;
+      // Convert response bytes to UTF-8 string explicitly
+      Result.FContent := ReadStreamAsUTF8String(ResponseStream);
       
     except
       on E: Exception do
@@ -1386,15 +1395,8 @@ begin
       Client.HTTPMethod('POST', FinalURL, ResponseStream, []);
       Result.StatusCode := Client.ResponseStatusCode;
       Result.FHeaders := Client.ResponseHeaders.Text;
-      // Read response body into FContent (same as other methods)
-      ContentStream := TStringStream.Create('');
-      try
-        ResponseStream.Position := 0;
-        ContentStream.LoadFromStream(ResponseStream);
-        Result.FContent := ContentStream.DataString;
-      finally
-        ContentStream.Free;
-      end;
+      // Read response body into FContent as UTF-8
+      Result.FContent := ReadStreamAsUTF8String(ResponseStream);
       
     except
       on E: Exception do

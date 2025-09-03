@@ -15,10 +15,16 @@ All notable changes to this project will be documented in this file.
   - Documented JSON parse errors raising `ERequestError` with a clear prefix.
   - Added examples for `Response.HeaderValue()`.
   - Added CI/testing notes about `httpbin.org` usage and intermittent upstream 502.
+  
+  
+- Query parameter encoding now follows strict RFC 3986 over UTF-8 bytes for consistent behavior on Windows and Linux.
 
 ### Fixed
 
 - Stabilized flaky HTTP tests by adding a minimal one-time retry on transient HTTP 502 responses in tests only (no change to core library behavior).
+- Fixed UTF-8 URL parameter percent-encoding on Linux; now percent-encoding and decoding are identical across platforms.
+- Fixed HTTP response body decoding by reading raw bytes and explicitly treating them as UTF-8, preventing mojibake when parsing JSON.
+- Ensured JSON-related tests involving Unicode characters pass consistently on both Windows and Ubuntu.
 
 ## [0.6.0] - 2025-07-01
 
