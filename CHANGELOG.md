@@ -2,11 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.0.0] - 2025-07-10
+## [1.0.0] - 2025-09-08
 
 ### Added
 
 - Test suite enhancements and coverage: URL encoding, JSON access errors, Try* behavior, and header extraction via `Response.HeaderValue`.
+ - Request API: `TryPostMultipart(...)` with ergonomic overloads, mirroring existing `Try*` patterns. Provides exception-free multipart uploads returning `TRequestResult`.
+ - Tests: Added success and failure coverage for `TryPostMultipart` in `tests/Request.Test.pas`.
+ - Session tests: Added multipart upload success/failure tests using `THttpSession.Post` with a manually constructed multipart body.
 
 ### Changed
 
@@ -18,6 +21,7 @@ All notable changes to this project will be documented in this file.
   
   
 - Query parameter encoding now follows strict RFC 3986 over UTF-8 bytes for consistent behavior on Windows and Linux.
+ - Documentation updates to include `TryPostMultipart` usage and behavior across `docs/Request.md`, `docs/Request.Session.md`, and `docs/Cheat-Sheet.md`.
 
 ### Fixed
 
@@ -25,6 +29,7 @@ All notable changes to this project will be documented in this file.
 - Fixed UTF-8 URL parameter percent-encoding on Linux; now percent-encoding and decoding are identical across platforms.
 - Fixed HTTP response body decoding by reading raw bytes and explicitly treating them as UTF-8, preventing mojibake when parsing JSON.
 - Ensured JSON-related tests involving Unicode characters pass consistently on both Windows and Ubuntu.
+ - Stabilized multipart tests against intermittent httpbin 502 by adding a one-time retry in the test code (no internal retry in the library).
 
 ## [0.6.0] - 2025-07-01
 

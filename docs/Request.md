@@ -30,7 +30,7 @@ A lightweight, memory-safe HTTP client for Free Pascal that uses advanced record
 
 - Zero-setup memory management using advanced records
 - Simple procedural interface for expressive request building
-- Support for common HTTP methods (GET, POST, PUT, DELETE, PATCH)
+- Support for common HTTP methods (GET, POST, PUT, DELETE)
 - Seamless JSON integration with FPC's standard fpjson unit
 - Error handling with result pattern
 - Cross-platform support for Windows and Linux
@@ -129,6 +129,9 @@ All procedural/stateless HTTP methods support optional custom headers and query 
 - `Http.PostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue = []; const Params: array of TKeyValue = []): TResponse`
 - `Http.TryGet(const URL: string; const Headers: array of TKeyValue = []; const Params: array of TKeyValue = []): TRequestResult`
 - `Http.TryPost(const URL: string; const Data: string = ''; const Headers: array of TKeyValue = []; const Params: array of TKeyValue = []): TRequestResult`
+- `Http.TryPut(const URL: string; const Data: string = ''; const Headers: array of TKeyValue = []; const Params: array of TKeyValue = []): TRequestResult`
+- `Http.TryDelete(const URL: string; const Headers: array of TKeyValue = []; const Params: array of TKeyValue = []): TRequestResult`
+- `Http.TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue = []; const Params: array of TKeyValue = []): TRequestResult`
 
 ## Advanced Usage Examples
 
@@ -138,6 +141,21 @@ All procedural/stateless HTTP methods support optional custom headers and query 
 Response := Http.PostMultipart('https://api.example.com/upload',
   [TKeyValue.Create('field1', 'value1')],
   [TKeyValue.Create('file1', 'myfile.txt')]);
+```
+
+### Multipart Uploads with Try-pattern
+
+```pascal
+var R: TRequestResult;
+begin
+  R := Http.TryPostMultipart('https://api.example.com/upload',
+    [TKeyValue.Create('field1', 'value1')],
+    [TKeyValue.Create('file1', 'myfile.txt')]);
+  if R.Success and (R.Response.StatusCode = 200) then
+    WriteLn('Uploaded OK')
+  else
+    WriteLn('Upload failed: ', R.Error);
+end;
 ```
 
 ### Custom Headers and Query Parameters

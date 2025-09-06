@@ -57,9 +57,19 @@ if Result.Success then
 else
   WriteLn('Error: ', Result.Error);                           // Get error message
 
+// Try-pattern for multipart upload
+var R: TRequestResult;
+R := Http.TryPostMultipart('https://api.example.com/upload',
+  [TKeyValue.Create('field1', 'value1')],
+  [TKeyValue.Create('file1', 'myfile.txt')]);
+if R.Success and (R.Response.StatusCode = 200) then
+  WriteLn('Upload OK')
+else
+  WriteLn('Upload failed: ', R.Error);
+
 // Behavior summary
 // - Http.Get/Post/... may raise ERequestError on transport errors
-// - Try* methods never raise; inspect Result fields
+// - Try* methods (TryGet/TryPost/TryPut/TryDelete/TryPostMultipart) never raise; inspect Result fields
 // - Response.JSON raises ERequestError if body is not valid JSON
 
 // Reading a response header

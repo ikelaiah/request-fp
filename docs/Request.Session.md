@@ -236,6 +236,32 @@ begin
 end;
 ```
 
+### Session Multipart Upload
+
+While the session API does not expose a dedicated multipart helper, you can send multipart/form-data by constructing the body and content-type:
+
+```pascal
+var
+  Session: THttpSession;
+  Boundary, Body, CRLF: string;
+  Response: TResponse;
+begin
+  Session.Init;
+  Session.SetBaseURL('https://api.example.com');
+  Boundary := '----RequestFP' + IntToStr(Random(100000));
+  CRLF := #13#10;
+  Body := '--' + Boundary + CRLF +
+          'Content-Disposition: form-data; name="field1"' + CRLF + CRLF +
+          'value1' + CRLF +
+          '--' + Boundary + '--' + CRLF;
+  Response := Session.Post('/upload', Body, 'multipart/form-data; boundary=' + Boundary);
+  if Response.StatusCode = 200 then
+    WriteLn('Uploaded');
+end;
+```
+
+For an exception-free variant using the procedural API, see `Http.TryPostMultipart(...)` documented in `docs/Request.md`.
+
 ## Testing and Development
 
 - Add the `src` directory to your project
