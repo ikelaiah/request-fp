@@ -132,6 +132,22 @@ type
 
 implementation
 
+function ReadStreamAsUTF8String(AStream: TStream): string;
+var
+  Raw: RawByteString;
+  Len: SizeInt;
+begin
+  Len := AStream.Size;
+  SetLength(Raw, Len);
+  if Len > 0 then
+  begin
+    AStream.Position := 0;
+    AStream.ReadBuffer(Pointer(Raw)^, Len);
+  end;
+  SetCodePage(Raw, CP_UTF8, False);
+  Result := string(Raw);
+end;
+
 { TSimpleMap }
 
 function TSimpleMap.FindIndex(const Key: string): Integer;
@@ -374,23 +390,23 @@ end;
 function THttpSession.Get(const URL: string): TResponse;
 var
   Client: TFPHTTPClient;
-  Response: TStringStream;
+  ResponseStream: TMemoryStream;
   Headers: TStringList;
 begin
   Client := GetClient;
   SetupRequest(Client);
   
-  Response := TStringStream.Create('');
+  ResponseStream := TMemoryStream.Create;
   Headers := TStringList.Create;
   try
     try
       // Make the request using our configured client
-      Client.Get(GetFullURL(URL), Response);
+      Client.Get(GetFullURL(URL), ResponseStream);
       
       // Set the response status code
       Result.StatusCode := Client.ResponseStatusCode;
       // Always set content, regardless of Content-Type
-      Result.SetContent(Response.DataString);
+      Result.SetContent(ReadStreamAsUTF8String(ResponseStream));
       // Update cookies from response
       UpdateCookies(Client.ResponseHeaders);
     except
@@ -398,7 +414,7 @@ begin
         raise ERequestError.Create('GET request failed: ' + E.Message);
     end;
   finally
-    Response.Free;
+    ResponseStream.Free;
     Headers.Free;
   end;
 end;
@@ -407,7 +423,7 @@ function THttpSession.Post(const URL: string; const Body: string; const ContentT
 var
   Client: TFPHTTPClient;
   RequestBody: TStringStream;
-  ResponseStream: TStringStream;
+  ResponseStream: TMemoryStream;
 begin
   Client := GetClient;
   SetupRequest(Client);
@@ -417,13 +433,13 @@ begin
     Client.AddHeader('Content-Type', ContentType);
 
   RequestBody := TStringStream.Create(Body);
-  ResponseStream := TStringStream.Create('');
+  ResponseStream := TMemoryStream.Create;
   try
     try
       Client.RequestBody := RequestBody;
       Client.HTTPMethod('POST', GetFullURL(URL), ResponseStream, [200, 201, 204]);
       Result.StatusCode := Client.ResponseStatusCode;
-      Result.SetContent(ResponseStream.DataString);
+      Result.SetContent(ReadStreamAsUTF8String(ResponseStream));
       UpdateCookies(Client.ResponseHeaders);
     finally
       Client.RequestBody := nil;
@@ -439,7 +455,7 @@ function THttpSession.Put(const URL: string; const Body: string;
 var
   Client: TFPHTTPClient;
   RequestBody: TStringStream;
-  Response: TStringStream;
+  ResponseStream: TMemoryStream;
 begin
   Client := GetClient;
   SetupRequest(Client);
@@ -449,13 +465,13 @@ begin
     Client.AddHeader('Content-Type', ContentType);
   
   RequestBody := TStringStream.Create(Body);
-  Response := TStringStream.Create('');
+  ResponseStream := TMemoryStream.Create;
   try
     try
       // Make the request
       Client.RequestBody := RequestBody;
       try
-        Client.HTTPMethod('PUT', GetFullURL(URL), Response, [200, 201, 204]);
+        Client.HTTPMethod('PUT', GetFullURL(URL), ResponseStream, [200, 201, 204]);
       finally
         Client.RequestBody := nil;
       end;
@@ -463,7 +479,7 @@ begin
       // Set the response status code
       Result.StatusCode := Client.ResponseStatusCode;
       // Always set content, regardless of Content-Type
-      Result.SetContent(Response.DataString);
+      Result.SetContent(ReadStreamAsUTF8String(ResponseStream));
       // Update cookies from response
       UpdateCookies(Client.ResponseHeaders);
     except
@@ -472,28 +488,28 @@ begin
     end;
   finally
     RequestBody.Free;
-    Response.Free;
+    ResponseStream.Free;
   end;
 end;
 
 function THttpSession.Delete(const URL: string): TResponse;
 var
   Client: TFPHTTPClient;
-  Response: TStringStream;
+  ResponseStream: TMemoryStream;
 begin
   Client := GetClient;
   SetupRequest(Client);
   
-  Response := TStringStream.Create('');
+  ResponseStream := TMemoryStream.Create;
   try
     try
       // Make the request
-      Client.HTTPMethod('DELETE', GetFullURL(URL), Response, [200, 204]);
+      Client.HTTPMethod('DELETE', GetFullURL(URL), ResponseStream, [200, 204]);
       
       // Set the response status code
       Result.StatusCode := Client.ResponseStatusCode;
       // Always set content, regardless of Content-Type
-      Result.SetContent(Response.DataString);
+      Result.SetContent(ReadStreamAsUTF8String(ResponseStream));
       // Update cookies from response
       UpdateCookies(Client.ResponseHeaders);
     except
@@ -501,7 +517,7 @@ begin
         raise ERequestError.Create('DELETE request failed: ' + E.Message);
     end;
   finally
-    Response.Free;
+    ResponseStream.Free;
   end;
 end;
 

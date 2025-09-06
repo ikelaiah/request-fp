@@ -252,6 +252,11 @@ begin
   Response := Http.PostMultipart('https://httpbin.org/post', 
     [TKeyValue.Create('staticfield', 'staticvalue')],
     [TKeyValue.Create('file2', TempFile)]);
+  // Retry once on transient upstream 502 from httpbin
+  if Response.StatusCode = 502 then
+    Response := Http.PostMultipart('https://httpbin.org/post', 
+      [TKeyValue.Create('staticfield', 'staticvalue')],
+      [TKeyValue.Create('file2', TempFile)]);
 
   AssertEquals('Status code should be 200', 200, Response.StatusCode);
   AssertTrue('Response should be valid JSON', Assigned(Response.JSON));

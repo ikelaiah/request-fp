@@ -961,15 +961,8 @@ begin
       Result.StatusCode := Client.ResponseStatusCode;
       Result.FHeaders := Client.ResponseHeaders.Text;
       
-      // Convert response to string
-      ContentStream := TStringStream.Create('');
-      try
-        ResponseStream.Position := 0;
-        ContentStream.LoadFromStream(ResponseStream);
-        Result.FContent := ContentStream.DataString;
-      finally
-        ContentStream.Free;
-      end;
+      // Convert response bytes to UTF-8 string explicitly
+      Result.FContent := ReadStreamAsUTF8String(ResponseStream);
       
     except
       on E: Exception do
@@ -1069,15 +1062,8 @@ begin
       Result.StatusCode := Client.ResponseStatusCode;
       Result.FHeaders := Client.ResponseHeaders.Text;
       
-      // Convert response to string
-      ContentStream := TStringStream.Create('');
-      try
-        ResponseStream.Position := 0;
-        ContentStream.LoadFromStream(ResponseStream);
-        Result.FContent := ContentStream.DataString;
-      finally
-        ContentStream.Free;
-      end;
+      // Convert response bytes to UTF-8 string explicitly
+      Result.FContent := ReadStreamAsUTF8String(ResponseStream);
       
     except
       on E: Exception do
@@ -1186,15 +1172,8 @@ begin
       Result.StatusCode := Client.ResponseStatusCode;
       Result.FHeaders := Client.ResponseHeaders.Text;
       
-      // Convert response to string
-      ContentStream := TStringStream.Create('');
-      try
-        ResponseStream.Position := 0;
-        ContentStream.LoadFromStream(ResponseStream);
-        Result.FContent := ContentStream.DataString;
-      finally
-        ContentStream.Free;
-      end;
+      // Convert response bytes to UTF-8 string explicitly
+      Result.FContent := ReadStreamAsUTF8String(ResponseStream);
       
     except
       on E: Exception do
