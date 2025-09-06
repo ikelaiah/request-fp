@@ -364,9 +364,14 @@ type
     class function TryPut(const URL: string; const Data: string; const Headers: array of TKeyValue): TRequestResult; static; overload;
     class function TryDelete(const URL: string): TRequestResult; static; overload;
     class function TryDelete(const URL: string; const Headers: array of TKeyValue): TRequestResult; static; overload;
+    // TryPostMultipart variants
+    class function TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult; static;
     // Ergonomic overloads for PostMultipart
     class function PostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TResponse; static; overload;
     class function PostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue): TResponse; static; overload;
+    // Ergonomic overloads for TryPostMultipart
+    class function TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TRequestResult; static; overload;
+    class function TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue): TRequestResult; static; overload;
   end;
 
 
@@ -1472,6 +1477,25 @@ begin
   Result := TryPost(URL, Data, Headers, []);
 end;
 
+class function THttp.TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult;
+begin
+  try
+    Result.Response := PostMultipart(URL, Fields, Files, Headers, Params);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+    begin
+      Result.Success := False;
+      Result.Error := E.Message;
+      Result.Response.FContent := '';
+      Result.Response.FHeaders := '';
+      Result.Response.StatusCode := 0;
+      Result.Response.FJSON := nil;
+    end;
+  end;
+end;
+
 // Ergonomic overloads for PostMultipart
 class function THttp.PostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TResponse;
 begin
@@ -1481,6 +1505,17 @@ end;
 class function THttp.PostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue): TResponse;
 begin
   Result := PostMultipart(URL, Fields, Files, Headers, []);
+end;
+
+// Ergonomic overloads for TryPostMultipart
+class function THttp.TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TRequestResult;
+begin
+  Result := TryPostMultipart(URL, Fields, Files, [], []);
+end;
+
+class function THttp.TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue): TRequestResult;
+begin
+  Result := TryPostMultipart(URL, Fields, Files, Headers, []);
 end;
 
 initialization

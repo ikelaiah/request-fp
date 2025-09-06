@@ -36,6 +36,8 @@ type
     procedure Test22_TimeoutHandling;
     procedure Test23_ClearCookies;
     procedure Test24_ClearHeaders;
+    procedure Test25_SessionMultipartUpload_Success;
+    procedure Test25b_SessionMultipartUpload_Failure;
   end;
 
 implementation
@@ -449,7 +451,105 @@ begin
   WriteLn('Test24_ClearHeaders: Completed');
 end;
 
+procedure TRequestSessionTests.Test25_SessionMultipartUpload_Success;
+var
+  Boundary, CRLF, Body, FileName, TempFile: string;
+  F: TextFile;
+  Response: TResponse;
+  Form, FilesObj: TJSONObject;
+begin
+  // Prepare temp file
+  TempFile := GetTempDir + 'session_mp_upload.txt';
+  AssignFile(F, TempFile);
+  Rewrite(F);
+  WriteLn(F, 'Session multipart content');
+  CloseFile(F);
+
+  // Build multipart body
+  Boundary := '----RequestFPTest' + IntToStr(Random(1000000));
+  CRLF := #13#10;
+  FileName := ExtractFileName(TempFile);
+
+  Body := '';
+  // form field
+  Body := Body + '--' + Boundary + CRLF;
+  Body := Body + 'Content-Disposition: form-data; name="staticfield"' + CRLF + CRLF;
+  Body := Body + 'staticvalue' + CRLF;
+  // file field
+  Body := Body + '--' + Boundary + CRLF;
+  Body := Body + 'Content-Disposition: form-data; name="file2"; filename="' + FileName + '"' + CRLF;
+  Body := Body + 'Content-Type: application/octet-stream' + CRLF + CRLF;
+  // For simplicity in tests, append a known line (matches the file content we wrote)
+  Body := Body + 'Session multipart content' + CRLF;
+  // closing boundary
+  Body := Body + '--' + Boundary + '--' + CRLF;
+
+  // Perform POST with proper Content-Type
+  try
+    Response := FSession.Post('/post', Body, 'multipart/form-data; boundary=' + Boundary);
+  except
+    on E: Exception do
+    begin
+      // Retry once on transient 502
+      if Pos('502', E.Message) > 0 then
+        Response := FSession.Post('/post', Body, 'multipart/form-data; boundary=' + Boundary)
+      else
+        raise;
+    end;
+  end;
+
+  AssertEquals('Status code should be 200', 200, Response.StatusCode);
+  AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
+
+  // Validate JSON payload
+  Form := TJSONObject(Response.JSON.FindPath('form'));
+  try
+    AssertTrue('Form object should exist', Form <> nil);
+    AssertEquals('Form field value', 'staticvalue', Form.Get('staticfield', ''));
+  finally
+  end;
+
+  FilesObj := TJSONObject(Response.JSON.FindPath('files'));
+  try
+    AssertTrue('Files object should exist', FilesObj <> nil);
+    AssertTrue('Uploaded file should be present', FilesObj.Find('file2') <> nil);
+  finally
+  end;
+
+  // Cleanup
+  DeleteFile(TempFile);
+end;
+
+procedure TRequestSessionTests.Test25b_SessionMultipartUpload_Failure;
+var
+  OldBase: string;
+  Boundary, Body, CRLF: string;
+  ExceptionRaised: Boolean;
+begin
+  OldBase := '/'; // store something; we'll restore httpbin base in SetUp anyway per test
+  // Create a minimal multipart body
+  Boundary := '----RequestFPTest' + IntToStr(Random(1000000));
+  CRLF := #13#10;
+  Body := '--' + Boundary + CRLF +
+          'Content-Disposition: form-data; name="a"' + CRLF + CRLF +
+          '1' + CRLF +
+          '--' + Boundary + '--' + CRLF;
+
+  // Point to a nonexistent host
+  FSession.SetBaseURL('https://nonexistent.example.com');
+
+  ExceptionRaised := False;
+  try
+    FSession.Post('/post', Body, 'multipart/form-data; boundary=' + Boundary);
+  except
+    on E: Exception do
+      ExceptionRaised := True;
+  end;
+  AssertTrue('POST should raise exception on nonexistent host', ExceptionRaised);
+
+  // No explicit restore needed; each test re-initializes the session in SetUp
+end;
+
 initialization
   RegisterTest(TRequestSessionTests);
-
 end.

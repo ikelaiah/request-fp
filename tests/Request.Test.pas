@@ -42,6 +42,8 @@ type
     procedure Test17_TryDeleteSuccess;
     procedure Test17b_TryDeleteFailure;
     procedure Test21_HeaderValueExtraction;
+    procedure Test22_TryPostMultipartSuccess;
+    procedure Test22b_TryPostMultipartFailure;
   end;
 
 implementation
@@ -358,6 +360,62 @@ begin
   CT := Response.HeaderValue('Content-Type');
   AssertTrue('Content-Type header should exist', CT <> '');
   AssertTrue('Content-Type should indicate JSON', Pos('application/json', LowerCase(CT)) > 0);
+end;
+
+procedure TRequestSimpleTests.Test22_TryPostMultipartSuccess;
+var
+  R: TRequestResult;
+  TempFile: string;
+  F: TextFile;
+  Form, FilesObj: TJSONObject;
+begin
+  // Prepare a temp file to upload
+  TempFile := GetTempDir + 'test_upload_try_mp.txt';
+  AssignFile(F, TempFile);
+  Rewrite(F);
+  WriteLn(F, 'TryPostMultipart content');
+  CloseFile(F);
+
+  R := Http.TryPostMultipart('https://httpbin.org/post',
+    [TKeyValue.Create('staticfield', 'staticvalue')],
+    [TKeyValue.Create('file2', TempFile)]);
+  // Retry once on transient upstream 502 from httpbin
+  if R.Success and (R.Response.StatusCode = 502) then
+    R := Http.TryPostMultipart('https://httpbin.org/post',
+      [TKeyValue.Create('staticfield', 'staticvalue')],
+      [TKeyValue.Create('file2', TempFile)]);
+
+  AssertTrue('TryPostMultipart should succeed (transport)', R.Success);
+  AssertEquals('Status code should be 200', 200, R.Response.StatusCode);
+  AssertTrue('Response should be valid JSON', Assigned(R.Response.JSON));
+
+  // Validate form and files in response JSON
+  Form := TJSONObject(R.Response.JSON.FindPath('form'));
+  try
+    AssertTrue('Form object should exist', Form <> nil);
+    AssertEquals('Form field value', 'staticvalue', Form.Get('staticfield', ''));
+  finally
+  end;
+
+  FilesObj := TJSONObject(R.Response.JSON.FindPath('files'));
+  try
+    AssertTrue('Files object should exist', FilesObj <> nil);
+    AssertTrue('Uploaded file should be present', FilesObj.Find('file2') <> nil);
+  finally
+  end;
+
+  // Cleanup
+  DeleteFile(TempFile);
+end;
+
+procedure TRequestSimpleTests.Test22b_TryPostMultipartFailure;
+var
+  R: TRequestResult;
+begin
+  R := Http.TryPostMultipart('https://nonexistent.example.com',
+    [TKeyValue.Create('a', '1')], []);
+  AssertFalse('TryPostMultipart should fail on nonexistent host', R.Success);
+  AssertTrue('Error should be populated', R.Error <> '');
 end;
 
 initialization
