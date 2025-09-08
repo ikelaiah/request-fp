@@ -63,6 +63,12 @@ type
 
     // Returns the value of a response header (case-insensitive), or empty string if not found
     function HeaderValue(const Name: string): string;
+    // Sets raw header text captured from the HTTP client (for use by session API)
+    procedure SetHeadersText(const AHeaders: string);
+    // True if status is within 200..299
+    function IsSuccessStatus: Boolean;
+    // Saves response body to a file (UTF-8 as stored in Text)
+    procedure SaveToFile(const FilePath: string);
     
     { Helper method to set the response content and JSON data }
     procedure SetContent(const AContent: string; AJSON: TJSONData = nil);
@@ -586,6 +592,32 @@ begin
     end;
   finally
     Lines.Free;
+  end;
+end;
+
+procedure TResponse.SetHeadersText(const AHeaders: string);
+begin
+  FHeaders := AHeaders;
+end;
+
+function TResponse.IsSuccessStatus: Boolean;
+begin
+  Result := (StatusCode >= 200) and (StatusCode <= 299);
+end;
+
+procedure TResponse.SaveToFile(const FilePath: string);
+var
+  FS: TFileStream;
+  Bytes: RawByteString;
+begin
+  // Persist the raw UTF-8 bytes corresponding to Text
+  Bytes := UTF8Encode(FContent);
+  FS := TFileStream.Create(FilePath, fmCreate);
+  try
+    if Length(Bytes) > 0 then
+      FS.WriteBuffer(Pointer(Bytes)^, Length(Bytes));
+  finally
+    FS.Free;
   end;
 end;
 

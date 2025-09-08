@@ -23,6 +23,7 @@ A lightweight, memory-safe HTTP client for Free Pascal that uses advanced record
   - [Advanced Usage Examples](#advanced-usage-examples)
     - [Multipart File Uploads](#multipart-file-uploads)
     - [Custom Headers and Query Parameters](#custom-headers-and-query-parameters)
+    - [Checking Success and Saving to File](#checking-success-and-saving-to-file)
   - [Testing and Development](#testing-and-development)
   - [Best Practices](#best-practices)
 
@@ -110,6 +111,10 @@ If SSL libraries are missing, the library will provide a clear error message wit
 - `Text: string` — Response body as text
 - `JSON: TJSONData` — Parsed JSON response (if applicable)
 - `HeaderValue(const Name: string): string` — Get a response header value
+- `IsSuccessStatus: Boolean` — True if `StatusCode` is 2xx
+- `SaveToFile(const FilePath: string)` — Save the response body to a file (UTF-8)
+
+Note: Response headers are captured for both the stateless (`Request`) and session (`Request.Session`) APIs, so `HeaderValue` works consistently in all cases.
 
 ### TRequestResult Record
 
@@ -174,6 +179,15 @@ var CT: string;
 CT := Response.HeaderValue('Content-Type');
 if Pos('application/json', LowerCase(CT)) > 0 then
   WriteLn('Looks like JSON');
+```
+
+### Checking Success and Saving to File
+
+```pascal
+if Response.IsSuccessStatus then
+  Response.SaveToFile('output.json')
+else
+  WriteLn('HTTP error: ', Response.StatusCode);
 ```
 
 ---

@@ -82,6 +82,10 @@ if Pos('application/json', LowerCase(CT)) > 0 then
 Response := Http.PostMultipart('https://api.example.com/upload',
   [TKeyValue.Create('field1', 'value1')],
   [TKeyValue.Create('file1', 'myfile.txt')]);
+
+// Quick success check and save body to a file
+if Response.IsSuccessStatus then
+  Response.SaveToFile('output.txt');
 ```
 
 ## 🔗 HTTP Session Operations
@@ -96,6 +100,8 @@ begin
   Session.SetHeader('X-Token', 'abc123');
   Session.SetCookie('mycookie', 'cookievalue');
   Response := Session.Get('/data');
+  // HeaderValue works for session responses too
+  WriteLn('Content-Type: ', Response.HeaderValue('Content-Type'));
   WriteLn('Status: ', Response.StatusCode);
   WriteLn('Body: ', Response.Text);
 end;

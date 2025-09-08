@@ -407,6 +407,8 @@ begin
       Result.StatusCode := Client.ResponseStatusCode;
       // Always set content, regardless of Content-Type
       Result.SetContent(ReadStreamAsUTF8String(ResponseStream));
+      // Capture response headers for downstream access
+      Result.SetHeadersText(Client.ResponseHeaders.Text);
       // Update cookies from response
       UpdateCookies(Client.ResponseHeaders);
     except
@@ -440,6 +442,8 @@ begin
       Client.HTTPMethod('POST', GetFullURL(URL), ResponseStream, [200, 201, 204]);
       Result.StatusCode := Client.ResponseStatusCode;
       Result.SetContent(ReadStreamAsUTF8String(ResponseStream));
+      // Capture response headers for downstream access
+      Result.SetHeadersText(Client.ResponseHeaders.Text);
       UpdateCookies(Client.ResponseHeaders);
     finally
       Client.RequestBody := nil;
@@ -480,6 +484,8 @@ begin
       Result.StatusCode := Client.ResponseStatusCode;
       // Always set content, regardless of Content-Type
       Result.SetContent(ReadStreamAsUTF8String(ResponseStream));
+      // Capture response headers for downstream access
+      Result.SetHeadersText(Client.ResponseHeaders.Text);
       // Update cookies from response
       UpdateCookies(Client.ResponseHeaders);
     except
@@ -510,6 +516,8 @@ begin
       Result.StatusCode := Client.ResponseStatusCode;
       // Always set content, regardless of Content-Type
       Result.SetContent(ReadStreamAsUTF8String(ResponseStream));
+      // Capture response headers for downstream access
+      Result.SetHeadersText(Client.ResponseHeaders.Text);
       // Update cookies from response
       UpdateCookies(Client.ResponseHeaders);
     except

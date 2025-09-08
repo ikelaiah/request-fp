@@ -38,6 +38,7 @@ type
     procedure Test24_ClearHeaders;
     procedure Test25_SessionMultipartUpload_Success;
     procedure Test25b_SessionMultipartUpload_Failure;
+    procedure Test26_Session_ResponseHeaderValue;
   end;
 
 implementation
@@ -548,6 +549,21 @@ begin
   AssertTrue('POST should raise exception on nonexistent host', ExceptionRaised);
 
   // No explicit restore needed; each test re-initializes the session in SetUp
+end;
+
+procedure TRequestSessionTests.Test26_Session_ResponseHeaderValue;
+var
+  Response: TResponse;
+  CT: string;
+begin
+  Response := FSession.Get('/get');
+  // Retry once on transient upstream 502 from httpbin
+  if Response.StatusCode = 502 then
+    Response := FSession.Get('/get');
+  AssertEquals('Status code should be 200', 200, Response.StatusCode);
+  CT := Response.HeaderValue('Content-Type');
+  AssertTrue('Content-Type header should be present', CT <> '');
+  AssertTrue('Content-Type should indicate JSON', Pos('application/json', LowerCase(CT)) > 0);
 end;
 
 initialization

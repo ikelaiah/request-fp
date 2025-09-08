@@ -44,6 +44,9 @@ type
     procedure Test21_HeaderValueExtraction;
     procedure Test22_TryPostMultipartSuccess;
     procedure Test22b_TryPostMultipartFailure;
+    // New helper coverage
+    procedure Test23_IsSuccessStatus;
+    procedure Test24_SaveToFile;
   end;
 
 implementation
@@ -416,6 +419,45 @@ begin
     [TKeyValue.Create('a', '1')], []);
   AssertFalse('TryPostMultipart should fail on nonexistent host', R.Success);
   AssertTrue('Error should be populated', R.Error <> '');
+end;
+
+procedure TRequestSimpleTests.Test23_IsSuccessStatus;
+var
+  R200, R404: TResponse;
+begin
+  R200 := Http.Get('https://httpbin.org/get');
+  // Retry once on transient upstream 502 from httpbin
+  if R200.StatusCode = 502 then
+    R200 := Http.Get('https://httpbin.org/get');
+  AssertTrue('200 should be success', R200.IsSuccessStatus);
+
+  R404 := Http.Get('https://httpbin.org/status/404');
+  AssertFalse('404 should not be success', R404.IsSuccessStatus);
+end;
+
+procedure TRequestSimpleTests.Test24_SaveToFile;
+var
+  R: TResponse;
+  TempFile: string;
+  Info: TSearchRec;
+  HasFile: Boolean;
+begin
+  R := Http.PostJSON('https://httpbin.org/post', '{"a":1}');
+  AssertEquals('Status code should be 200', 200, R.StatusCode);
+  TempFile := GetTempDir + 'request_fp_save_test.txt';
+  try
+    R.SaveToFile(TempFile);
+    HasFile := FindFirst(TempFile, faAnyFile, Info) = 0;
+    try
+      AssertTrue('File should exist after SaveToFile', HasFile);
+      AssertTrue('File size should be > 0', Info.Size > 0);
+    finally
+      if HasFile then FindClose(Info);
+    end;
+  finally
+    // Cleanup regardless of assertions
+    if FileExists(TempFile) then DeleteFile(TempFile);
+  end;
 end;
 
 initialization

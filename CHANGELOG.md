@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- (none)
+
+### Changed
+
+- (none)
+
+### Fixed
+
+- (none)
+
+
 ## [1.0.0] - 2025-09-08
 
 ### Added
@@ -10,6 +25,14 @@ All notable changes to this project will be documented in this file.
  - Request API: `TryPostMultipart(...)` with ergonomic overloads, mirroring existing `Try*` patterns. Provides exception-free multipart uploads returning `TRequestResult`.
  - Tests: Added success and failure coverage for `TryPostMultipart` in `tests/Request.Test.pas`.
  - Session tests: Added multipart upload success/failure tests using `THttpSession.Post` with a manually constructed multipart body.
+ - `TResponse` helpers:
+  - `IsSuccessStatus` to quickly check for 2xx responses.
+  - `SaveToFile(FilePath)` to persist the response body as UTF-8 bytes.
+  - `SetHeadersText` (internal) to allow session API to populate response headers.
+- Session API now captures response headers into `TResponse` so `Response.HeaderValue(...)` works consistently across stateless and session styles.
+- Tests:
+  - `Test23_IsSuccessStatus` and `Test24_SaveToFile` in `tests/Request.Test.pas`.
+  - `Test26_Session_ResponseHeaderValue` in `tests/Request.Session.Test.pas`.
 
 ### Changed
 
