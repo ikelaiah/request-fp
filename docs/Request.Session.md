@@ -142,7 +142,7 @@ end;
 
 ## Error Handling
 
-All HTTP errors raise `ERequestError`. Use try-except blocks for robust error handling:
+All session methods may raise `ERequestError` for transport failures and non-2xx HTTP statuses. Use try-except blocks for robust error handling:
 ```pascal
 try
   Response := Session.Get('/data');
@@ -151,6 +151,10 @@ except
     WriteLn('HTTP Error: ', E.Message);
 end;
 ```
+
+### JSON Parse Errors
+
+Calling `Response.JSON` parses the current response body. If the content is not valid JSON, an `ERequestError` is raised with the prefix "JSON Parse Error". Access `Response.Text` for raw content if parsing is not desired.
 
 ## API Reference
 
@@ -232,11 +236,38 @@ begin
 end;
 ```
 
+### Session Multipart Upload
+
+While the session API does not expose a dedicated multipart helper, you can send multipart/form-data by constructing the body and content-type:
+
+```pascal
+var
+  Session: THttpSession;
+  Boundary, Body, CRLF: string;
+  Response: TResponse;
+begin
+  Session.Init;
+  Session.SetBaseURL('https://api.example.com');
+  Boundary := '----RequestFP' + IntToStr(Random(100000));
+  CRLF := #13#10;
+  Body := '--' + Boundary + CRLF +
+          'Content-Disposition: form-data; name="field1"' + CRLF + CRLF +
+          'value1' + CRLF +
+          '--' + Boundary + '--' + CRLF;
+  Response := Session.Post('/upload', Body, 'multipart/form-data; boundary=' + Boundary);
+  if Response.StatusCode = 200 then
+    WriteLn('Uploaded');
+end;
+```
+
+For an exception-free variant using the procedural API, see `Http.TryPostMultipart(...)` documented in `docs/Request.md`.
+
 ## Testing and Development
 
 - Add the `src` directory to your project
 - Use `Request.Session` in your `uses` clause
-- Run tests in the `tests` directory for validation
+- Tests target `https://httpbin.org` and require outbound network access in CI
+- Some httpbin upstreams can intermittently return 502; the test suite includes a minimal one-time retry on HTTP 502 to reduce flakiness. Core library behavior is unchanged.
 
 ## Best Practices
 

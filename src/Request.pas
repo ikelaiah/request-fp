@@ -7,11 +7,18 @@ interface
 
 uses
   Classes, SysUtils, fphttpclient, opensslsockets, openssl, base64,
-  URIParser, HTTPDefs, sockets, fpjson, jsonparser, jsonscanner
+  URIParser, HTTPDefs, sockets, fpjson, jsonparser, jsonscanner,
+  httpprotocol
   {$IFDEF UNIX}, BaseUnix{$ENDIF};
 
 const
-  DEBUG_MODE = False;  // Set to True for debug output
+  REQUEST_FP_VERSION = '1.0.0';
+  DEFAULT_USER_AGENT = 'Request-FP/' + REQUEST_FP_VERSION;
+  {$IFDEF DEBUG}
+    DEBUG_MODE = True;
+  {$ELSE}
+    DEBUG_MODE = False;
+  {$ENDIF}
 
 type
   { Exception class for HTTP request operations }
@@ -60,6 +67,12 @@ type
 
     // Returns the value of a response header (case-insensitive), or empty string if not found
     function HeaderValue(const Name: string): string;
+    // Sets raw header text captured from the HTTP client (for use by session API)
+    procedure SetHeadersText(const AHeaders: string);
+    // True if status is within 200..299
+    function IsSuccessStatus: Boolean;
+    // Saves response body to a file (UTF-8 as stored in Text)
+    procedure SaveToFile(const FilePath: string);
     
     { Helper method to set the response content and JSON data }
     procedure SetContent(const AContent: string; AJSON: TJSONData = nil);
@@ -301,6 +314,14 @@ type
         end;
     }
     class function TryPost(const URL: string; const Data: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult; static;
+    {
+      @description Performs a HTTP PUT request with error handling
+    }
+    class function TryPut(const URL: string; const Data: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult; static;
+    {
+      @description Performs a HTTP DELETE request with error handling
+    }
+    class function TryDelete(const URL: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult; static;
     
     {
       @description Performs a simple HTTP POST request with multipart/form-data
@@ -349,10 +370,21 @@ type
     class function TryGet(const URL: string; const Headers: array of TKeyValue): TRequestResult; static; overload;
     class function TryPost(const URL: string; const Data: string): TRequestResult; static; overload;
     class function TryPost(const URL: string; const Data: string; const Headers: array of TKeyValue): TRequestResult; static; overload;
+    class function TryPut(const URL: string; const Data: string): TRequestResult; static; overload;
+    class function TryPut(const URL: string; const Data: string; const Headers: array of TKeyValue): TRequestResult; static; overload;
+    class function TryDelete(const URL: string): TRequestResult; static; overload;
+    class function TryDelete(const URL: string; const Headers: array of TKeyValue): TRequestResult; static; overload;
+    // TryPostMultipart variants
+    class function TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult; static;
     // Ergonomic overloads for PostMultipart
     class function PostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TResponse; static; overload;
     class function PostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue): TResponse; static; overload;
+    // Ergonomic overloads for TryPostMultipart
+    class function TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TRequestResult; static; overload;
+    class function TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue): TRequestResult; static; overload;
   end;
+
+
 
 const
   Http: THttp = ();
@@ -362,6 +394,48 @@ implementation
 var
   SSLInitialized: Boolean = False;
   FallbackToHttp: Boolean = False;  // For testing environments without OpenSSL
+ 
+function ReadStreamAsUTF8String(AStream: TStream): string;
+var
+  Raw: RawByteString;
+  Len: SizeInt;
+begin
+  Len := AStream.Size;
+  SetLength(Raw, Len);
+  if Len > 0 then
+  begin
+    AStream.Position := 0;
+    AStream.ReadBuffer(Pointer(Raw)^, Len);
+  end;
+  // Mark bytes as UTF-8 without conversion
+  SetCodePage(Raw, CP_UTF8, False);
+  Result := string(Raw);
+end;
+  
+function EncodeURIComponent(const S: string): string;
+const
+  Unreserved = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~';
+var
+  Bytes: RawByteString;
+  I: SizeInt;
+  B: Byte;
+begin
+  // Convert to UTF-8 bytes explicitly
+  Bytes := UTF8Encode(S);
+  Result := '';
+  for I := 1 to Length(Bytes) do
+  begin
+    B := Byte(Bytes[I]);
+    if Chr(B) in [
+      'A'..'Z','a'..'z','0'..'9','-','_','.','~'
+    ] then
+      Result := Result + Chr(B)
+    else if B = Ord(' ') then
+      Result := Result + '%20'
+    else
+      Result := Result + '%' + IntToHex(B, 2);
+  end;
+end;
 
 {
   @description Initializes the OpenSSL library for HTTPS requests
@@ -525,7 +599,105 @@ begin
   end;
 end;
 
+procedure TResponse.SetHeadersText(const AHeaders: string);
+begin
+  FHeaders := AHeaders;
+end;
+
+function TResponse.IsSuccessStatus: Boolean;
+begin
+  Result := (StatusCode >= 200) and (StatusCode <= 299);
+end;
+
+procedure TResponse.SaveToFile(const FilePath: string);
+var
+  FS: TFileStream;
+  Bytes: RawByteString;
+begin
+  // Persist the raw UTF-8 bytes corresponding to Text
+  Bytes := UTF8Encode(FContent);
+  FS := TFileStream.Create(FilePath, fmCreate);
+  try
+    if Length(Bytes) > 0 then
+      FS.WriteBuffer(Pointer(Bytes)^, Length(Bytes));
+  finally
+    FS.Free;
+  end;
+end;
+
 { THttp }
+
+class function THttp.TryPut(const URL: string; const Data: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult;
+begin
+  try
+    Result.Response := Put(URL, Data, Headers, Params);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+    begin
+      Result.Success := False;
+      Result.Error := E.Message;
+      Result.Response.FContent := '';
+      Result.Response.FHeaders := '';
+      Result.Response.StatusCode := 0;
+      Result.Response.FJSON := nil;
+    end;
+  end;
+end;
+
+class function THttp.TryDelete(const URL: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult;
+begin
+  try
+    Result.Response := Delete(URL, Headers, Params);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+    begin
+      Result.Success := False;
+      Result.Error := E.Message;
+      Result.Response.FContent := '';
+      Result.Response.FHeaders := '';
+      Result.Response.StatusCode := 0;
+      Result.Response.FJSON := nil;
+    end;
+  end;
+end;
+
+// Overload: TryPut without headers/params
+class function THttp.TryPut(const URL: string; const Data: string): TRequestResult;
+const
+  EmptyHeaders: array of TKeyValue = nil;
+  EmptyParams: array of TKeyValue = nil;
+begin
+  Result := TryPut(URL, Data, EmptyHeaders, EmptyParams);
+end;
+
+// Overload: TryPut with headers only
+class function THttp.TryPut(const URL: string; const Data: string; const Headers: array of TKeyValue): TRequestResult;
+const
+  EmptyParams: array of TKeyValue = nil;
+begin
+  Result := TryPut(URL, Data, Headers, EmptyParams);
+end;
+
+// Overload: TryDelete without headers/params
+class function THttp.TryDelete(const URL: string): TRequestResult;
+const
+  EmptyHeaders: array of TKeyValue = nil;
+  EmptyParams: array of TKeyValue = nil;
+begin
+  Result := TryDelete(URL, EmptyHeaders, EmptyParams);
+end;
+
+// Overload: TryDelete with headers only
+class function THttp.TryDelete(const URL: string; const Headers: array of TKeyValue): TRequestResult;
+const
+  EmptyParams: array of TKeyValue = nil;
+begin
+  Result := TryDelete(URL, Headers, EmptyParams);
+end;
 
 class function THttp.Get(const URL: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse;
 var
@@ -578,7 +750,7 @@ begin
     for I := 0 to High(Params) do
     begin
       if QueryStr <> '' then QueryStr := QueryStr + '&';
-      QueryStr := QueryStr + Params[I].Key + '=' + Params[I].Value;
+      QueryStr := QueryStr + EncodeURIComponent(Params[I].Key) + '=' + EncodeURIComponent(Params[I].Value);
     end;
     // Build final URL
     FinalURL := MutableURL;
@@ -593,19 +765,12 @@ begin
     try
       // Set default User-Agent if none specified
       if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
-        Client.AddHeader('User-Agent', 'TidyKit/1.0');
+        Client.AddHeader('User-Agent', DEFAULT_USER_AGENT);
       Client.HTTPMethod('GET', FinalURL, ResponseStream, []);
       Result.StatusCode := Client.ResponseStatusCode;
       Result.FHeaders := Client.ResponseHeaders.Text;
-      // Convert response to string
-      ContentStream := TStringStream.Create('');
-      try
-        ResponseStream.Position := 0;
-        ContentStream.LoadFromStream(ResponseStream);
-        Result.FContent := ContentStream.DataString;
-      finally
-        ContentStream.Free;
-      end;
+      // Convert response bytes to UTF-8 string explicitly
+      Result.FContent := ReadStreamAsUTF8String(ResponseStream);
     except
       on E: Exception do
       begin
@@ -681,7 +846,7 @@ begin
     for I := 0 to High(Params) do
     begin
       if QueryStr <> '' then QueryStr := QueryStr + '&';
-      QueryStr := QueryStr + Params[I].Key + '=' + Params[I].Value;
+      QueryStr := QueryStr + EncodeURIComponent(Params[I].Key) + '=' + EncodeURIComponent(Params[I].Value);
     end;
     // Build final URL
     FinalURL := MutableURL;
@@ -696,7 +861,7 @@ begin
     try
       // Set default User-Agent if none specified
       if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
-        Client.AddHeader('User-Agent', 'TidyKit/1.0');
+        Client.AddHeader('User-Agent', DEFAULT_USER_AGENT);
       
       // Set Content-Type for form data if not already set
       if (Data <> '') and (Client.RequestHeaders.IndexOfName('Content-Type') < 0) then
@@ -719,15 +884,8 @@ begin
       Result.StatusCode := Client.ResponseStatusCode;
       Result.FHeaders := Client.ResponseHeaders.Text;
       
-      // Convert response to string
-      ContentStream := TStringStream.Create('');
-      try
-        ResponseStream.Position := 0;
-        ContentStream.LoadFromStream(ResponseStream);
-        Result.FContent := ContentStream.DataString;
-      finally
-        ContentStream.Free;
-      end;
+      // Convert response bytes to UTF-8 string explicitly
+      Result.FContent := ReadStreamAsUTF8String(ResponseStream);
       
     except
       on E: Exception do
@@ -806,7 +964,7 @@ begin
     for I := 0 to High(Params) do
     begin
       if QueryStr <> '' then QueryStr := QueryStr + '&';
-      QueryStr := QueryStr + Params[I].Key + '=' + Params[I].Value;
+      QueryStr := QueryStr + EncodeURIComponent(Params[I].Key) + '=' + EncodeURIComponent(Params[I].Value);
     end;
     // Build final URL
     FinalURL := MutableURL;
@@ -821,7 +979,7 @@ begin
     try
       // Set default User-Agent if none specified
       if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
-        Client.AddHeader('User-Agent', 'TidyKit/1.0');
+        Client.AddHeader('User-Agent', DEFAULT_USER_AGENT);
       
       // Set Content-Type for form data if not already set
       if (Data <> '') and (Client.RequestHeaders.IndexOfName('Content-Type') < 0) then
@@ -844,15 +1002,8 @@ begin
       Result.StatusCode := Client.ResponseStatusCode;
       Result.FHeaders := Client.ResponseHeaders.Text;
       
-      // Convert response to string
-      ContentStream := TStringStream.Create('');
-      try
-        ResponseStream.Position := 0;
-        ContentStream.LoadFromStream(ResponseStream);
-        Result.FContent := ContentStream.DataString;
-      finally
-        ContentStream.Free;
-      end;
+      // Convert response bytes to UTF-8 string explicitly
+      Result.FContent := ReadStreamAsUTF8String(ResponseStream);
       
     except
       on E: Exception do
@@ -930,7 +1081,7 @@ begin
     for I := 0 to High(Params) do
     begin
       if QueryStr <> '' then QueryStr := QueryStr + '&';
-      QueryStr := QueryStr + Params[I].Key + '=' + Params[I].Value;
+      QueryStr := QueryStr + EncodeURIComponent(Params[I].Key) + '=' + EncodeURIComponent(Params[I].Value);
     end;
     // Build final URL
     FinalURL := MutableURL;
@@ -945,22 +1096,15 @@ begin
     try
       // Set default User-Agent if none specified
       if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
-        Client.AddHeader('User-Agent', 'TidyKit/1.0');
+        Client.AddHeader('User-Agent', DEFAULT_USER_AGENT);
         
       Client.HTTPMethod('DELETE', FinalURL, ResponseStream, []);
       
       Result.StatusCode := Client.ResponseStatusCode;
       Result.FHeaders := Client.ResponseHeaders.Text;
       
-      // Convert response to string
-      ContentStream := TStringStream.Create('');
-      try
-        ResponseStream.Position := 0;
-        ContentStream.LoadFromStream(ResponseStream);
-        Result.FContent := ContentStream.DataString;
-      finally
-        ContentStream.Free;
-      end;
+      // Convert response bytes to UTF-8 string explicitly
+      Result.FContent := ReadStreamAsUTF8String(ResponseStream);
       
     except
       on E: Exception do
@@ -1039,7 +1183,7 @@ begin
     for I := 0 to High(Params) do
     begin
       if QueryStr <> '' then QueryStr := QueryStr + '&';
-      QueryStr := QueryStr + Params[I].Key + '=' + Params[I].Value;
+      QueryStr := QueryStr + EncodeURIComponent(Params[I].Key) + '=' + EncodeURIComponent(Params[I].Value);
     end;
     // Build final URL
     FinalURL := MutableURL;
@@ -1055,7 +1199,7 @@ begin
       Client.RequestHeaders.Add('Content-Type: application/json');
       // Set default User-Agent if none specified
       if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
-        Client.AddHeader('User-Agent', 'TidyKit/1.0');
+        Client.AddHeader('User-Agent', DEFAULT_USER_AGENT);
       
       // Set request body with JSON data using TStringStream
       RequestStream := TStringStream.Create(JSON);
@@ -1069,15 +1213,8 @@ begin
       Result.StatusCode := Client.ResponseStatusCode;
       Result.FHeaders := Client.ResponseHeaders.Text;
       
-      // Convert response to string
-      ContentStream := TStringStream.Create('');
-      try
-        ResponseStream.Position := 0;
-        ContentStream.LoadFromStream(ResponseStream);
-        Result.FContent := ContentStream.DataString;
-      finally
-        ContentStream.Free;
-      end;
+      // Convert response bytes to UTF-8 string explicitly
+      Result.FContent := ReadStreamAsUTF8String(ResponseStream);
       
     except
       on E: Exception do
@@ -1245,21 +1382,23 @@ begin
 
     // Set headers
     Client.RequestHeaders.Add('Content-Type: multipart/form-data; boundary=' + Boundary);
-    if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
-      Client.AddHeader('User-Agent', 'Request-FP/1.0');
+    // Note: default User-Agent will be added after custom headers to avoid duplicates
 
     // Execute request
     try
       // Add custom headers
       for I := 0 to High(Headers) do
         Client.RequestHeaders.Add(Headers[I].Key + ': ' + Headers[I].Value);
+      // Set default User-Agent if none specified (after applying custom headers)
+      if Client.RequestHeaders.IndexOfName('User-Agent') < 0 then
+        Client.AddHeader('User-Agent', DEFAULT_USER_AGENT);
       
-      // Build query string from Params
+      // Build query string from Params (URL-encoded)
       QueryStr := '';
       for I := 0 to High(Params) do
       begin
         if QueryStr <> '' then QueryStr := QueryStr + '&';
-        QueryStr := QueryStr + Params[I].Key + '=' + Params[I].Value;
+        QueryStr := QueryStr + EncodeURIComponent(Params[I].Key) + '=' + EncodeURIComponent(Params[I].Value);
       end;
       
       // Build final URL
@@ -1276,15 +1415,8 @@ begin
       Client.HTTPMethod('POST', FinalURL, ResponseStream, []);
       Result.StatusCode := Client.ResponseStatusCode;
       Result.FHeaders := Client.ResponseHeaders.Text;
-      // Read response body into FContent (same as other methods)
-      ContentStream := TStringStream.Create('');
-      try
-        ResponseStream.Position := 0;
-        ContentStream.LoadFromStream(ResponseStream);
-        Result.FContent := ContentStream.DataString;
-      finally
-        ContentStream.Free;
-      end;
+      // Read response body into FContent as UTF-8
+      Result.FContent := ReadStreamAsUTF8String(ResponseStream);
       
     except
       on E: Exception do
@@ -1381,6 +1513,25 @@ begin
   Result := TryPost(URL, Data, Headers, []);
 end;
 
+class function THttp.TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult;
+begin
+  try
+    Result.Response := PostMultipart(URL, Fields, Files, Headers, Params);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+    begin
+      Result.Success := False;
+      Result.Error := E.Message;
+      Result.Response.FContent := '';
+      Result.Response.FHeaders := '';
+      Result.Response.StatusCode := 0;
+      Result.Response.FJSON := nil;
+    end;
+  end;
+end;
+
 // Ergonomic overloads for PostMultipart
 class function THttp.PostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TResponse;
 begin
@@ -1390,6 +1541,17 @@ end;
 class function THttp.PostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue): TResponse;
 begin
   Result := PostMultipart(URL, Fields, Files, Headers, []);
+end;
+
+// Ergonomic overloads for TryPostMultipart
+class function THttp.TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TRequestResult;
+begin
+  Result := TryPostMultipart(URL, Fields, Files, [], []);
+end;
+
+class function THttp.TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue): TRequestResult;
+begin
+  Result := TryPostMultipart(URL, Fields, Files, Headers, []);
 end;
 
 initialization

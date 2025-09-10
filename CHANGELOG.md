@@ -2,6 +2,58 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- (none)
+
+### Changed
+
+- (none)
+
+### Fixed
+
+- (none)
+
+
+## [1.0.0] - 2025-09-08
+
+### Added
+
+- Test suite enhancements and coverage: URL encoding, JSON access errors, Try* behavior, and header extraction via `Response.HeaderValue`.
+ - Request API: `TryPostMultipart(...)` with ergonomic overloads, mirroring existing `Try*` patterns. Provides exception-free multipart uploads returning `TRequestResult`.
+ - Tests: Added success and failure coverage for `TryPostMultipart` in `tests/Request.Test.pas`.
+ - Session tests: Added multipart upload success/failure tests using `THttpSession.Post` with a manually constructed multipart body.
+ - `TResponse` helpers:
+  - `IsSuccessStatus` to quickly check for 2xx responses.
+  - `SaveToFile(FilePath)` to persist the response body as UTF-8 bytes.
+  - `SetHeadersText` (internal) to allow session API to populate response headers.
+- Session API now captures response headers into `TResponse` so `Response.HeaderValue(...)` works consistently across stateless and session styles.
+- Tests:
+  - `Test23_IsSuccessStatus` and `Test24_SaveToFile` in `tests/Request.Test.pas`.
+  - `Test26_Session_ResponseHeaderValue` in `tests/Request.Session.Test.pas`.
+
+### Changed
+
+- Documentation updates across `README.md`, `docs/Request.md`, `docs/Request.Session.md`, and `docs/Cheat-Sheet.md`:
+  - Clarified Try* behavior (never raises; uses `TRequestResult`).
+  - Documented JSON parse errors raising `ERequestError` with a clear prefix.
+  - Added examples for `Response.HeaderValue()`.
+  - Added CI/testing notes about `httpbin.org` usage and intermittent upstream 502.
+  
+  
+- Query parameter encoding now follows strict RFC 3986 over UTF-8 bytes for consistent behavior on Windows and Linux.
+ - Documentation updates to include `TryPostMultipart` usage and behavior across `docs/Request.md`, `docs/Request.Session.md`, and `docs/Cheat-Sheet.md`.
+
+### Fixed
+
+- Stabilized flaky HTTP tests by adding a minimal one-time retry on transient HTTP 502 responses in tests only (no change to core library behavior).
+- Fixed UTF-8 URL parameter percent-encoding on Linux; now percent-encoding and decoding are identical across platforms.
+- Fixed HTTP response body decoding by reading raw bytes and explicitly treating them as UTF-8, preventing mojibake when parsing JSON.
+- Ensured JSON-related tests involving Unicode characters pass consistently on both Windows and Ubuntu.
+ - Stabilized multipart tests against intermittent httpbin 502 by adding a one-time retry in the test code (no internal retry in the library).
+
 ## [0.6.0] - 2025-07-01
 
 ### Added

@@ -22,16 +22,31 @@ type
     // Content handling
     procedure Test09_JSONRequest;
     procedure Test10_FormDataRequest;
+    procedure Test18_URLParamEncoding;
+    procedure Test19_JSONAccessOnNonJSONRaises;
     
     // Error handling
     procedure Test11_TryGetSuccess;
     procedure Test12_TryGetFailure;
+    procedure Test13_TryPostSuccess;
+    procedure Test13b_TryPostFailure;
+    procedure Test20_TryPolicy_4xx5xx;
     
     // Multipart upload tests
     procedure Test14_MultipartUpload_Static;
     
     // Custom headers and parameters
     procedure Test15_CustomHeadersAndParams;
+    procedure Test16_TryPutSuccess;
+    procedure Test16b_TryPutFailure;
+    procedure Test17_TryDeleteSuccess;
+    procedure Test17b_TryDeleteFailure;
+    procedure Test21_HeaderValueExtraction;
+    procedure Test22_TryPostMultipartSuccess;
+    procedure Test22b_TryPostMultipartFailure;
+    // New helper coverage
+    procedure Test23_IsSuccessStatus;
+    procedure Test24_SaveToFile;
   end;
 
 implementation
@@ -41,6 +56,9 @@ var
   Response: TResponse;
 begin
   Response := Http.Get('https://httpbin.org/get');
+  // Retry once on transient upstream 502 from httpbin
+  if Response.StatusCode = 502 then
+    Response := Http.Get('https://httpbin.org/get');
   AssertEquals('Status code should be 200', 200, Response.StatusCode);
   AssertTrue('Response content should not be empty', Response.Text <> '');
   AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
@@ -63,6 +81,44 @@ begin
   finally
     // Don't free FormData as it's owned by Response.JSON
   end;
+end;
+
+procedure TRequestSimpleTests.Test18_URLParamEncoding;
+var
+  Response: TResponse;
+  JsonObj: TJSONObject;
+  Q, U: string;
+begin
+  Q := 'hello world';
+  U := 'üñîçødé & symbols?';
+  Response := Http.Get('https://httpbin.org/get', [], [
+    TKeyValue.Create('q', Q),
+    TKeyValue.Create('u', U)
+  ]);
+  AssertEquals('Status code should be 200', 200, Response.StatusCode);
+  JsonObj := TJSONObject(Response.JSON);
+  try
+    AssertEquals('Query q should be decoded correctly', Q, JsonObj.FindPath('args.q').AsString);
+    AssertEquals('Query u should be decoded correctly', U, JsonObj.FindPath('args.u').AsString);
+  finally
+  end;
+end;
+
+procedure TRequestSimpleTests.Test19_JSONAccessOnNonJSONRaises;
+var
+  Response: TResponse;
+  RaisedErr: Boolean;
+begin
+  Response := Http.Get('https://httpbin.org/html');
+  AssertEquals('Status code should be 200', 200, Response.StatusCode);
+  RaisedErr := False;
+  try
+    if Assigned(Response.JSON) then; // force JSON parsing
+  except
+    on E: ERequestError do
+      RaisedErr := Pos('JSON Parse Error', E.Message) = 1;
+  end;
+  AssertTrue('Accessing JSON on non-JSON should raise ERequestError', RaisedErr);
 end;
 
 procedure TRequestSimpleTests.Test03_SimplePut;
@@ -147,6 +203,43 @@ begin
   AssertTrue('Error message should not be empty', Result.Error <> '');
 end;
 
+procedure TRequestSimpleTests.Test13_TryPostSuccess;
+var
+  R: TRequestResult;
+begin
+  R := Http.TryPost('https://httpbin.org/post', 'x=1&y=2');
+  AssertTrue('TryPost should succeed', R.Success);
+  AssertEquals('Status code should be 200', 200, R.Response.StatusCode);
+  AssertTrue('Response should be valid JSON', Assigned(R.Response.JSON));
+  AssertEquals('No error message expected', '', R.Error);
+end;
+
+procedure TRequestSimpleTests.Test13b_TryPostFailure;
+var
+  R: TRequestResult;
+begin
+  R := Http.TryPost('https://nonexistent.example.com', 'x=1');
+  AssertFalse('TryPost should fail', R.Success);
+  AssertTrue('Error should be populated', R.Error <> '');
+end;
+
+procedure TRequestSimpleTests.Test20_TryPolicy_4xx5xx;
+var
+  R4, R5: TRequestResult;
+begin
+  // 404
+  R4 := Http.TryGet('https://httpbin.org/status/404');
+  AssertTrue('TryGet should not treat 404 as transport failure', R4.Success);
+  AssertEquals('Status code should be 404', 404, R4.Response.StatusCode);
+  AssertEquals('No transport error expected', '', R4.Error);
+
+  // 500
+  R5 := Http.TryGet('https://httpbin.org/status/500');
+  AssertTrue('TryGet should not treat 500 as transport failure', R5.Success);
+  AssertEquals('Status code should be 500', 500, R5.Response.StatusCode);
+  AssertEquals('No transport error expected', '', R5.Error);
+end;
+
 procedure TRequestSimpleTests.Test14_MultipartUpload_Static;
 var
   Response: TResponse;
@@ -164,6 +257,11 @@ begin
   Response := Http.PostMultipart('https://httpbin.org/post', 
     [TKeyValue.Create('staticfield', 'staticvalue')],
     [TKeyValue.Create('file2', TempFile)]);
+  // Retry once on transient upstream 502 from httpbin
+  if Response.StatusCode = 502 then
+    Response := Http.PostMultipart('https://httpbin.org/post', 
+      [TKeyValue.Create('staticfield', 'staticvalue')],
+      [TKeyValue.Create('file2', TempFile)]);
 
   AssertEquals('Status code should be 200', 200, Response.StatusCode);
   AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
@@ -198,6 +296,11 @@ begin
   Response := Http.Get('https://httpbin.org/get', 
     [TKeyValue.Create('X-Test-Header', 'HeaderValue')],
     [TKeyValue.Create('foo', 'bar'), TKeyValue.Create('baz', 'qux')]);
+  // Retry once on transient upstream 502 from httpbin
+  if Response.StatusCode = 502 then
+    Response := Http.Get('https://httpbin.org/get', 
+      [TKeyValue.Create('X-Test-Header', 'HeaderValue')],
+      [TKeyValue.Create('foo', 'bar'), TKeyValue.Create('baz', 'qux')]);
   AssertEquals('Status code should be 200', 200, Response.StatusCode);
   AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
   JsonObj := TJSONObject(Response.JSON);
@@ -207,6 +310,153 @@ begin
     AssertEquals('Query param baz', 'qux', JsonObj.FindPath('args.baz').AsString);
   finally
     // Do not free JsonObj
+  end;
+end;
+
+procedure TRequestSimpleTests.Test16_TryPutSuccess;
+var
+  R: TRequestResult;
+begin
+  R := Http.TryPut('https://httpbin.org/put', 'a=updated');
+  AssertTrue('TryPut should succeed', R.Success);
+  AssertEquals('Status code should be 200', 200, R.Response.StatusCode);
+  AssertTrue('Response should be valid JSON', Assigned(R.Response.JSON));
+  AssertEquals('No error message expected', '', R.Error);
+end;
+
+procedure TRequestSimpleTests.Test16b_TryPutFailure;
+var
+  R: TRequestResult;
+begin
+  R := Http.TryPut('https://nonexistent.example.com', 'a=b');
+  AssertFalse('TryPut should fail', R.Success);
+  AssertTrue('Error should be populated', R.Error <> '');
+end;
+
+procedure TRequestSimpleTests.Test17_TryDeleteSuccess;
+var
+  R: TRequestResult;
+begin
+  R := Http.TryDelete('https://httpbin.org/delete');
+  AssertTrue('TryDelete should succeed', R.Success);
+  AssertEquals('Status code should be 200', 200, R.Response.StatusCode);
+  AssertTrue('Response should be valid JSON', Assigned(R.Response.JSON));
+  AssertEquals('No error message expected', '', R.Error);
+end;
+
+procedure TRequestSimpleTests.Test17b_TryDeleteFailure;
+var
+  R: TRequestResult;
+begin
+  R := Http.TryDelete('https://nonexistent.example.com');
+  AssertFalse('TryDelete should fail', R.Success);
+  AssertTrue('Error should be populated', R.Error <> '');
+end;
+
+procedure TRequestSimpleTests.Test21_HeaderValueExtraction;
+var
+  Response: TResponse;
+  CT: string;
+begin
+  Response := Http.Get('https://httpbin.org/get');
+  AssertEquals('Status code should be 200', 200, Response.StatusCode);
+  CT := Response.HeaderValue('Content-Type');
+  AssertTrue('Content-Type header should exist', CT <> '');
+  AssertTrue('Content-Type should indicate JSON', Pos('application/json', LowerCase(CT)) > 0);
+end;
+
+procedure TRequestSimpleTests.Test22_TryPostMultipartSuccess;
+var
+  R: TRequestResult;
+  TempFile: string;
+  F: TextFile;
+  Form, FilesObj: TJSONObject;
+begin
+  // Prepare a temp file to upload
+  TempFile := GetTempDir + 'test_upload_try_mp.txt';
+  AssignFile(F, TempFile);
+  Rewrite(F);
+  WriteLn(F, 'TryPostMultipart content');
+  CloseFile(F);
+
+  R := Http.TryPostMultipart('https://httpbin.org/post',
+    [TKeyValue.Create('staticfield', 'staticvalue')],
+    [TKeyValue.Create('file2', TempFile)]);
+  // Retry once on transient upstream 502 from httpbin
+  if R.Success and (R.Response.StatusCode = 502) then
+    R := Http.TryPostMultipart('https://httpbin.org/post',
+      [TKeyValue.Create('staticfield', 'staticvalue')],
+      [TKeyValue.Create('file2', TempFile)]);
+
+  AssertTrue('TryPostMultipart should succeed (transport)', R.Success);
+  AssertEquals('Status code should be 200', 200, R.Response.StatusCode);
+  AssertTrue('Response should be valid JSON', Assigned(R.Response.JSON));
+
+  // Validate form and files in response JSON
+  Form := TJSONObject(R.Response.JSON.FindPath('form'));
+  try
+    AssertTrue('Form object should exist', Form <> nil);
+    AssertEquals('Form field value', 'staticvalue', Form.Get('staticfield', ''));
+  finally
+  end;
+
+  FilesObj := TJSONObject(R.Response.JSON.FindPath('files'));
+  try
+    AssertTrue('Files object should exist', FilesObj <> nil);
+    AssertTrue('Uploaded file should be present', FilesObj.Find('file2') <> nil);
+  finally
+  end;
+
+  // Cleanup
+  DeleteFile(TempFile);
+end;
+
+procedure TRequestSimpleTests.Test22b_TryPostMultipartFailure;
+var
+  R: TRequestResult;
+begin
+  R := Http.TryPostMultipart('https://nonexistent.example.com',
+    [TKeyValue.Create('a', '1')], []);
+  AssertFalse('TryPostMultipart should fail on nonexistent host', R.Success);
+  AssertTrue('Error should be populated', R.Error <> '');
+end;
+
+procedure TRequestSimpleTests.Test23_IsSuccessStatus;
+var
+  R200, R404: TResponse;
+begin
+  R200 := Http.Get('https://httpbin.org/get');
+  // Retry once on transient upstream 502 from httpbin
+  if R200.StatusCode = 502 then
+    R200 := Http.Get('https://httpbin.org/get');
+  AssertTrue('200 should be success', R200.IsSuccessStatus);
+
+  R404 := Http.Get('https://httpbin.org/status/404');
+  AssertFalse('404 should not be success', R404.IsSuccessStatus);
+end;
+
+procedure TRequestSimpleTests.Test24_SaveToFile;
+var
+  R: TResponse;
+  TempFile: string;
+  Info: TSearchRec;
+  HasFile: Boolean;
+begin
+  R := Http.PostJSON('https://httpbin.org/post', '{"a":1}');
+  AssertEquals('Status code should be 200', 200, R.StatusCode);
+  TempFile := GetTempDir + 'request_fp_save_test.txt';
+  try
+    R.SaveToFile(TempFile);
+    HasFile := FindFirst(TempFile, faAnyFile, Info) = 0;
+    try
+      AssertTrue('File should exist after SaveToFile', HasFile);
+      AssertTrue('File size should be > 0', Info.Size > 0);
+    finally
+      if HasFile then FindClose(Info);
+    end;
+  finally
+    // Cleanup regardless of assertions
+    if FileExists(TempFile) then DeleteFile(TempFile);
   end;
 end;
 

@@ -23,6 +23,7 @@ A lightweight, memory-safe HTTP client for Free Pascal that uses advanced record
   - [Advanced Usage Examples](#advanced-usage-examples)
     - [Multipart File Uploads](#multipart-file-uploads)
     - [Custom Headers and Query Parameters](#custom-headers-and-query-parameters)
+    - [Checking Success and Saving to File](#checking-success-and-saving-to-file)
   - [Testing and Development](#testing-and-development)
   - [Best Practices](#best-practices)
 
@@ -30,7 +31,7 @@ A lightweight, memory-safe HTTP client for Free Pascal that uses advanced record
 
 - Zero-setup memory management using advanced records
 - Simple procedural interface for expressive request building
-- Support for common HTTP methods (GET, POST, PUT, DELETE, PATCH)
+- Support for common HTTP methods (GET, POST, PUT, DELETE)
 - Seamless JSON integration with FPC's standard fpjson unit
 - Error handling with result pattern
 - Cross-platform support for Windows and Linux
@@ -92,6 +93,12 @@ else
   WriteLn('Error: ', Result.Error);
 ```
 
+### Behavior Summary
+
+- The procedural methods like `Http.Get/Post/Put/Delete/...` may raise `ERequestError` for transport issues (network/SSL/timeout). They still return non-2xx responses without raising.
+- The Try* methods like `Http.TryGet/TryPost/TryPut/TryDelete` never raise exceptions. Inspect `Result.Success`, `Result.Error`, and `Result.Response`.
+- Accessing `Response.JSON` parses the current `Response.Text`. If content is not valid JSON, an `ERequestError` is raised with prefix "JSON Parse Error".
+
 ### SSL/TLS Errors
 
 If SSL libraries are missing, the library will provide a clear error message with installation instructions.
@@ -104,6 +111,10 @@ If SSL libraries are missing, the library will provide a clear error message wit
 - `Text: string` — Response body as text
 - `JSON: TJSONData` — Parsed JSON response (if applicable)
 - `HeaderValue(const Name: string): string` — Get a response header value
+- `IsSuccessStatus: Boolean` — True if `StatusCode` is 2xx
+- `SaveToFile(const FilePath: string)` — Save the response body to a file (UTF-8)
+
+Note: Response headers are captured for both the stateless (`Request`) and session (`Request.Session`) APIs, so `HeaderValue` works consistently in all cases.
 
 ### TRequestResult Record
 
@@ -123,6 +134,9 @@ All procedural/stateless HTTP methods support optional custom headers and query 
 - `Http.PostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue = []; const Params: array of TKeyValue = []): TResponse`
 - `Http.TryGet(const URL: string; const Headers: array of TKeyValue = []; const Params: array of TKeyValue = []): TRequestResult`
 - `Http.TryPost(const URL: string; const Data: string = ''; const Headers: array of TKeyValue = []; const Params: array of TKeyValue = []): TRequestResult`
+- `Http.TryPut(const URL: string; const Data: string = ''; const Headers: array of TKeyValue = []; const Params: array of TKeyValue = []): TRequestResult`
+- `Http.TryDelete(const URL: string; const Headers: array of TKeyValue = []; const Params: array of TKeyValue = []): TRequestResult`
+- `Http.TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue = []; const Params: array of TKeyValue = []): TRequestResult`
 
 ## Advanced Usage Examples
 
@@ -134,6 +148,21 @@ Response := Http.PostMultipart('https://api.example.com/upload',
   [TKeyValue.Create('file1', 'myfile.txt')]);
 ```
 
+### Multipart Uploads with Try-pattern
+
+```pascal
+var R: TRequestResult;
+begin
+  R := Http.TryPostMultipart('https://api.example.com/upload',
+    [TKeyValue.Create('field1', 'value1')],
+    [TKeyValue.Create('file1', 'myfile.txt')]);
+  if R.Success and (R.Response.StatusCode = 200) then
+    WriteLn('Uploaded OK')
+  else
+    WriteLn('Upload failed: ', R.Error);
+end;
+```
+
 ### Custom Headers and Query Parameters
 
 ```pascal
@@ -141,6 +170,24 @@ Response := Http.Get('https://api.example.com/data',
   [TKeyValue.Create('X-Api-Key', 'my-key'), TKeyValue.Create('Accept', 'application/json')],
   [TKeyValue.Create('lang', 'en')]);
 WriteLn(Response.Text);
+```
+
+### Reading Response Headers
+
+```pascal
+var CT: string;
+CT := Response.HeaderValue('Content-Type');
+if Pos('application/json', LowerCase(CT)) > 0 then
+  WriteLn('Looks like JSON');
+```
+
+### Checking Success and Saving to File
+
+```pascal
+if Response.IsSuccessStatus then
+  Response.SaveToFile('output.json')
+else
+  WriteLn('HTTP error: ', Response.StatusCode);
 ```
 
 ---
