@@ -14,7 +14,11 @@ uses
 const
   REQUEST_FP_VERSION = '1.0.0';
   DEFAULT_USER_AGENT = 'Request-FP/' + REQUEST_FP_VERSION;
-  DEBUG_MODE = False;  // Set to True for debug output
+  {$IFDEF DEBUG}
+    DEBUG_MODE = True;
+  {$ELSE}
+    DEBUG_MODE = False;
+  {$ENDIF}
 
 type
   { Exception class for HTTP request operations }
