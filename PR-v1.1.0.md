@@ -168,9 +168,3 @@ Key areas to review:
 2. Debug mode implementation in src/Request.pas (lines 480-549)
 3. New documentation files for completeness and accuracy
 4. ssl_debug example builds and runs correctly
-
----
-
-**Type:** Feature / Documentation
-**Priority:** High (addresses critical user pain point)
-**Target:** v1.1.0 Release
