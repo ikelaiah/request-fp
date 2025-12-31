@@ -17,6 +17,36 @@ All notable changes to this project will be documented in this file.
 - (none)
 
 
+## [1.1.0] - 2026-01-01
+
+### Added
+
+- **Windows OpenSSL Documentation**: Comprehensive Windows-specific OpenSSL installation instructions with multiple methods (Chocolatey, Scoop, manual installer from Shining Light Productions)
+- **Troubleshooting Guide**: New troubleshooting section in README.md with specific DLL names for OpenSSL 1.1.x and 3.x (both 32-bit and 64-bit variants)
+- **DEBUG Mode**: Added debug mode support to show OpenSSL version and DLL paths at runtime
+  - Shows exact OpenSSL version loaded
+  - Displays full path to loaded libssl and libcrypto DLLs
+  - Helps diagnose version conflicts when multiple OpenSSL installations exist
+- **SSL Initialization Test**: Added `Test25_SSLInitialization` to verify SSL setup with helpful Windows-specific error messages
+- **SSL Debug Example**: Created `examples/ssl_debug/` with pre-configured Debug build mode to help users troubleshoot OpenSSL issues
+- **Documentation**:
+  - `docs/SSL-HTTPS-GUIDE.md`: Complete guide on HTTPS enforcement strategies and debug mode usage
+  - `docs/OPENSSL-VERSION-SELECTION.md`: Guide for resolving conflicts when multiple OpenSSL versions are installed
+  - Updated `docs/Request.md` and `docs/Request.Session.md` with Windows OpenSSL setup instructions
+
+### Changed
+
+- **Enhanced InitSSL Error Messages**: Windows error messages now include specific installation instructions, DLL names, and links to installers
+- **Improved Linux Error Messages**: Added Fedora/RHEL installation commands alongside Ubuntu/Debian instructions
+- **README.md**: Replaced ambiguous "Windows: Usually included" with clear, actionable installation steps
+- **Request.pas**: Added Windows API integration to detect loaded DLL paths in debug mode
+
+### Fixed
+
+- Addressed user confusion about Windows OpenSSL setup after fresh FPC/Lazarus installation via FPCUpDeluxe
+- Resolved documentation gap for users encountering "OpenSSL initialization failed" errors on Windows
+
+
 ## [1.0.0] - 2025-09-08
 
 ### Added
