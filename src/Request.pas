@@ -9,7 +9,8 @@ uses
   Classes, SysUtils, fphttpclient, opensslsockets, openssl, base64,
   URIParser, HTTPDefs, sockets, fpjson, jsonparser, jsonscanner,
   httpprotocol
-  {$IFDEF UNIX}, BaseUnix{$ENDIF};
+  {$IFDEF UNIX}, BaseUnix{$ENDIF}
+  {$IFDEF WINDOWS}, Windows{$ENDIF};
 
 const
   REQUEST_FP_VERSION = '1.0.0';
@@ -453,9 +454,15 @@ begin
   if not SSLInitialized then
   begin
     try
+      if DEBUG_MODE then
+        WriteLn('[DEBUG] Initializing OpenSSL...');
+
       // Try to dynamically load the SSL libraries
       InitSSLInterface;
       SSLInitialized := True;
+
+      if DEBUG_MODE then
+        WriteLn('[DEBUG] OpenSSL initialized successfully (Unix)');
     except
       on E: Exception do
       begin
@@ -470,16 +477,72 @@ begin
   end;
 end;
 {$ELSE}
+{$IFDEF WINDOWS}
+function GetDLLPath(const DLLName: string): string;
+var
+  Handle: HMODULE;
+  Path: array[0..MAX_PATH] of Char;
+begin
+  Result := '';
+  Handle := GetModuleHandle(PChar(DLLName));
+  if Handle <> 0 then
+  begin
+    if GetModuleFileName(Handle, Path, MAX_PATH) > 0 then
+      Result := Path;
+  end;
+end;
+{$ENDIF}
+
 procedure InitSSL;
+var
+  ErrorMsg: string;
+  {$IFDEF WINDOWS}
+  SSLPath, CryptoPath: string;
+  {$ENDIF}
 begin
   if not SSLInitialized then
   begin
     try
+      if DEBUG_MODE then
+        WriteLn('[DEBUG] Initializing OpenSSL...');
+
       InitSSLInterface;
       SSLInitialized := True;
+
+      if DEBUG_MODE then
+      begin
+        WriteLn('[DEBUG] OpenSSL initialized successfully (Windows)');
+        WriteLn('[DEBUG] OpenSSL version: ', SSLeay_version(0));
+        {$IFDEF WINDOWS}
+        // Try to detect which DLLs were loaded
+        SSLPath := GetDLLPath('libssl-3-x64.dll');
+        if SSLPath = '' then SSLPath := GetDLLPath('libssl-3.dll');
+        if SSLPath = '' then SSLPath := GetDLLPath('libssl-1_1-x64.dll');
+        if SSLPath = '' then SSLPath := GetDLLPath('libssl-1_1.dll');
+
+        CryptoPath := GetDLLPath('libcrypto-3-x64.dll');
+        if CryptoPath = '' then CryptoPath := GetDLLPath('libcrypto-3.dll');
+        if CryptoPath = '' then CryptoPath := GetDLLPath('libcrypto-1_1-x64.dll');
+        if CryptoPath = '' then CryptoPath := GetDLLPath('libcrypto-1_1.dll');
+
+        if SSLPath <> '' then
+          WriteLn('[DEBUG] libssl loaded from: ', SSLPath);
+        if CryptoPath <> '' then
+          WriteLn('[DEBUG] libcrypto loaded from: ', CryptoPath);
+        {$ENDIF}
+      end;
     except
       on E: Exception do
-        raise ERequestError.Create('OpenSSL initialization failed: ' + E.Message);
+      begin
+        ErrorMsg := 'OpenSSL initialization failed: ' + E.Message + LineEnding +
+                    'Install OpenSSL and copy the required DLLs to your executable folder or add to PATH:' + LineEnding +
+                    '  OpenSSL 1.1.x: libssl-1_1-x64.dll and libcrypto-1_1-x64.dll' + LineEnding +
+                    '  OpenSSL 3.x: libssl-3-x64.dll and libcrypto-3-x64.dll' + LineEnding +
+                    'Install via: choco install openssl OR scoop install openssl' + LineEnding +
+                    'Or download from: https://slproweb.com/products/Win32OpenSSL.html';
+        WriteLn(ErrorMsg);
+        raise ERequestError.Create(ErrorMsg);
+      end;
     end;
   end;
 end;
