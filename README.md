@@ -5,7 +5,7 @@
 [![Lazarus](https://img.shields.io/badge/Lazarus-4.0+-60A5FA.svg)](https://www.lazarus-ide.org/)
 ![Supports Windows](https://img.shields.io/badge/support-Windows-F59E0B?logo=Windows)
 ![Supports Linux](https://img.shields.io/badge/support-Linux-F59E0B?logo=Linux)
-[![Version](https://img.shields.io/badge/version-1.0.0-8B5CF6.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.0-8B5CF6.svg)](CHANGELOG.md)
 ![No Dependencies](https://img.shields.io/badge/dependencies-none-10B981.svg)
 
 Zero‑memory‑leak, high‑level HTTP client for Free Pascal. Built on top of FPC's HTTP stack with a clean API and zero boilerplate.
@@ -203,8 +203,8 @@ Explore practical examples in the [`examples/`](examples/) directory:
 3. **Dependencies**:
    - **Free Pascal 3.2.2+** or **Lazarus 4.0+**
    - **OpenSSL** (for HTTPS support)
-     - Windows: Usually included
-     - Linux: `sudo apt-get install libssl-dev` (Ubuntu/Debian)
+     - **Windows**: Install via [Chocolatey](https://chocolatey.org/) (`choco install openssl`), [Scoop](https://scoop.sh/) (`scoop install openssl`), or download the [Win64 OpenSSL installer](https://slproweb.com/products/Win32OpenSSL.html). Copy `libssl-*.dll` and `libcrypto-*.dll` into your executable folder or add their location to PATH.
+     - **Linux**: `sudo apt-get install libssl-dev` (Ubuntu/Debian) or `sudo dnf install openssl-devel` (Fedora/RHEL)
 
 ## 🤝 Contributing
 
@@ -223,8 +223,61 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 ## 📋 Requirements
 
 - **Free Pascal 3.2.2+** or **Lazarus 4.0+**
-- **OpenSSL** libraries (for HTTPS)
+- **OpenSSL** libraries (for HTTPS) - see [Installation](#-installation) for platform-specific setup
 - **Windows** or **Linux** (cross-platform)
+
+## 🔧 Troubleshooting
+
+### OpenSSL Errors on Windows
+
+If you encounter OpenSSL initialization errors on Windows (e.g., "OpenSSL initialization failed"), you need to install the OpenSSL DLLs:
+
+**Required DLL Files:**
+- **OpenSSL 1.1.x**: `libssl-1_1-x64.dll` and `libcrypto-1_1-x64.dll` (or `libssl-1_1.dll` / `libcrypto-1_1.dll` for 32-bit)
+- **OpenSSL 3.x**: `libssl-3-x64.dll` and `libcrypto-3-x64.dll` (or `libssl-3.dll` / `libcrypto-3.dll` for 32-bit)
+
+**Installation Options:**
+
+1. **Via Package Manager (Recommended)**:
+   - [Chocolatey](https://chocolatey.org/): `choco install openssl`
+   - [Scoop](https://scoop.sh/): `scoop install openssl`
+
+2. **Manual Installation**:
+   - Download from [Shining Light Productions](https://slproweb.com/products/Win32OpenSSL.html)
+   - Choose the appropriate installer for your architecture (Win64 or Win32)
+   - Install to a location like `C:\OpenSSL-Win64\`
+
+3. **Deploy DLLs**:
+   - **Option A**: Copy the DLL files to the same folder as your executable
+   - **Option B**: Add the OpenSSL `bin` directory to your system PATH environment variable
+
+**Verifying Installation:**
+```bash
+# Check if OpenSSL DLLs are accessible
+where libssl-3-x64.dll
+where libcrypto-3-x64.dll
+```
+
+### OpenSSL Errors on Linux
+
+If you encounter OpenSSL errors on Linux, install the development libraries:
+
+**Ubuntu/Debian**:
+```bash
+sudo apt-get update
+sudo apt-get install libssl-dev
+```
+
+**Fedora/RHEL**:
+```bash
+sudo dnf install openssl-devel
+```
+
+### Network and Certificate Errors
+
+- **Certificate validation failures**: Ensure your system's CA certificates are up to date
+- **Connection timeouts**: Check firewall settings and network connectivity
+- **502 errors from httpbin**: Some test endpoints may intermittently return 502; this is a known httpbin upstream issue and does not indicate a library problem
 
 ## 📄 License
 

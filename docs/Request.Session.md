@@ -40,8 +40,8 @@ A robust, memory-safe HTTP session library for Free Pascal, providing persistent
 
 - Free Pascal 3.2.2 or later
 - For HTTPS:
-  - Windows: OpenSSL libraries included
-  - Linux: `libssl-dev` or `openssl-devel` required
+  - **Windows**: Install OpenSSL via [Chocolatey](https://chocolatey.org/) (`choco install openssl`), [Scoop](https://scoop.sh/) (`scoop install openssl`), or download the [Win64 OpenSSL installer](https://slproweb.com/products/Win32OpenSSL.html). Copy the required DLLs (`libssl-*.dll` and `libcrypto-*.dll`) into your executable folder or add their location to PATH. See [Request.md Troubleshooting](Request.md#troubleshooting) for specific DLL names and detailed instructions.
+  - **Linux**: `sudo apt-get install libssl-dev` (Ubuntu/Debian) or `sudo dnf install openssl-devel` (Fedora/RHEL)
 
 ## Design Philosophy
 

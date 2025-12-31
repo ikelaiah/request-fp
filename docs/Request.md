@@ -42,8 +42,8 @@ A lightweight, memory-safe HTTP client for Free Pascal that uses advanced record
 
 For basic HTTP functionality, no special requirements are needed. For HTTPS (SSL/TLS) support:
 
-- Windows: OpenSSL libraries are included with the application and no additional setup is required
-- Linux:
+- **Windows**: Install OpenSSL via [Chocolatey](https://chocolatey.org/) (`choco install openssl`), [Scoop](https://scoop.sh/) (`scoop install openssl`), or download the [Win64 OpenSSL installer](https://slproweb.com/products/Win32OpenSSL.html). Copy the required DLLs (`libssl-*.dll` and `libcrypto-*.dll`) into your executable folder or add their location to PATH. See the [Troubleshooting](#troubleshooting) section for specific DLL names and detailed instructions.
+- **Linux**:
   - Ubuntu/Debian: `sudo apt-get install libssl-dev`
   - Fedora/RHEL: `sudo dnf install openssl-devel`
 
@@ -189,5 +189,62 @@ if Response.IsSuccessStatus then
 else
   WriteLn('HTTP error: ', Response.StatusCode);
 ```
+
+## Troubleshooting
+
+### OpenSSL Errors on Windows
+
+If you encounter OpenSSL initialization errors on Windows (e.g., "OpenSSL initialization failed"), you need to install the OpenSSL DLLs:
+
+**Required DLL Files:**
+
+- **OpenSSL 1.1.x**: `libssl-1_1-x64.dll` and `libcrypto-1_1-x64.dll` (or `libssl-1_1.dll` / `libcrypto-1_1.dll` for 32-bit)
+- **OpenSSL 3.x**: `libssl-3-x64.dll` and `libcrypto-3-x64.dll` (or `libssl-3.dll` / `libcrypto-3.dll` for 32-bit)
+
+**Installation Options:**
+
+1. **Via Package Manager (Recommended)**:
+   - [Chocolatey](https://chocolatey.org/): `choco install openssl`
+   - [Scoop](https://scoop.sh/): `scoop install openssl`
+
+2. **Manual Installation**:
+   - Download from [Shining Light Productions](https://slproweb.com/products/Win32OpenSSL.html)
+   - Choose the appropriate installer for your architecture (Win64 or Win32)
+   - Install to a location like `C:\OpenSSL-Win64\`
+
+3. **Deploy DLLs**:
+   - **Option A**: Copy the DLL files to the same folder as your executable
+   - **Option B**: Add the OpenSSL `bin` directory to your system PATH environment variable
+
+**Verifying Installation:**
+
+```bash
+# Check if OpenSSL DLLs are accessible
+where libssl-3-x64.dll
+where libcrypto-3-x64.dll
+```
+
+### OpenSSL Errors on Linux
+
+If you encounter OpenSSL errors on Linux, install the development libraries:
+
+**Ubuntu/Debian**:
+
+```bash
+sudo apt-get update
+sudo apt-get install libssl-dev
+```
+
+**Fedora/RHEL**:
+
+```bash
+sudo dnf install openssl-devel
+```
+
+### Network and Certificate Errors
+
+- **Certificate validation failures**: Ensure your system's CA certificates are up to date
+- **Connection timeouts**: Check firewall settings and network connectivity
+- **502 errors from httpbin**: Some test endpoints may intermittently return 502; this is a known httpbin upstream issue and does not indicate a library problem
 
 ---

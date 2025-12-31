@@ -47,6 +47,9 @@ type
     // New helper coverage
     procedure Test23_IsSuccessStatus;
     procedure Test24_SaveToFile;
+
+    // SSL/OpenSSL initialization test (optional, not run in -a mode)
+    procedure Test25_SSLInitialization;
   end;
 
 implementation
@@ -457,6 +460,55 @@ begin
   finally
     // Cleanup regardless of assertions
     if FileExists(TempFile) then DeleteFile(TempFile);
+  end;
+end;
+
+procedure TRequestSimpleTests.Test25_SSLInitialization;
+var
+  Response: TResponse;
+  FailureMessage: string;
+begin
+  { This test verifies that SSL/OpenSSL is properly initialized and can handle HTTPS requests.
+    It's particularly useful for troubleshooting Windows OpenSSL setup issues.
+
+    Note: This test is NOT run automatically with -a flag. Run it manually to verify SSL setup:
+      TestRunner.exe -s TRequestSimpleTests.Test25_SSLInitialization
+
+    If this test fails on Windows, you need to install OpenSSL DLLs. See the error message
+    or consult the documentation for installation instructions. }
+
+  FailureMessage := '';
+  try
+    // Attempt a simple HTTPS GET request
+    Response := Http.Get('https://httpbin.org/get');
+
+    // Check if we got a successful response
+    AssertTrue('HTTPS request should succeed', Response.StatusCode > 0);
+    AssertTrue('Response should contain data', Response.Text <> '');
+
+    // Verify we can parse JSON response (ensures full SSL handshake worked)
+    AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
+
+    WriteLn('SSL initialization test PASSED - OpenSSL is working correctly');
+  except
+    on E: ERequestError do
+    begin
+      FailureMessage := 'SSL initialization test FAILED: ' + E.Message;
+      WriteLn(FailureMessage);
+      WriteLn('');
+      WriteLn('Common fixes for Windows:');
+      WriteLn('1. Install OpenSSL: choco install openssl OR scoop install openssl');
+      WriteLn('2. Or download from: https://slproweb.com/products/Win32OpenSSL.html');
+      WriteLn('3. Copy DLLs (libssl-*.dll, libcrypto-*.dll) to your exe folder or add to PATH');
+      WriteLn('');
+      Fail(FailureMessage);
+    end;
+    on E: Exception do
+    begin
+      FailureMessage := 'Unexpected error during SSL test: ' + E.Message;
+      WriteLn(FailureMessage);
+      Fail(FailureMessage);
+    end;
   end;
 end;
 
