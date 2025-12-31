@@ -8,7 +8,7 @@ We're excited to announce Request-FP v1.1.0, a major documentation and tooling u
 
 ### Windows OpenSSL Made Easy
 
-The #1 pain point for Windows users has been resolved! We've completely overhauled the OpenSSL documentation and error messages to make setup straightforward.
+We've overhauled the OpenSSL documentation and error messages to make setup straightforward.
 
 **What changed:**
 - ✅ Clear installation instructions with 3 easy methods (Chocolatey, Scoop, or manual installer)
