@@ -235,7 +235,6 @@ The `FindSSLDLLPath` with `EnumProcessModules` complements FPC's existing DLL se
 
 **FPC already handles version fallback:**
 - FPC's `openssl.pas` tries: `libssl-3-x64` → `libssl-1_1-x64` → `ssleay32` → `libssl32`
-- This works great for loading DLLs
 
 **Our contribution:**
 - Shows users which version FPC actually loaded
