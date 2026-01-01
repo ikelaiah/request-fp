@@ -155,7 +155,7 @@ OpenSSL is working correctly!
 
 This release directly addresses real user issues:
 
-> "I was getting errors about OpenSSL when trying out your request library. I've installed FPC using FPCUpDeluxe, latest stable fpc + laz. Any ideas? I'm on Windows."
+> "I was getting errors about OpenSSL when trying out your request library. I've installed FPC using FPCUpDeluxe, latest stable fpc + laz. I'm on Windows."
 
 With v1.2.0:
 - User sees "Executable architecture: 32-bit"
@@ -163,7 +163,7 @@ With v1.2.0:
 - Problem solved immediately!
 
 And from Discord:
-> "Aren't impressed we hardcoded the dll name... Should I just add variation of filenames?"
+> "... hardcoded the dll name..."
 
 With v1.2.0:
 - Dynamic DLL detection finds ANY OpenSSL DLL, regardless of naming
@@ -263,15 +263,3 @@ The `FindSSLDLLPath` with `EnumProcessModules` complements FPC's existing DLL se
 
 This approach leverages Windows' guarantee that loaded modules match process architecture, so we don't need to check DLL architecture ourselves. We're showing what FPC loaded, not duplicating its loading logic.
 
-## Next Steps
-
-After merge:
-1. Tag release as v1.2.0
-2. Create GitHub release with RELEASE-v1.2.0.md
-3. Notify users who reported OpenSSL issues
-4. Update any external documentation referencing v1.1.0
-5. Thank Gustavo for the dynamic detection suggestion
-
----
-
-**Ready for review!** This is a minor feature release that completely solves Windows OpenSSL setup issues with elegant, future-proof solutions.
