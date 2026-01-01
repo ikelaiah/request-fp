@@ -97,6 +97,16 @@ If you're still experiencing OpenSSL failures after upgrading to v1.1.1:
 
 4. **Check the installer you downloaded** - Make sure it's Win64 OpenSSL, not Win32
 
+### Common Issue: fpcupdeluxe Users
+
+**IMPORTANT:** If you installed FPC using fpcupdeluxe with default settings, you likely have **32-bit FPC**, even on 64-bit Windows!
+
+This means you need **32-bit OpenSSL** (the Win32 installer), not the Win64 version:
+- Download: `Win32OpenSSL_Light-3_6_0.exe` (NOT Win64!)
+- Use DLLs: `libssl-3.dll` and `libcrypto-3.dll` (NO `-x64` suffix!)
+
+The v1.1.1 debug output will immediately show if you have a 32-bit vs 64-bit executable, making this obvious.
+
 ## 💝 Thank You
 
 Special thanks to the community member who suggested adding `ReadLn` to prevent console auto-close in the IDE!

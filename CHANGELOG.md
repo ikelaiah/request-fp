@@ -32,6 +32,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - **Architecture Mismatch Detection**: Users with mismatched executable/DLL architectures now get clear error messages explaining the issue instead of cryptic "Error loading library" failures
+- **fpcupdeluxe Default Settings**: Added documentation clarifying that fpcupdeluxe installs 32-bit FPC by default, which requires 32-bit OpenSSL DLLs (not the Win64 installer)
 
 
 ## [1.1.0] - 2026-01-01

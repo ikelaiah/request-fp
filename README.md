@@ -230,11 +230,16 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 
 ### OpenSSL Errors on Windows
 
-If you encounter OpenSSL initialization errors on Windows (e.g., "OpenSSL initialization failed"), you need to install the OpenSSL DLLs:
+If you encounter OpenSSL initialization errors on Windows (e.g., "OpenSSL initialization failed"), you need to install the OpenSSL DLLs.
+
+**IMPORTANT:** The DLL architecture (32-bit vs 64-bit) must match your FPC installation:
+- **fpcupdeluxe defaults to 32-bit FPC**, even on 64-bit Windows
+- If you have 32-bit FPC, you need 32-bit OpenSSL DLLs (no `-x64` suffix)
+- If you have 64-bit FPC, you need 64-bit OpenSSL DLLs (with `-x64` suffix)
 
 **Required DLL Files:**
-- **OpenSSL 1.1.x**: `libssl-1_1-x64.dll` and `libcrypto-1_1-x64.dll` (or `libssl-1_1.dll` / `libcrypto-1_1.dll` for 32-bit)
-- **OpenSSL 3.x**: `libssl-3-x64.dll` and `libcrypto-3-x64.dll` (or `libssl-3.dll` / `libcrypto-3.dll` for 32-bit)
+- **OpenSSL 1.1.x**: `libssl-1_1-x64.dll` and `libcrypto-1_1-x64.dll` (64-bit) or `libssl-1_1.dll` / `libcrypto-1_1.dll` (32-bit)
+- **OpenSSL 3.x**: `libssl-3-x64.dll` and `libcrypto-3-x64.dll` (64-bit) or `libssl-3.dll` / `libcrypto-3.dll` (32-bit)
 
 **Installation Options:**
 
