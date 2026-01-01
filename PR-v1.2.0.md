@@ -142,8 +142,8 @@ OpenSSL is working correctly!
 - ✅ Cryptic "Error loading library" messages with no hints (architecture-specific error messages)
 - ✅ Console auto-closing in IDE before users can read output (ReadLn pause added)
 - ✅ Hardcoded DLL name guessing failing with non-standard vendor naming (dynamic enumeration)
-- ✅ Debug mode breaking when vendors disguise OpenSSL 3.x as 1.1.x (finds any libssl/libcrypto)
-- ✅ No visibility into which OpenSSL version FPC actually loaded (dynamic detection shows path)
+- ✅ Debug mode now shows when vendors disguise OpenSSL 3.x as 1.1.x (displays actual version vs filename)
+- ✅ No visibility into which OpenSSL version FPC actually loaded (dynamic detection shows path and version)
 
 ## Community Feedback
 
