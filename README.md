@@ -5,7 +5,7 @@
 [![Lazarus](https://img.shields.io/badge/Lazarus-4.0+-60A5FA.svg)](https://www.lazarus-ide.org/)
 ![Supports Windows](https://img.shields.io/badge/support-Windows-F59E0B?logo=Windows)
 ![Supports Linux](https://img.shields.io/badge/support-Linux-F59E0B?logo=Linux)
-[![Version](https://img.shields.io/badge/version-1.1.0-8B5CF6.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.2.0-8B5CF6.svg)](CHANGELOG.md)
 ![No Dependencies](https://img.shields.io/badge/dependencies-none-10B981.svg)
 
 Zero‑memory‑leak, high‑level HTTP client for Free Pascal. Built on top of FPC's HTTP stack with a clean API and zero boilerplate.
@@ -230,11 +230,25 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 
 ### OpenSSL Errors on Windows
 
-If you encounter OpenSSL initialization errors on Windows (e.g., "OpenSSL initialization failed"), you need to install the OpenSSL DLLs:
+If you encounter OpenSSL initialization errors on Windows (e.g., "OpenSSL initialization failed"), you need to install the OpenSSL DLLs.
+
+**IMPORTANT:** The DLL architecture (32-bit vs 64-bit) must match your FPC installation:
+- **fpcupdeluxe defaults to 32-bit FPC** (common choice for lower memory footprint and smaller executables)
+- If you have 32-bit FPC, you need 32-bit OpenSSL DLLs (no `-x64` suffix)
+- If you have 64-bit FPC, you need 64-bit OpenSSL DLLs (with `-x64` suffix)
+- Use `examples/ssl_debug` to check your executable architecture
 
 **Required DLL Files:**
-- **OpenSSL 1.1.x**: `libssl-1_1-x64.dll` and `libcrypto-1_1-x64.dll` (or `libssl-1_1.dll` / `libcrypto-1_1.dll` for 32-bit)
-- **OpenSSL 3.x**: `libssl-3-x64.dll` and `libcrypto-3-x64.dll` (or `libssl-3.dll` / `libcrypto-3.dll` for 32-bit)
+
+FPC automatically tries multiple OpenSSL versions in priority order (newest first):
+- **64-bit**: `libssl-3-x64.dll` → `libssl-1_1-x64.dll` → older versions
+- **32-bit**: `libssl-3.dll` → `libssl-1_1.dll` → older versions
+
+**Important:** While FPC prefers newer versions, Windows DLL search order may override this. If you have multiple OpenSSL versions installed (e.g., in System32), Windows may load an older version due to Known DLLs registry or search path priority. Use the `ssl_debug` example to verify which version actually loads.
+
+Install either OpenSSL 3.x (recommended) or 1.1.x:
+- **OpenSSL 3.x**: `libssl-3-x64.dll` and `libcrypto-3-x64.dll` (64-bit) or `libssl-3.dll` / `libcrypto-3.dll` (32-bit)
+- **OpenSSL 1.1.x**: `libssl-1_1-x64.dll` and `libcrypto-1_1-x64.dll` (64-bit) or `libssl-1_1.dll` / `libcrypto-1_1.dll` (32-bit)
 
 **Installation Options:**
 
