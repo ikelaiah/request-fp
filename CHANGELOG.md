@@ -23,7 +23,7 @@ All notable changes to this project will be documented in this file.
 
 - **Architecture Detection in ssl_debug**: ssl_debug example now displays executable architecture (32-bit vs 64-bit) and required DLL names upfront
 - **Architecture-Specific Error Messages**: InitSSL error messages now explicitly state whether 32-bit or 64-bit DLLs are required based on executable architecture
-- **SetDllDirectory in ssl_debug**: Forces Windows to search executable directory first for DLLs, preventing System32 DLLs from taking priority over local installations
+- **SetDllDirectory in ssl_debug**: Attempts to prioritize executable directory for DLL loading via SetDefaultDllDirectories and AddDllDirectory (Note: Windows may still load from System32 if OpenSSL is installed there)
 - **Dynamic DLL Detection**: New `FindSSLDLLPath` function using `EnumProcessModules` to dynamically discover loaded OpenSSL DLLs regardless of naming convention
 
 ### Changed
@@ -35,7 +35,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - **Architecture Mismatch Detection**: Users with mismatched executable/DLL architectures now get clear error messages explaining the issue instead of cryptic "Error loading library" failures
-- **DLL Search Order Issue**: SetDllDirectoryW in ssl_debug now prevents System32 DLLs from taking priority over local installations
+- **DLL Search Order**: ssl_debug now uses SetDefaultDllDirectories + AddDllDirectory to attempt prioritizing local DLLs (Note: Windows System32 OpenSSL may still take precedence due to Known DLLs registry)
 - **fpcupdeluxe Architecture Documentation**: Added documentation clarifying that fpcupdeluxe defaults to 32-bit FPC (common for lower memory footprint), which requires matching 32-bit OpenSSL DLLs
 - **Vendor-Specific DLL Naming**: Dynamic detection now works with any OpenSSL DLL naming convention, including vendors who disguise OpenSSL 3.x as 1.1.x
 
