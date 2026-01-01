@@ -2,7 +2,7 @@
 
 **Release Date:** January 1, 2026
 
-This is a minor feature release that adds architecture mismatch detection and dynamic DLL discovery to completely solve Windows OpenSSL setup issues, including support for vendors with non-standard DLL naming conventions.
+This is a minor feature release that adds architecture mismatch detection and dynamic DLL discovery to improve Windows OpenSSL diagnostics, including support for vendors with non-standard DLL naming conventions.
 
 ## 🎯 What's New
 
@@ -10,7 +10,7 @@ This is a minor feature release that adds architecture mismatch detection and dy
 
 After v1.1.0 release, we discovered that some users were still having OpenSSL failures even after following the installation instructions correctly. The root cause? They had 64-bit executables but 32-bit OpenSSL DLLs (or vice versa).
 
-**v1.1.1 makes this obvious:**
+**v1.2.0 makes this obvious:**
 
 When you run `ssl_debug.exe`, you now see:
 ```
@@ -36,7 +36,7 @@ IMPORTANT: Ensure DLL architecture (32-bit vs 64-bit) matches your executable!
 1. **ssl_debug Example** - Shows executable architecture upfront
 2. **Architecture-Specific Error Messages** - Error messages now detect and display whether you need 32-bit or 64-bit DLLs
 3. **Dynamic DLL Detection** - New `FindSSLDLLPath` function finds loaded OpenSSL DLLs regardless of vendor naming conventions
-4. **SetDllDirectory Integration** - Forces local DLL loading over System32
+4. **SetDllPath Unit** - Attempts to prioritize local DLL loading (helps when System32 doesn't have OpenSSL)
 5. **ReadLn Pause** - ssl_debug now pauses before exit when run from IDE (community contribution)
 
 ## 🔄 Upgrading from v1.1.0
@@ -54,9 +54,9 @@ All v1.1.0 code continues to work without modification.
 
 ## 📊 Changes Summary
 
-- **Files Modified:** 4 (CHANGELOG.md, README.md, src/Request.pas, examples/ssl_debug/ssl_debug.pas)
-- **New Features:** Architecture detection, dynamic DLL discovery, SetDllDirectory integration
-- **Bug Fixes:** Better diagnostics for architecture mismatch, DLL search order issues, vendor naming variations
+- **Files Modified:** 5 (CHANGELOG.md, README.md, src/Request.pas, examples/ssl_debug/ssl_debug.pas, examples/ssl_debug/SetDllPath.pas)
+- **New Features:** Architecture detection, dynamic DLL discovery, SetDllPath unit for DLL search assistance
+- **Bug Fixes:** Better diagnostics for architecture mismatch, vendor naming variations
 - **Breaking Changes:** 0
 
 ## 🐛 What This Fixes
@@ -74,12 +74,16 @@ All v1.1.0 code continues to work without modification.
 - Dynamic module enumeration finds ANY DLL with "libssl" or "libcrypto" in the name
 - No more hardcoded filename guessing
 
-**Problem 3:** System32 OpenSSL DLLs taking priority over local installations.
+**Problem 3:** No visibility into which OpenSSL version FPC actually loaded.
 
 **Solution:**
-- SetDllDirectoryW in ssl_debug forces executable directory to be searched first
+
+- Dynamic DLL detection shows exact DLL paths loaded by FPC
+- Works with any vendor naming convention
 
 **Impact:** Users can now instantly diagnose OpenSSL issues regardless of their FPC architecture, OpenSSL vendor, or installation method.
+
+**Note:** SetDllPath unit helps prioritize local DLLs when System32 doesn't have OpenSSL (fresh FPC installs). However, Windows may still load from System32 if OpenSSL is registered in the Known DLLs registry - this is documented Windows behavior.
 
 ## 📝 Full Changelog
 
