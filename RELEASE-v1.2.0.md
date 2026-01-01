@@ -29,8 +29,6 @@ This is a 64-bit executable. You need 64-bit DLLs:
 IMPORTANT: Ensure DLL architecture (32-bit vs 64-bit) matches your executable!
 ```
 
-No more mystery failures!
-
 ## 📦 Changes
 
 ### Enhanced Diagnostics
@@ -112,13 +110,16 @@ If you're still experiencing OpenSSL failures after upgrading to v1.2.0:
 
 ### Understanding OpenSSL DLL Dependencies
 
-**Important discovery from community testing:** Some OpenSSL 3.x installations may require BOTH version-named DLLs:
+**Important discovery from community testing:** FPC's `openssl.pas` tries multiple OpenSSL DLL names in priority order:
 
-- FPC's SSL unit expects: `libssl-1_1-x64.dll` and `libcrypto-1_1-x64.dll`
-- But OpenSSL 3.x provides: `libssl-3-x64.dll` and `libcrypto-3-x64.dll`
-- Some vendors solve this by renaming 3.x DLLs to look like 1.1.x (hence why v1.2.0 uses dynamic detection)
+- **FPC tries (64-bit)**: `libssl-3-x64` → `libssl-1_1-x64` → `ssleay32` → `libssl32`
+- **FPC tries (32-bit)**: `libssl-3` → `libssl-1_1` → `ssleay32` → `libssl32`
 
-**v1.2.0's dynamic DLL detection handles all these scenarios automatically** - it finds whatever OpenSSL DLLs are actually loaded, regardless of their naming convention.
+FPC correctly prioritizes OpenSSL 3.x! However, Windows DLL dependency chains can still cause confusion when multiple versions are installed.
+
+This is a **Windows-specific complexity** - Linux uses dynamic library linking and works flawlessly.
+
+**v1.2.0's dynamic DLL detection** uses `EnumProcessModules` to show users exactly which OpenSSL DLL Windows actually loaded from FPC's search list. This eliminates guesswork about which version is running.
 
 ### Note for fpcupdeluxe Users
 

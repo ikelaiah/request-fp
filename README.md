@@ -239,8 +239,14 @@ If you encounter OpenSSL initialization errors on Windows (e.g., "OpenSSL initia
 - Use `examples/ssl_debug` to check your executable architecture
 
 **Required DLL Files:**
-- **OpenSSL 1.1.x**: `libssl-1_1-x64.dll` and `libcrypto-1_1-x64.dll` (64-bit) or `libssl-1_1.dll` / `libcrypto-1_1.dll` (32-bit)
+
+FPC automatically tries multiple OpenSSL versions in priority order (newest first):
+- **64-bit**: `libssl-3-x64.dll` → `libssl-1_1-x64.dll` → older versions
+- **32-bit**: `libssl-3.dll` → `libssl-1_1.dll` → older versions
+
+Install either OpenSSL 3.x (recommended) or 1.1.x:
 - **OpenSSL 3.x**: `libssl-3-x64.dll` and `libcrypto-3-x64.dll` (64-bit) or `libssl-3.dll` / `libcrypto-3.dll` (32-bit)
+- **OpenSSL 1.1.x**: `libssl-1_1-x64.dll` and `libcrypto-1_1-x64.dll` (64-bit) or `libssl-1_1.dll` / `libcrypto-1_1.dll` (32-bit)
 
 **Installation Options:**
 
