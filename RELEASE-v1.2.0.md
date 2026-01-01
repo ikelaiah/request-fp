@@ -95,7 +95,7 @@ See [CHANGELOG.md](CHANGELOG.md#120---2026-01-01) for complete details.
 
 ## 💡 For Users Still Having Issues
 
-If you're still experiencing OpenSSL failures after upgrading to v1.1.1:
+If you're still experiencing OpenSSL failures after upgrading to v1.2.0:
 
 1. **Run the debug tool:**
    ```bash
@@ -108,7 +108,17 @@ If you're still experiencing OpenSSL failures after upgrading to v1.1.1:
 
 3. **Verify your DLLs match** - If you have a 64-bit exe, you MUST have DLLs with `-x64` in the filename
 
-4. **Check the installer you downloaded** - Make sure it's Win64 OpenSSL, not Win32
+4. **Check the installer you downloaded** - Make sure it matches your architecture (Win64 vs Win32)
+
+### Understanding OpenSSL DLL Dependencies
+
+**Important discovery from community testing:** Some OpenSSL 3.x installations may require BOTH version-named DLLs:
+
+- FPC's SSL unit expects: `libssl-1_1-x64.dll` and `libcrypto-1_1-x64.dll`
+- But OpenSSL 3.x provides: `libssl-3-x64.dll` and `libcrypto-3-x64.dll`
+- Some vendors solve this by renaming 3.x DLLs to look like 1.1.x (hence why v1.2.0 uses dynamic detection)
+
+**v1.2.0's dynamic DLL detection handles all these scenarios automatically** - it finds whatever OpenSSL DLLs are actually loaded, regardless of their naming convention.
 
 ### Note for fpcupdeluxe Users
 
