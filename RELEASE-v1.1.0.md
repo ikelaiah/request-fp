@@ -196,8 +196,7 @@ Special thanks to the community members who provided feedback that made this rel
 
 ---
 
-**Download:** [v1.1.0 Release](https://github.com/yourusername/request-fp/releases/tag/v1.1.0)
+**Download:** [v1.1.0 Release](https://github.com/ikelaiah/request-fp/releases/tag/v1.1.0)
 
-**Previous Release:** [v1.0.0](https://github.com/yourusername/request-fp/releases/tag/v1.0.0)
 
 Happy coding! 🚀

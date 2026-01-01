@@ -142,8 +142,8 @@ Special thanks to:
 
 ---
 
-**Download:** [v1.2.0 Release](https://github.com/yourusername/request-fp/releases/tag/v1.2.0)
+**Download:** [v1.2.0 Release](https://github.com/ikelaiah/request-fp/releases/tag/v1.2.0)
 
-**Previous Release:** [v1.1.0](https://github.com/yourusername/request-fp/releases/tag/v1.1.0)
+**Previous Release:** [v1.1.0](https://github.com/ikelaiah/request-fp/releases/tag/v1.1.0)
 
 Happy coding! 🚀
