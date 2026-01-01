@@ -5,11 +5,23 @@ program ssl_debug;
 // Use: lazbuild --build-mode=Debug ssl_debug.lpi
 
 uses
-  SysUtils, Request;
+  SysUtils, Request
+  {$IFDEF WINDOWS}, Windows{$ENDIF};
+
+{$IFDEF WINDOWS}
+function SetDllDirectoryW(lpPathName: LPCWSTR): BOOL; stdcall; external 'kernel32.dll';
+{$ENDIF}
 
 var
   Response: TResponse;
 begin
+  {$IFDEF WINDOWS}
+  // Force Windows to search the executable directory first for DLLs
+  // This prevents System32 DLLs from taking priority over local DLLs
+  SetDllDirectoryW(PWideChar(UnicodeString(ExtractFilePath(ParamStr(0)))));
+  {$ENDIF}
+
+
   WriteLn('=== OpenSSL Debug Information ===');
   WriteLn;
 

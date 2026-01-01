@@ -478,17 +478,39 @@ begin
 end;
 {$ELSE}
 {$IFDEF WINDOWS}
-function GetDLLPath(const DLLName: string): string;
+type
+  TEnumModulesCallback = function(hModule: HMODULE; lParam: LPARAM): BOOL; stdcall;
+
+function EnumProcessModules(hProcess: THandle; lphModule: LPDWORD; cb: DWORD; var lpcbNeeded: DWORD): BOOL; stdcall; external 'psapi.dll';
+
+function FindSSLDLLPath(const SearchTerm: string): string;
 var
-  Handle: HMODULE;
-  Path: array[0..MAX_PATH] of Char;
+  Modules: array[0..1023] of HMODULE;
+  cbNeeded: DWORD;
+  i, ModuleCount: Integer;
+  ModulePath: array[0..MAX_PATH] of Char;
+  PathStr, FileName: string;
 begin
   Result := '';
-  Handle := GetModuleHandle(PChar(DLLName));
-  if Handle <> 0 then
+
+  if EnumProcessModules(GetCurrentProcess, @Modules[0], SizeOf(Modules), cbNeeded) then
   begin
-    if GetModuleFileName(Handle, Path, MAX_PATH) > 0 then
-      Result := Path;
+    ModuleCount := cbNeeded div SizeOf(HMODULE);
+    for i := 0 to ModuleCount - 1 do
+    begin
+      if GetModuleFileName(Modules[i], ModulePath, MAX_PATH) > 0 then
+      begin
+        PathStr := string(ModulePath);
+        FileName := ExtractFileName(LowerCase(PathStr));
+
+        // Look for DLLs containing the search term (e.g., "libssl" or "libcrypto")
+        if Pos(LowerCase(SearchTerm), FileName) > 0 then
+        begin
+          Result := PathStr;
+          Exit;
+        end;
+      end;
+    end;
   end;
 end;
 {$ENDIF}
@@ -513,16 +535,9 @@ begin
       begin
         WriteLn('[DEBUG] OpenSSL initialized successfully (Windows)');
         {$IFDEF WINDOWS}
-        // Try to detect which DLLs were loaded first
-        SSLPath := GetDLLPath('libssl-3-x64.dll');
-        if SSLPath = '' then SSLPath := GetDLLPath('libssl-3.dll');
-        if SSLPath = '' then SSLPath := GetDLLPath('libssl-1_1-x64.dll');
-        if SSLPath = '' then SSLPath := GetDLLPath('libssl-1_1.dll');
-
-        CryptoPath := GetDLLPath('libcrypto-3-x64.dll');
-        if CryptoPath = '' then CryptoPath := GetDLLPath('libcrypto-3.dll');
-        if CryptoPath = '' then CryptoPath := GetDLLPath('libcrypto-1_1-x64.dll');
-        if CryptoPath = '' then CryptoPath := GetDLLPath('libcrypto-1_1.dll');
+        // Find the actual loaded SSL DLLs by searching all loaded modules
+        SSLPath := FindSSLDLLPath('libssl');
+        CryptoPath := FindSSLDLLPath('libcrypto');
 
         if SSLPath <> '' then
           WriteLn('[DEBUG] libssl loaded from: ', SSLPath)
