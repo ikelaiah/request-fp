@@ -23,19 +23,19 @@ All notable changes to this project will be documented in this file.
 
 - **Architecture Detection in ssl_debug**: ssl_debug example now displays executable architecture (32-bit vs 64-bit) and required DLL names upfront
 - **Architecture-Specific Error Messages**: InitSSL error messages now explicitly state whether 32-bit or 64-bit DLLs are required based on executable architecture
-- **Dynamic DLL Detection**: New `FindSSLDLLPath` function using `EnumProcessModules` to dynamically discover loaded OpenSSL DLLs regardless of naming convention
+- **Dynamic DLL Detection**: New `FindSSLDLLPath` function using `EnumProcessModules` to show which OpenSSL DLL FPC actually loaded
 
 ### Changed
 
 - **Enhanced ssl_debug Output**: Now shows "Executable architecture: 64-bit" and "Required DLL names: libssl-*-x64.dll and libcrypto-*-x64.dll" before attempting HTTPS request
 - **Improved Error Messages**: Added "IMPORTANT: Ensure DLL architecture (32-bit vs 64-bit) matches your executable!" warning to help diagnose architecture mismatch issues
-- **Debug Mode DLL Path Detection**: Replaced hardcoded DLL name guessing with dynamic module enumeration that finds any loaded OpenSSL DLL regardless of vendor naming conventions
+- **Debug Mode DLL Path Detection**: Uses dynamic module enumeration to find and display which OpenSSL DLL FPC loaded, revealing version disguises
 
 ### Fixed
 
 - **Architecture Mismatch Detection**: Users with mismatched executable/DLL architectures now get clear error messages explaining the issue instead of cryptic "Error loading library" failures
 - **fpcupdeluxe Architecture Documentation**: Added documentation clarifying that fpcupdeluxe defaults to 32-bit FPC (common for lower memory footprint), which requires matching 32-bit OpenSSL DLLs
-- **Vendor-Specific DLL Naming**: Dynamic detection now works with any OpenSSL DLL naming convention, including vendors who disguise OpenSSL 3.x as 1.1.x
+- **Vendor Version Disguise Detection**: Dynamic detection reveals when vendors disguise OpenSSL 3.x as 1.1.x by showing both filename and actual version string
 
 
 ## [1.1.0] - 2026-01-01
