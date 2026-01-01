@@ -5,8 +5,6 @@ program ssl_debug;
 // Use: lazbuild --build-mode=Debug ssl_debug.lpi
 
 uses
-  SetDllPath,  // MUST be first to set DLL search path before Request unit loads OpenSSL
-               // Note: May not override System32 OpenSSL if it's in Known DLLs registry
   SysUtils, Request;
 
 var

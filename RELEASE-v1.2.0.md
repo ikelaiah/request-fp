@@ -36,8 +36,7 @@ IMPORTANT: Ensure DLL architecture (32-bit vs 64-bit) matches your executable!
 1. **ssl_debug Example** - Shows executable architecture upfront
 2. **Architecture-Specific Error Messages** - Error messages now detect and display whether you need 32-bit or 64-bit DLLs
 3. **Dynamic DLL Detection** - New `FindSSLDLLPath` function finds loaded OpenSSL DLLs regardless of vendor naming conventions
-4. **SetDllPath Helper** - Diagnostic helper for ssl_debug example only (not part of library, not needed for normal usage)
-5. **ReadLn Pause** - ssl_debug now pauses before exit when run from IDE (community contribution)
+4. **ReadLn Pause** - ssl_debug now pauses before exit when run from IDE (community contribution)
 
 ## 🔄 Upgrading from v1.1.0
 
@@ -54,9 +53,8 @@ All v1.1.0 code continues to work without modification.
 
 ## 📊 Changes Summary
 
-- **Files Modified:** 5 (CHANGELOG.md, README.md, src/Request.pas, examples/ssl_debug/ssl_debug.pas, examples/ssl_debug/SetDllPath.pas)
+- **Files Modified:** 4 (CHANGELOG.md, README.md, src/Request.pas, examples/ssl_debug/ssl_debug.pas)
 - **Library Features:** Architecture detection in error messages, dynamic DLL discovery for debug mode
-- **Diagnostic Tools:** SetDllPath helper for ssl_debug example (not part of library)
 - **Bug Fixes:** Better diagnostics for architecture mismatch, vendor naming variations
 - **Breaking Changes:** 0
 
@@ -65,6 +63,7 @@ All v1.1.0 code continues to work without modification.
 **Problem 1:** Users with mismatched executable/DLL architectures got cryptic "Error loading library" messages with no hint about the real issue.
 
 **Solution:**
+
 - Detect executable architecture at runtime
 - Display required DLL names based on architecture
 - Provide explicit warnings about architecture matching
@@ -72,6 +71,7 @@ All v1.1.0 code continues to work without modification.
 **Problem 2:** Vendors using non-standard OpenSSL naming (e.g., disguising 3.x as 1.1.x) broke debug mode DLL path detection.
 
 **Solution:**
+
 - Dynamic module enumeration finds ANY DLL with "libssl" or "libcrypto" in the name
 - No more hardcoded filename guessing
 
@@ -83,8 +83,6 @@ All v1.1.0 code continues to work without modification.
 - Works with any vendor naming convention
 
 **Impact:** Users can now instantly diagnose OpenSSL issues regardless of their FPC architecture, OpenSSL vendor, or installation method.
-
-**Note about SetDllPath:** This is a diagnostic helper **only for the ssl_debug example** - it is NOT part of the Request-FP library and is NOT required for normal usage. Request-FP works perfectly without it. SetDllPath attempts to prioritize local DLLs when running ssl_debug on fresh FPC installs, but Windows may still load from System32 if OpenSSL is in the Known DLLs registry.
 
 ## 📝 Full Changelog
 
@@ -120,7 +118,7 @@ If you're still experiencing OpenSSL failures after upgrading to v1.2.0:
 - **FPC tries (64-bit)**: `libssl-3-x64` → `libssl-1_1-x64` → `ssleay32` → `libssl32`
 - **FPC tries (32-bit)**: `libssl-3` → `libssl-1_1` → `ssleay32` → `libssl32`
 
-FPC correctly prioritizes OpenSSL 3.x! However, Windows DLL dependency chains can still cause confusion when multiple versions are installed.
+FPC correctly prioritizes OpenSSL 3.x first! However, **Windows DLL search order may override this**. If multiple versions exist in System32 or Known DLLs registry, Windows may load an older version despite FPC preferring newer ones. This is why dynamic DLL detection is valuable—it shows which version actually loaded.
 
 This is a **Windows-specific complexity** - Linux uses dynamic library linking and works flawlessly.
 

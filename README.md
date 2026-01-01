@@ -244,6 +244,8 @@ FPC automatically tries multiple OpenSSL versions in priority order (newest firs
 - **64-bit**: `libssl-3-x64.dll` → `libssl-1_1-x64.dll` → older versions
 - **32-bit**: `libssl-3.dll` → `libssl-1_1.dll` → older versions
 
+**Important:** While FPC prefers newer versions, Windows DLL search order may override this. If you have multiple OpenSSL versions installed (e.g., in System32), Windows may load an older version due to Known DLLs registry or search path priority. Use the `ssl_debug` example to verify which version actually loads.
+
 Install either OpenSSL 3.x (recommended) or 1.1.x:
 - **OpenSSL 3.x**: `libssl-3-x64.dll` and `libcrypto-3-x64.dll` (64-bit) or `libssl-3.dll` / `libcrypto-3.dll` (32-bit)
 - **OpenSSL 1.1.x**: `libssl-1_1-x64.dll` and `libcrypto-1_1-x64.dll` (64-bit) or `libssl-1_1.dll` / `libcrypto-1_1.dll` (32-bit)

@@ -26,13 +26,6 @@ Executable architecture: 64-bit
 Required DLL names: libssl-*-x64.dll and libcrypto-*-x64.dll
 ```
 
-### 🔧 SetDllPath Helper (ssl_debug diagnostic tool only)
-
-- **For ssl_debug example only** - not part of Request-FP library, not needed for normal usage
-- Attempts to prioritize executable directory for DLL loading via `SetDefaultDllDirectories` + `AddDllDirectory`
-- Helps when users don't have System32 OpenSSL (the primary use case for fresh FPC installs)
-- **Note:** Windows may still load from System32 if OpenSSL is registered in Known DLLs registry (documented limitation)
-
 ### 📝 Enhanced Error Messages (Request.pas)
 
 - Error messages now explicitly state whether 32-bit or 64-bit DLLs are needed
@@ -68,26 +61,17 @@ Required DLL names: libssl-*-x64.dll and libcrypto-*-x64.dll
    - Replaced hardcoded DLL name guessing with dynamic module enumeration
 
 2. **examples/ssl_debug/ssl_debug.pas**
-   - Updated to use SetDllPath unit as first dependency
    - Added architecture detection output
    - Added ReadLn pause for IDE users
 
-3. **examples/ssl_debug/SetDllPath.pas** (NEW FILE - diagnostic tool only, not part of library)
-   - Separate unit with initialization section for DLL path setup
-   - Uses SetDefaultDllDirectories + AddDllDirectory
-   - **Only used by ssl_debug example** - not required for Request-FP library usage
-   - Must be first in uses clause to run before OpenSSL loads
-   - Documented Windows Known DLLs limitation
-
-4. **README.md**
+3. **README.md**
    - Updated version badge to 1.2.0
    - Added fpcupdeluxe 32-bit default warning
    - Added FPC's automatic OpenSSL version detection explanation
 
-5. **CHANGELOG.md**
+4. **CHANGELOG.md**
    - Added v1.2.0 section with Added/Changed/Fixed entries
    - Documented dynamic DLL detection feature
-   - Documented SetDllDirectory limitation
 
 ### Created Files
 
@@ -105,9 +89,8 @@ Required DLL names: libssl-*-x64.dll and libcrypto-*-x64.dll
 
 Tested on Windows 10/11 with:
 
-- ✅ 64-bit FPC + 64-bit OpenSSL 3.6.0 (local installation)
-- ✅ 64-bit FPC + System32 OpenSSL 1.1.1 (SetDllPath helps but may not override System32)
-- ✅ 32-bit FPC (fpcupdeluxe default) + 32-bit OpenSSL 3.6.0
+- ✅ 64-bit FPC + System32 OpenSSL 1.1.1 and 3.6.0 (FPC chooses 1.1.1 by priority)
+- ✅ Dynamic DLL detection shows actual loaded DLL paths
 
 ### Test Results
 
@@ -115,7 +98,7 @@ Tested on Windows 10/11 with:
 - Zero memory leaks
 - ssl_debug correctly identifies architecture
 - Dynamic DLL detection works with any OpenSSL naming convention
-- SetDllPath helps when System32 doesn't have OpenSSL (primary use case)
+- FPC's DLL search priority verified (prefers 1.1.x over 3.x when both present)
 
 **Example debug output (successful):**
 ```
@@ -149,9 +132,9 @@ OpenSSL is working correctly!
 ### User Experience Improvements
 
 1. **Immediate diagnosis** - Users see architecture mismatch instantly via ssl_debug
-2. **DLL search assistance** - SetDllPath helps when System32 doesn't have OpenSSL (fresh installs)
-3. **Clear guidance** - Error messages tell users exactly what to do
-4. **Any vendor works** - Dynamic detection finds OpenSSL regardless of naming convention
+2. **Clear guidance** - Error messages tell users exactly what to do
+3. **Any vendor works** - Dynamic detection finds OpenSSL regardless of naming convention
+4. **Visibility** - Users can see which OpenSSL version FPC actually loaded
 
 ### Resolved Issues
 
@@ -198,17 +181,13 @@ With v1.2.0:
    - Ensure it works with both 32-bit and 64-bit processes
    - Check that module enumeration doesn't miss DLLs
 
-2. **SetDllPath unit** (SetDllPath.pas)
-   - Verify SetDefaultDllDirectories and AddDllDirectory declarations are correct
-   - Ensure initialization section runs before OpenSSL loads
-
-3. **Architecture-specific error messages** (Request.pas)
+2. **Architecture-specific error messages** (Request.pas)
    - Verify conditional compilation works correctly for both CPU32 and CPU64
 
-4. **README documentation** (README.md)
+3. **README documentation** (README.md)
    - Check that fpcupdeluxe warning is clear and accurate
 
-5. **CHANGELOG completeness** (CHANGELOG.md:20-40)
+4. **CHANGELOG completeness** (CHANGELOG.md:20-40)
    - Ensure all v1.2.0 changes are documented
 
 ### Testing Checklist
@@ -217,9 +196,9 @@ With v1.2.0:
 - [x] Build ssl_debug in Release mode
 - [x] Run all 41 tests (`TestRunner.exe -a`)
 - [x] Verify no memory leaks in heaptrc output
-- [x] Test with OpenSSL 1.1.x DLLs
-- [x] Test with OpenSSL 3.x DLLs
-- [x] Verify documentation accurately describes SetDllPath limitations
+- [x] Test with System32 having both OpenSSL 1.1.x and 3.x (FPC chooses 1.1.x by priority)
+- [x] Verify dynamic DLL detection shows actual loaded DLL paths
+- [x] Verify architecture detection output is accurate
 
 ## Related Issues
 
@@ -249,25 +228,6 @@ IMPORTANT: Ensure DLL architecture (32-bit vs 64-bit) matches your executable!
 ```
 
 ## Additional Notes
-
-### SetDllPath Approach (ssl_debug diagnostic tool only)
-
-**Important:** SetDllPath is **only for the ssl_debug example** - it is NOT part of the Request-FP library and is NOT required for normal usage. Request-FP works perfectly without it.
-
-The SetDllPath unit attempts to prioritize local DLLs for the ssl_debug diagnostic tool, helping when users test fresh FPC installs without System32 OpenSSL.
-
-**Limitations:**
-
-- Windows may still load from System32 if OpenSSL is in the Known DLLs registry
-- This is a documented Windows behavior, not a bug in our code
-- The limitation is clearly documented in code comments and user-facing docs
-
-**Why this approach:**
-
-1. ❌ Modify global PATH - Too invasive, affects other applications
-2. ❌ Manual DLL placement - Requires user intervention, error-prone
-3. ❌ Application manifests - Complex, requires build system changes
-4. ✅ SetDefaultDllDirectories + AddDllDirectory - Application-scoped, helps in most cases, well-documented when it doesn't
 
 ### Dynamic DLL Detection Approach
 
