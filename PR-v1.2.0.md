@@ -26,8 +26,9 @@ Executable architecture: 64-bit
 Required DLL names: libssl-*-x64.dll and libcrypto-*-x64.dll
 ```
 
-### 🔧 SetDllDirectory Attempt (ssl_debug)
+### 🔧 SetDllPath Helper (ssl_debug diagnostic tool only)
 
+- **For ssl_debug example only** - not part of Request-FP library, not needed for normal usage
 - Attempts to prioritize executable directory for DLL loading via `SetDefaultDllDirectories` + `AddDllDirectory`
 - Helps when users don't have System32 OpenSSL (the primary use case for fresh FPC installs)
 - **Note:** Windows may still load from System32 if OpenSSL is registered in Known DLLs registry (documented limitation)
@@ -71,9 +72,10 @@ Required DLL names: libssl-*-x64.dll and libcrypto-*-x64.dll
    - Added architecture detection output
    - Added ReadLn pause for IDE users
 
-3. **examples/ssl_debug/SetDllPath.pas** (NEW FILE)
+3. **examples/ssl_debug/SetDllPath.pas** (NEW FILE - diagnostic tool only, not part of library)
    - Separate unit with initialization section for DLL path setup
    - Uses SetDefaultDllDirectories + AddDllDirectory
+   - **Only used by ssl_debug example** - not required for Request-FP library usage
    - Must be first in uses clause to run before OpenSSL loads
    - Documented Windows Known DLLs limitation
 
@@ -248,9 +250,11 @@ IMPORTANT: Ensure DLL architecture (32-bit vs 64-bit) matches your executable!
 
 ## Additional Notes
 
-### SetDllPath Approach (SetDefaultDllDirectories + AddDllDirectory)
+### SetDllPath Approach (ssl_debug diagnostic tool only)
 
-The SetDllPath unit attempts to prioritize local DLLs for the primary use case (fresh FPC installs without System32 OpenSSL).
+**Important:** SetDllPath is **only for the ssl_debug example** - it is NOT part of the Request-FP library and is NOT required for normal usage. Request-FP works perfectly without it.
+
+The SetDllPath unit attempts to prioritize local DLLs for the ssl_debug diagnostic tool, helping when users test fresh FPC installs without System32 OpenSSL.
 
 **Limitations:**
 

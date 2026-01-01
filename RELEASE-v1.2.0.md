@@ -36,7 +36,7 @@ IMPORTANT: Ensure DLL architecture (32-bit vs 64-bit) matches your executable!
 1. **ssl_debug Example** - Shows executable architecture upfront
 2. **Architecture-Specific Error Messages** - Error messages now detect and display whether you need 32-bit or 64-bit DLLs
 3. **Dynamic DLL Detection** - New `FindSSLDLLPath` function finds loaded OpenSSL DLLs regardless of vendor naming conventions
-4. **SetDllPath Unit** - Attempts to prioritize local DLL loading (helps when System32 doesn't have OpenSSL)
+4. **SetDllPath Helper** - Diagnostic helper for ssl_debug example only (not part of library, not needed for normal usage)
 5. **ReadLn Pause** - ssl_debug now pauses before exit when run from IDE (community contribution)
 
 ## 🔄 Upgrading from v1.1.0
@@ -55,7 +55,8 @@ All v1.1.0 code continues to work without modification.
 ## 📊 Changes Summary
 
 - **Files Modified:** 5 (CHANGELOG.md, README.md, src/Request.pas, examples/ssl_debug/ssl_debug.pas, examples/ssl_debug/SetDllPath.pas)
-- **New Features:** Architecture detection, dynamic DLL discovery, SetDllPath unit for DLL search assistance
+- **Library Features:** Architecture detection in error messages, dynamic DLL discovery for debug mode
+- **Diagnostic Tools:** SetDllPath helper for ssl_debug example (not part of library)
 - **Bug Fixes:** Better diagnostics for architecture mismatch, vendor naming variations
 - **Breaking Changes:** 0
 
@@ -83,7 +84,7 @@ All v1.1.0 code continues to work without modification.
 
 **Impact:** Users can now instantly diagnose OpenSSL issues regardless of their FPC architecture, OpenSSL vendor, or installation method.
 
-**Note:** SetDllPath unit helps prioritize local DLLs when System32 doesn't have OpenSSL (fresh FPC installs). However, Windows may still load from System32 if OpenSSL is registered in the Known DLLs registry - this is documented Windows behavior.
+**Note about SetDllPath:** This is a diagnostic helper **only for the ssl_debug example** - it is NOT part of the Request-FP library and is NOT required for normal usage. Request-FP works perfectly without it. SetDllPath attempts to prioritize local DLLs when running ssl_debug on fresh FPC installs, but Windows may still load from System32 if OpenSSL is in the Known DLLs registry.
 
 ## 📝 Full Changelog
 
