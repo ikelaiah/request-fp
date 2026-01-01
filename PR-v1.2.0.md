@@ -4,7 +4,7 @@
 
 This PR adds architecture mismatch detection, dynamic DLL discovery, and automatic DLL loading fixes to completely resolve Windows OpenSSL setup issues. Based on user feedback and community input, we discovered that:
 
-1. Users with fpcupdeluxe (32-bit FPC) were installing 64-bit OpenSSL by mistake
+1. Architecture mismatches occurred when fpcupdeluxe (32-bit default) was paired with 64-bit OpenSSL
 2. System32 DLLs were taking priority over local OpenSSL installations
 3. Users had no way to tell which architecture their executable was
 4. Hardcoded DLL name guessing failed with vendors using non-standard naming conventions
@@ -48,9 +48,9 @@ Required DLL names: libssl-*-x64.dll and libcrypto-*-x64.dll
 
 ### 📚 Documentation Updates
 
-- README.md: Added warning that fpcupdeluxe defaults to 32-bit FPC
+- README.md: Added FPC's automatic OpenSSL version detection explanation and 32-bit FPC information
 - CHANGELOG.md: Documented all v1.2.0 changes
-- RELEASE-v1.2.0.md: Comprehensive release notes
+- RELEASE-v1.2.0.md: Comprehensive release notes with FPC DLL search order details
 
 ### ✨ Community Contributions
 
@@ -250,13 +250,18 @@ The `SetDllDirectoryW` approach is the cleanest solution for the DLL search orde
 
 ### Dynamic DLL Detection Approach
 
-The `FindSSLDLLPath` with `EnumProcessModules` is superior to hardcoded name guessing:
+The `FindSSLDLLPath` with `EnumProcessModules` complements FPC's existing DLL search:
 
-1. ❌ Hardcoded list - Breaks with non-standard vendor naming
-2. ❌ Adding more variations - Still won't catch all possibilities
-3. ✅ Dynamic enumeration - Works with ANY naming convention, future-proof
+**FPC already handles version fallback:**
+- FPC's `openssl.pas` tries: `libssl-3-x64` → `libssl-1_1-x64` → `ssleay32` → `libssl32`
+- This works great for loading DLLs
 
-This approach leverages Windows' guarantee that loaded modules match process architecture, so we don't need to check DLL architecture ourselves.
+**Our contribution:**
+- Shows users which version FPC actually loaded
+- Helps diagnose "Is my app using OpenSSL 3.x or 1.1.x?"
+- Works with any vendor naming, including non-standard conventions
+
+This approach leverages Windows' guarantee that loaded modules match process architecture, so we don't need to check DLL architecture ourselves. We're showing what FPC loaded, not duplicating its loading logic.
 
 ## Next Steps
 
