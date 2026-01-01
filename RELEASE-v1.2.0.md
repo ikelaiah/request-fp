@@ -138,7 +138,7 @@ The v1.2.0 debug output shows your executable architecture (32-bit or 64-bit) up
 
 Special thanks to:
 - The community member who suggested adding `ReadLn` to prevent console auto-close in the IDE!
-- Gustavo for pointing out the hardcoded DLL name issue and suggesting dynamic detection!
+- Gus for pointing out the hardcoded DLL name issue
 
 ---
 
