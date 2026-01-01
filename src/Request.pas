@@ -13,7 +13,7 @@ uses
   {$IFDEF WINDOWS}, Windows{$ENDIF};
 
 const
-  REQUEST_FP_VERSION = '1.1.0';
+  REQUEST_FP_VERSION = '1.1.1';
   DEFAULT_USER_AGENT = 'Request-FP/' + REQUEST_FP_VERSION;
   {$IFDEF DEBUG}
     DEBUG_MODE = True;
@@ -512,9 +512,8 @@ begin
       if DEBUG_MODE then
       begin
         WriteLn('[DEBUG] OpenSSL initialized successfully (Windows)');
-        WriteLn('[DEBUG] OpenSSL version: ', SSLeay_version(0));
         {$IFDEF WINDOWS}
-        // Try to detect which DLLs were loaded
+        // Try to detect which DLLs were loaded first
         SSLPath := GetDLLPath('libssl-3-x64.dll');
         if SSLPath = '' then SSLPath := GetDLLPath('libssl-3.dll');
         if SSLPath = '' then SSLPath := GetDLLPath('libssl-1_1-x64.dll');
@@ -526,20 +525,40 @@ begin
         if CryptoPath = '' then CryptoPath := GetDLLPath('libcrypto-1_1.dll');
 
         if SSLPath <> '' then
-          WriteLn('[DEBUG] libssl loaded from: ', SSLPath);
+          WriteLn('[DEBUG] libssl loaded from: ', SSLPath)
+        else
+          WriteLn('[DEBUG] WARNING: Could not determine libssl DLL path');
+
         if CryptoPath <> '' then
-          WriteLn('[DEBUG] libcrypto loaded from: ', CryptoPath);
+          WriteLn('[DEBUG] libcrypto loaded from: ', CryptoPath)
+        else
+          WriteLn('[DEBUG] WARNING: Could not determine libcrypto DLL path');
         {$ENDIF}
+
+        try
+          WriteLn('[DEBUG] OpenSSL version: ', SSLeay_version(0));
+        except
+          on E: Exception do
+            WriteLn('[DEBUG] ERROR getting OpenSSL version: ', E.Message);
+        end;
       end;
     except
       on E: Exception do
       begin
         ErrorMsg := 'OpenSSL initialization failed: ' + E.Message + LineEnding +
                     'Install OpenSSL and copy the required DLLs to your executable folder or add to PATH:' + LineEnding +
+                    {$IFDEF CPU64}
+                    '  This is a 64-bit executable. You need 64-bit DLLs:' + LineEnding +
                     '  OpenSSL 1.1.x: libssl-1_1-x64.dll and libcrypto-1_1-x64.dll' + LineEnding +
                     '  OpenSSL 3.x: libssl-3-x64.dll and libcrypto-3-x64.dll' + LineEnding +
+                    {$ELSE}
+                    '  This is a 32-bit executable. You need 32-bit DLLs:' + LineEnding +
+                    '  OpenSSL 1.1.x: libssl-1_1.dll and libcrypto-1_1.dll' + LineEnding +
+                    '  OpenSSL 3.x: libssl-3.dll and libcrypto-3.dll' + LineEnding +
+                    {$ENDIF}
                     'Install via: choco install openssl OR scoop install openssl' + LineEnding +
-                    'Or download from: https://slproweb.com/products/Win32OpenSSL.html';
+                    'Or download from: https://slproweb.com/products/Win32OpenSSL.html' + LineEnding +
+                    'IMPORTANT: Ensure DLL architecture (32-bit vs 64-bit) matches your executable!';
         WriteLn(ErrorMsg);
         raise ERequestError.Create(ErrorMsg);
       end;

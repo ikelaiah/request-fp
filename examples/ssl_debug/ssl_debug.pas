@@ -1,7 +1,8 @@
 program ssl_debug;
 
 {$mode objfpc}{$H+}{$J-}
-{$DEFINE DEBUG}  // Enable debug mode to see SSL DLL loading information
+// DEBUG mode is controlled by build configuration (Debug vs Default/Release)
+// Use: lazbuild --build-mode=Debug ssl_debug.lpi
 
 uses
   SysUtils, Request;
@@ -10,6 +11,11 @@ var
   Response: TResponse;
 begin
   WriteLn('=== OpenSSL Debug Information ===');
+  WriteLn;
+
+  // Show executable architecture
+  WriteLn('Executable architecture: ', {$IFDEF CPU64}'64-bit'{$ELSE}'32-bit'{$ENDIF});
+  WriteLn('Required DLL names: ', {$IFDEF CPU64}'libssl-*-x64.dll and libcrypto-*-x64.dll'{$ELSE}'libssl-*.dll and libcrypto-*.dll (32-bit)'{$ENDIF});
   WriteLn;
 
   try
@@ -23,6 +29,8 @@ begin
     WriteLn('Status Code: ', Response.StatusCode);
     WriteLn('OpenSSL is working correctly!');
     WriteLn;
+    WriteLn('Press Enter to exit...');
+    ReadLn;
   except
     on E: Exception do
     begin
@@ -30,6 +38,8 @@ begin
       WriteLn('=== ERROR ===');
       WriteLn('Failed to make HTTPS request: ', E.Message);
       WriteLn;
+      WriteLn('Press Enter to exit...');
+      ReadLn;
       ExitCode := 1;
     end;
   end;
