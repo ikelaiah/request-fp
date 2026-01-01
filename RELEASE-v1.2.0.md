@@ -1,8 +1,8 @@
-# Request-FP v1.1.1 Release Notes
+# Request-FP v1.2.0 Release Notes
 
 **Release Date:** January 1, 2026
 
-This is a minor patch release that adds architecture mismatch detection to help diagnose the most common OpenSSL setup issue on Windows: mixing 32-bit and 64-bit binaries.
+This is a minor feature release that adds architecture mismatch detection and dynamic DLL discovery to completely solve Windows OpenSSL setup issues, including support for vendors with non-standard DLL naming conventions.
 
 ## 🎯 What's New
 
@@ -37,7 +37,9 @@ No more mystery failures!
 
 1. **ssl_debug Example** - Shows executable architecture upfront
 2. **Architecture-Specific Error Messages** - Error messages now detect and display whether you need 32-bit or 64-bit DLLs
-3. **ReadLn Pause** - ssl_debug now pauses before exit when run from IDE (community contribution)
+3. **Dynamic DLL Detection** - New `FindSSLDLLPath` function finds loaded OpenSSL DLLs regardless of vendor naming conventions
+4. **SetDllDirectory Integration** - Forces local DLL loading over System32
+5. **ReadLn Pause** - ssl_debug now pauses before exit when run from IDE (community contribution)
 
 ## 🔄 Upgrading from v1.1.0
 
@@ -54,25 +56,36 @@ All v1.1.0 code continues to work without modification.
 
 ## 📊 Changes Summary
 
-- **Files Modified:** 3 (CHANGELOG.md, README.md, src/Request.pas, examples/ssl_debug/ssl_debug.pas)
-- **New Features:** Architecture detection and display
-- **Bug Fixes:** Better diagnostics for architecture mismatch
+- **Files Modified:** 4 (CHANGELOG.md, README.md, src/Request.pas, examples/ssl_debug/ssl_debug.pas)
+- **New Features:** Architecture detection, dynamic DLL discovery, SetDllDirectory integration
+- **Bug Fixes:** Better diagnostics for architecture mismatch, DLL search order issues, vendor naming variations
 - **Breaking Changes:** 0
 
 ## 🐛 What This Fixes
 
-**Problem:** Users with mismatched executable/DLL architectures got cryptic "Error loading library" messages with no hint about the real issue.
+**Problem 1:** Users with mismatched executable/DLL architectures got cryptic "Error loading library" messages with no hint about the real issue.
 
 **Solution:**
 - Detect executable architecture at runtime
 - Display required DLL names based on architecture
 - Provide explicit warnings about architecture matching
 
-**Impact:** Users can now instantly diagnose whether they downloaded the wrong OpenSSL installer or compiled for the wrong architecture.
+**Problem 2:** Vendors using non-standard OpenSSL naming (e.g., disguising 3.x as 1.1.x) broke debug mode DLL path detection.
+
+**Solution:**
+- Dynamic module enumeration finds ANY DLL with "libssl" or "libcrypto" in the name
+- No more hardcoded filename guessing
+
+**Problem 3:** System32 OpenSSL DLLs taking priority over local installations.
+
+**Solution:**
+- SetDllDirectoryW in ssl_debug forces executable directory to be searched first
+
+**Impact:** Users can now instantly diagnose OpenSSL issues regardless of their FPC architecture, OpenSSL vendor, or installation method.
 
 ## 📝 Full Changelog
 
-See [CHANGELOG.md](CHANGELOG.md#111---2026-01-01) for complete details.
+See [CHANGELOG.md](CHANGELOG.md#120---2026-01-01) for complete details.
 
 ## 🔗 Quick Links
 
@@ -97,23 +110,25 @@ If you're still experiencing OpenSSL failures after upgrading to v1.1.1:
 
 4. **Check the installer you downloaded** - Make sure it's Win64 OpenSSL, not Win32
 
-### Common Issue: fpcupdeluxe Users
+### Note for fpcupdeluxe Users
 
-**IMPORTANT:** If you installed FPC using fpcupdeluxe with default settings, you likely have **32-bit FPC**, even on 64-bit Windows!
+**FYI:** fpcupdeluxe with default settings installs **32-bit FPC**, even on 64-bit Windows. This is a common choice for lower memory footprint and smaller executables.
 
-This means you need **32-bit OpenSSL** (the Win32 installer), not the Win64 version:
-- Download: `Win32OpenSSL_Light-3_6_0.exe` (NOT Win64!)
-- Use DLLs: `libssl-3.dll` and `libcrypto-3.dll` (NO `-x64` suffix!)
+If you're using 32-bit FPC, you need **32-bit OpenSSL**:
+- Download: `Win32OpenSSL_Light-3_6_0.exe` (the Win32 installer)
+- Use DLLs: `libssl-3.dll` and `libcrypto-3.dll` (without `-x64` suffix)
 
-The v1.1.1 debug output will immediately show if you have a 32-bit vs 64-bit executable, making this obvious.
+The v1.2.0 debug output shows your executable architecture (32-bit or 64-bit) upfront, making it easy to verify which OpenSSL version you need.
 
 ## 💝 Thank You
 
-Special thanks to the community member who suggested adding `ReadLn` to prevent console auto-close in the IDE!
+Special thanks to:
+- The community member who suggested adding `ReadLn` to prevent console auto-close in the IDE!
+- Gustavo for pointing out the hardcoded DLL name issue and suggesting dynamic detection!
 
 ---
 
-**Download:** [v1.1.1 Release](https://github.com/yourusername/request-fp/releases/tag/v1.1.1)
+**Download:** [v1.2.0 Release](https://github.com/yourusername/request-fp/releases/tag/v1.2.0)
 
 **Previous Release:** [v1.1.0](https://github.com/yourusername/request-fp/releases/tag/v1.1.0)
 

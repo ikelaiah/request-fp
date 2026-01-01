@@ -13,7 +13,7 @@ uses
   {$IFDEF WINDOWS}, Windows{$ENDIF};
 
 const
-  REQUEST_FP_VERSION = '1.1.1';
+  REQUEST_FP_VERSION = '1.2.0';
   DEFAULT_USER_AGENT = 'Request-FP/' + REQUEST_FP_VERSION;
   {$IFDEF DEBUG}
     DEBUG_MODE = True;

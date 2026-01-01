@@ -5,7 +5,7 @@
 [![Lazarus](https://img.shields.io/badge/Lazarus-4.0+-60A5FA.svg)](https://www.lazarus-ide.org/)
 ![Supports Windows](https://img.shields.io/badge/support-Windows-F59E0B?logo=Windows)
 ![Supports Linux](https://img.shields.io/badge/support-Linux-F59E0B?logo=Linux)
-[![Version](https://img.shields.io/badge/version-1.1.1-8B5CF6.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.2.0-8B5CF6.svg)](CHANGELOG.md)
 ![No Dependencies](https://img.shields.io/badge/dependencies-none-10B981.svg)
 
 Zero‑memory‑leak, high‑level HTTP client for Free Pascal. Built on top of FPC's HTTP stack with a clean API and zero boilerplate.
@@ -233,9 +233,10 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 If you encounter OpenSSL initialization errors on Windows (e.g., "OpenSSL initialization failed"), you need to install the OpenSSL DLLs.
 
 **IMPORTANT:** The DLL architecture (32-bit vs 64-bit) must match your FPC installation:
-- **fpcupdeluxe defaults to 32-bit FPC**, even on 64-bit Windows
+- **fpcupdeluxe defaults to 32-bit FPC** (common choice for lower memory footprint and smaller executables)
 - If you have 32-bit FPC, you need 32-bit OpenSSL DLLs (no `-x64` suffix)
 - If you have 64-bit FPC, you need 64-bit OpenSSL DLLs (with `-x64` suffix)
+- Use `examples/ssl_debug` to check your executable architecture
 
 **Required DLL Files:**
 - **OpenSSL 1.1.x**: `libssl-1_1-x64.dll` and `libcrypto-1_1-x64.dll` (64-bit) or `libssl-1_1.dll` / `libcrypto-1_1.dll` (32-bit)

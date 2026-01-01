@@ -17,24 +17,27 @@ All notable changes to this project will be documented in this file.
 - (none)
 
 
-## [1.1.1] - 2026-01-01
+## [1.2.0] - 2026-01-01
 
 ### Added
 
 - **Architecture Detection in ssl_debug**: ssl_debug example now displays executable architecture (32-bit vs 64-bit) and required DLL names upfront
 - **Architecture-Specific Error Messages**: InitSSL error messages now explicitly state whether 32-bit or 64-bit DLLs are required based on executable architecture
 - **SetDllDirectory in ssl_debug**: Forces Windows to search executable directory first for DLLs, preventing System32 DLLs from taking priority over local installations
+- **Dynamic DLL Detection**: New `FindSSLDLLPath` function using `EnumProcessModules` to dynamically discover loaded OpenSSL DLLs regardless of naming convention
 
 ### Changed
 
 - **Enhanced ssl_debug Output**: Now shows "Executable architecture: 64-bit" and "Required DLL names: libssl-*-x64.dll and libcrypto-*-x64.dll" before attempting HTTPS request
 - **Improved Error Messages**: Added "IMPORTANT: Ensure DLL architecture (32-bit vs 64-bit) matches your executable!" warning to help diagnose architecture mismatch issues
-- **Dynamic DLL Detection**: Replaced hardcoded DLL name guessing with dynamic module enumeration that finds any loaded OpenSSL DLL regardless of naming convention
+- **Debug Mode DLL Path Detection**: Replaced hardcoded DLL name guessing with dynamic module enumeration that finds any loaded OpenSSL DLL regardless of vendor naming conventions
 
 ### Fixed
 
 - **Architecture Mismatch Detection**: Users with mismatched executable/DLL architectures now get clear error messages explaining the issue instead of cryptic "Error loading library" failures
-- **fpcupdeluxe Default Settings**: Added documentation clarifying that fpcupdeluxe installs 32-bit FPC by default, which requires 32-bit OpenSSL DLLs (not the Win64 installer)
+- **DLL Search Order Issue**: SetDllDirectoryW in ssl_debug now prevents System32 DLLs from taking priority over local installations
+- **fpcupdeluxe Architecture Documentation**: Added documentation clarifying that fpcupdeluxe defaults to 32-bit FPC (common for lower memory footprint), which requires matching 32-bit OpenSSL DLLs
+- **Vendor-Specific DLL Naming**: Dynamic detection now works with any OpenSSL DLL naming convention, including vendors who disguise OpenSSL 3.x as 1.1.x
 
 
 ## [1.1.0] - 2026-01-01
