@@ -35,7 +35,7 @@ IMPORTANT: Ensure DLL architecture (32-bit vs 64-bit) matches your executable!
 
 1. **ssl_debug Example** - Shows executable architecture upfront
 2. **Architecture-Specific Error Messages** - Error messages now detect and display whether you need 32-bit or 64-bit DLLs
-3. **Dynamic DLL Detection** - New `FindSSLDLLPath` function finds loaded OpenSSL DLLs regardless of vendor naming conventions
+3. **Dynamic DLL Detection** - New `FindSSLDLLPath` function shows which OpenSSL DLL FPC actually loaded
 4. **ReadLn Pause** - ssl_debug now pauses before exit when run from IDE (community contribution)
 
 ## 🔄 Upgrading from v1.1.0
@@ -55,7 +55,7 @@ All v1.1.0 code continues to work without modification.
 
 - **Files Modified:** 4 (CHANGELOG.md, README.md, src/Request.pas, examples/ssl_debug/ssl_debug.pas)
 - **Library Features:** Architecture detection in error messages, dynamic DLL discovery for debug mode
-- **Bug Fixes:** Better diagnostics for architecture mismatch, vendor naming variations
+- **Bug Fixes:** Better diagnostics for architecture mismatch, vendor version disguise detection
 - **Breaking Changes:** 0
 
 ## 🐛 What This Fixes
@@ -68,21 +68,21 @@ All v1.1.0 code continues to work without modification.
 - Display required DLL names based on architecture
 - Provide explicit warnings about architecture matching
 
-**Problem 2:** Vendors using non-standard OpenSSL naming (e.g., disguising 3.x as 1.1.x) broke debug mode DLL path detection.
+**Problem 2:** No visibility when vendors disguise OpenSSL versions (e.g., naming 3.x DLLs as 1.1.x).
 
 **Solution:**
 
-- Dynamic module enumeration finds ANY DLL with "libssl" or "libcrypto" in the name
-- No more hardcoded filename guessing
+- Dynamic module enumeration finds loaded DLLs containing "libssl" or "libcrypto"
+- Displays both filename AND actual version string to reveal mismatches
 
 **Problem 3:** No visibility into which OpenSSL version FPC actually loaded.
 
 **Solution:**
 
 - Dynamic DLL detection shows exact DLL paths loaded by FPC
-- Works with any vendor naming convention
+- Shows actual version string from the loaded DLL
 
-**Impact:** Users can now instantly diagnose OpenSSL issues regardless of their FPC architecture, OpenSSL vendor, or installation method.
+**Impact:** Users can now instantly diagnose OpenSSL issues and verify which version FPC loaded, even when vendors disguise DLL versions.
 
 ## 📝 Full Changelog
 

@@ -36,8 +36,8 @@ Required DLL names: libssl-*-x64.dll and libcrypto-*-x64.dll
 
 - New `FindSSLDLLPath` function using `EnumProcessModules`
 - Searches all loaded modules for "libssl" or "libcrypto" in filename
-- Works with ANY vendor naming convention (no more hardcoded guesses)
-- Supports vendors who disguise OpenSSL 3.x as 1.1.x
+- Shows which OpenSSL DLL FPC actually loaded (for debug visibility)
+- Reveals when vendors disguise OpenSSL 3.x as 1.1.x (displays actual version vs filename)
 
 ### 📚 Documentation Updates
 
@@ -133,7 +133,7 @@ OpenSSL is working correctly!
 
 1. **Immediate diagnosis** - Users see architecture mismatch instantly via ssl_debug
 2. **Clear guidance** - Error messages tell users exactly what to do
-3. **Any vendor works** - Dynamic detection finds OpenSSL regardless of naming convention
+3. **Vendor disguise detection** - Shows when filename doesn't match actual OpenSSL version
 4. **Visibility** - Users can see which OpenSSL version FPC actually loaded
 
 ### Resolved Issues
@@ -141,7 +141,7 @@ OpenSSL is working correctly!
 - ✅ fpcupdeluxe users downloading wrong OpenSSL architecture (architecture detection helps diagnose)
 - ✅ Cryptic "Error loading library" messages with no hints (architecture-specific error messages)
 - ✅ Console auto-closing in IDE before users can read output (ReadLn pause added)
-- ✅ Hardcoded DLL name guessing failing with non-standard vendor naming (dynamic enumeration)
+- ✅ Debug mode couldn't show which DLL FPC loaded (dynamic enumeration finds loaded modules)
 - ✅ Debug mode now shows when vendors disguise OpenSSL 3.x as 1.1.x (displays actual version vs filename)
 - ✅ No visibility into which OpenSSL version FPC actually loaded (dynamic detection shows path and version)
 
