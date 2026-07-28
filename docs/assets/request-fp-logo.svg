@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="220" viewBox="0 0 760 220" role="img" aria-labelledby="title description">
+  <title id="title">Request-FP</title>
+  <desc id="description">An FP monogram between angle brackets beside the Request-FP wordmark and the tagline Easy HTTP for Free Pascal.</desc>
+
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0F172A"/>
+      <stop offset="0.55" stop-color="#172554"/>
+      <stop offset="1" stop-color="#312E81"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#020617" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <rect x="10" y="10" width="740" height="200" rx="32" fill="url(#background)" filter="url(#shadow)"/>
+  <path d="M42 58C42 43.641 53.641 32 68 32h112c14.359 0 26 11.641 26 26v104c0 14.359-11.641 26-26 26H68c-14.359 0-26-11.641-26-26V58z" fill="#FFFFFF" fill-opacity="0.07" stroke="#FFFFFF" stroke-opacity="0.14" stroke-width="2"/>
+
+  <path d="M96 70L68 110l28 40" fill="none" stroke="#F0ABFC" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M152 70l28 40-28 40" fill="none" stroke="#60A5FA" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="124" y="121" fill="#FFFFFF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="30" font-weight="800" text-anchor="middle">FP</text>
+
+  <text x="244" y="111" fill="#FFFFFF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="62" font-weight="800" letter-spacing="-2">Request<tspan fill="#67E8F9">-FP</tspan></text>
+  <text x="248" y="150" fill="#C7D2FE" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22" font-weight="500" letter-spacing="0.4">Easy HTTP for Free Pascal</text>
+</svg>

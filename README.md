@@ -1,5 +1,9 @@
 # Request-FP
 
+<p align="center">
+  <img src="docs/assets/request-fp-logo.svg" alt="Request-FP — easy HTTP for Free Pascal" width="720">
+</p>
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-1E3A8A.svg)](https://opensource.org/licenses/MIT)
 [![Free Pascal](https://img.shields.io/badge/Free%20Pascal-3.2.2+-3B82F6.svg)](https://www.freepascal.org/)
 [![Lazarus](https://img.shields.io/badge/Lazarus-4.8+-60A5FA.svg)](https://www.lazarus-ide.org/)

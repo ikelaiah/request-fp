@@ -32,6 +32,7 @@ All notable changes to this project will be documented in this file.
   for a 2xx status; `Result.OK` checks both transport success and 2xx status.
 - `Response.RaiseForStatus` for opting in to exceptions on non-2xx responses.
 - `Session.PostJSON` overloads for JSON strings and `TJSONData`.
+- New SVG project logo displayed in the README.
 
 ### Changed
 
