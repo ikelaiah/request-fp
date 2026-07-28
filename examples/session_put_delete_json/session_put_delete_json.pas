@@ -8,7 +8,6 @@ var
   Response: TResponse;
   Data: TJSONObject;
 begin
-  Session.Init;
   Session.SetBaseURL('https://httpbin.org');
 
   // PUT example

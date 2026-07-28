@@ -15,8 +15,8 @@ begin
   CloseFile(F);
 
   Response := Http.PostMultipart('https://httpbin.org/post',
-    [TKeyValue.Create('field1', 'value1')],
-    [TKeyValue.Create('file1', TempFile)]);
+    [KV('field1', 'value1')],
+    [KV('file1', TempFile)]);
 
   WriteLn('Status: ', Response.StatusCode);
   WriteLn('Body: ', Response.Text);

@@ -50,6 +50,8 @@ type
 
     // SSL/OpenSSL initialization test (optional, not run in -a mode)
     procedure Test25_SSLInitialization;
+    procedure Test26_ConvenienceHelpers;
+    procedure Test27_PostForm;
   end;
 
 implementation
@@ -94,9 +96,9 @@ var
 begin
   Q := 'hello world';
   U := 'üñîçødé & symbols?';
-  Response := Http.Get('https://httpbin.org/get', [], [
-    TKeyValue.Create('q', Q),
-    TKeyValue.Create('u', U)
+  Response := Http.GetWithParams('https://httpbin.org/get', [
+    KV('q', Q),
+    KV('u', U)
   ]);
   AssertEquals('Status code should be 200', 200, Response.StatusCode);
   JsonObj := TJSONObject(Response.JSON);
@@ -105,6 +107,64 @@ begin
     AssertEquals('Query u should be decoded correctly', U, JsonObj.FindPath('args.u').AsString);
   finally
   end;
+end;
+
+procedure TRequestSimpleTests.Test26_ConvenienceHelpers;
+var
+  Pair: TKeyValue;
+  Response: TResponse;
+  RequestResult: TRequestResult;
+  RaisedError: Boolean;
+begin
+  Pair := KV('X-Test', 'value');
+  AssertEquals('KV should set the key', 'X-Test', Pair.Key);
+  AssertEquals('KV should set the value', 'value', Pair.Value);
+
+  Response.StatusCode := 204;
+  AssertTrue('OK should be true for 2xx status', Response.OK);
+  Response.RaiseForStatus;
+
+  RequestResult.Success := True;
+  RequestResult.Response.StatusCode := 200;
+  AssertTrue('Result.OK should include transport and HTTP status',
+    RequestResult.OK);
+  RequestResult.Response.StatusCode := 404;
+  AssertFalse('Result.OK should reject non-2xx status', RequestResult.OK);
+
+  Response.StatusCode := 404;
+  RaisedError := False;
+  try
+    Response.RaiseForStatus;
+  except
+    on E: ERequestError do
+      RaisedError := Pos('404', E.Message) > 0;
+  end;
+  AssertTrue('RaiseForStatus should report non-2xx status', RaisedError);
+
+  RequestResult := Http.TryPostJSON('https://example.invalid',
+    TJSONData(nil));
+  AssertFalse('TryPostJSON should reject nil without raising',
+    RequestResult.Success);
+  AssertTrue('TryPostJSON should explain the nil value',
+    Pos('cannot be nil', RequestResult.Error) > 0);
+end;
+
+procedure TRequestSimpleTests.Test27_PostForm;
+var
+  Response: TResponse;
+  FormData: TJSONObject;
+begin
+  Response := Http.PostForm('https://httpbin.org/post', [
+    KV('name', 'Ada Lovelace'),
+    KV('language', 'Pascal & friends')
+  ]);
+  AssertEquals('Status code should be 200', 200, Response.StatusCode);
+  FormData := TJSONObject(Response.JSON.FindPath('form'));
+  AssertTrue('Form data should exist', FormData <> nil);
+  AssertEquals('Spaces should be encoded and decoded', 'Ada Lovelace',
+    FormData.Get('name', ''));
+  AssertEquals('Symbols should be encoded and decoded', 'Pascal & friends',
+    FormData.Get('language', ''));
 end;
 
 procedure TRequestSimpleTests.Test19_JSONAccessOnNonJSONRaises;
@@ -149,10 +209,20 @@ end;
 procedure TRequestSimpleTests.Test09_JSONRequest;
 var
   Response: TResponse;
-  JsonData: TJSONObject;
+  JsonData, RequestBody: TJSONObject;
+  RequestResult: TRequestResult;
 begin
-  Response := Http.PostJSON('https://httpbin.org/post',
-    '{"name": "John", "age": 30}');
+  RequestBody := TJSONObject.Create;
+  try
+    RequestBody.Add('name', 'John');
+    RequestBody.Add('age', 30);
+    RequestResult := Http.TryPostJSON('https://httpbin.org/post', RequestBody);
+  finally
+    RequestBody.Free;
+  end;
+
+  AssertTrue('TryPostJSON should succeed', RequestResult.Success);
+  Response := RequestResult.Response;
     
   AssertEquals('Status code should be 200', 200, Response.StatusCode);
   AssertTrue('Response should be valid JSON', Assigned(Response.JSON));

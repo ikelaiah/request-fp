@@ -16,6 +16,41 @@ All notable changes to this project will be documented in this file.
 
 - (none)
 
+## [1.3.0] - 2026-07-29
+
+### Added
+
+- `KV(Key, Value)` shorthand for headers, query parameters, form fields, and
+  multipart values.
+- `Http.GetWithParams` and `Http.TryGetWithParams` so query-only GET requests
+  no longer need an empty headers array.
+- `Http.PostForm` and `Http.TryPostForm`, with automatic UTF-8 percent-encoding
+  for `application/x-www-form-urlencoded` bodies.
+- `Http.PostJSON` overloads that accept `TJSONData` directly.
+- `Http.TryPostJSON` overloads for both JSON strings and `TJSONData`.
+- `Response.OK` and `Result.OK` convenience properties. `Response.OK` checks
+  for a 2xx status; `Result.OK` checks both transport success and 2xx status.
+- `Response.RaiseForStatus` for opting in to exceptions on non-2xx responses.
+- `Session.PostJSON` overloads for JSON strings and `TJSONData`.
+
+### Changed
+
+- `THttpSession` is now documented and tested as automatically initialized.
+  `Session.Init` remains available as an optional reset operation.
+- Session base URLs and relative paths now join correctly with or without
+  leading/trailing slashes.
+- Updated the version constant and default user agent to 1.3.0.
+- Reworked the README, API reference, session guide, and cheat sheet around
+  short, copyable common-task examples and a consistent error-handling guide.
+- Reduced setup noise in the main README while retaining detailed SSL
+  diagnostics in the dedicated guides.
+
+### Fixed
+
+- `Session.Init` now frees an existing client, clears headers and cookies, and
+  uses the current version in the default user agent.
+- Corrected case-sensitive documentation links to `docs/cheat-sheet.md`.
+
 
 ## [1.2.0] - 2026-01-01
 

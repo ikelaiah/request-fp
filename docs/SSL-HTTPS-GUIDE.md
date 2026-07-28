@@ -30,7 +30,6 @@ For session-based requests, set the base URL with `https://`:
 var
   Session: THttpSession;
 begin
-  Session.Init;
   Session.SetBaseURL('https://api.example.com');  // Forces HTTPS for all session requests
 
   // All these use HTTPS because of the base URL:

@@ -67,7 +67,6 @@ type
       var 
         Session: THttpSession;
 
-      Session.Init;
       Session.SetBaseURL('https://api.example.com');
       Session.SetHeader('Authorization', 'Bearer ...');
       Response := Session.Get('/endpoint');
@@ -96,7 +95,7 @@ type
     class operator Finalize(var Session: THttpSession);
     class operator Copy(constref Source: THttpSession; var Dest: THttpSession);
     
-    { Explicit initialization method (call before use) }
+    { Resets the session to its defaults. Initialization is automatic. }
     procedure Init;
     
     { Performs a HTTP GET request }
@@ -104,6 +103,9 @@ type
     { Performs a HTTP POST request }
     function Post(const URL: string; const Body: string = ''; 
                  const ContentType: string = 'application/x-www-form-urlencoded'): TResponse;
+    { Posts a JSON string or TJSONData value with the correct content type. }
+    function PostJSON(const URL: string; const JSON: string): TResponse; overload;
+    function PostJSON(const URL: string; const JSON: TJSONData): TResponse; overload;
     { Performs a HTTP PUT request }
     function Put(const URL: string; const Body: string = ''; 
                 const ContentType: string = 'application/json'): TResponse;
@@ -323,6 +325,16 @@ function THttpSession.GetFullURL(const URL: string): string;
 begin
   if (Pos('http://', LowerCase(URL)) = 1) or (Pos('https://', LowerCase(URL)) = 1) then
     Result := URL
+  else if FBaseURL = '' then
+    Result := URL
+  else if URL = '' then
+    Result := FBaseURL
+  else if (FBaseURL[Length(FBaseURL)] = '/') and
+          (URL[1] = '/') then
+    Result := FBaseURL + Copy(URL, 2, MaxInt)
+  else if (FBaseURL[Length(FBaseURL)] <> '/') and
+          (URL[1] <> '/') then
+    Result := FBaseURL + '/' + URL
   else
     Result := FBaseURL + URL;
 end;
@@ -452,6 +464,19 @@ begin
     RequestBody.Free;
     ResponseStream.Free;
   end;
+end;
+
+function THttpSession.PostJSON(const URL: string; const JSON: string): TResponse;
+begin
+  Result := Post(URL, JSON, 'application/json');
+end;
+
+function THttpSession.PostJSON(const URL: string;
+  const JSON: TJSONData): TResponse;
+begin
+  if JSON = nil then
+    raise ERequestError.Create('JSON data cannot be nil');
+  Result := PostJSON(URL, JSON.AsJSON);
 end;
 
 function THttpSession.Put(const URL: string; const Body: string; 
@@ -594,14 +619,16 @@ end;
 
 procedure THttpSession.Init;
 begin
-  // Explicitly initialize the session record
+  // Init is now an optional reset method. Local variables and fields are
+  // initialized automatically by the advanced-record Initialize operator.
+  if Assigned(Self.FClient) then
+    FreeAndNil(Self.FClient);
+  Self.FHeaders.Clear;
+  Self.FCookies.Clear;
   Self.FClient := nil;
   Self.FBaseURL := '';
-  Self.FUserAgent := 'Request-FP/1.0';
+  Self.FUserAgent := DEFAULT_USER_AGENT;
   Self.FTimeout := 30000; // 30 seconds default timeout
-
-  // FHeaders and FCookies will self-initialize when their methods are called
-  // since we added defensive nil checks to all TSimpleMap methods
 
   // Set default headers
   Self.FHeaders.SetItem('Accept', 'application/json');

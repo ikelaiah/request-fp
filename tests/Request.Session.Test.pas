@@ -39,6 +39,7 @@ type
     procedure Test25_SessionMultipartUpload_Success;
     procedure Test25b_SessionMultipartUpload_Failure;
     procedure Test26_Session_ResponseHeaderValue;
+    procedure Test27_Session_PostJSON;
   end;
 
 implementation
@@ -48,12 +49,29 @@ implementation
 procedure TRequestSessionTests.SetUp;
 begin
   inherited SetUp;
-  // Don't use Default(THttpSession) as it doesn't call Initialize
-  // Instead, use the explicit Init method
-  FSession.Init;
+  // THttpSession is initialized automatically; Init is only needed to reset it.
   FSession.SetBaseURL('https://httpbin.org');
   FSession.SetHeader('Accept', 'application/json');
   FSession.SetHeader('X-Test-Header', 'test-value');
+end;
+
+procedure TRequestSessionTests.Test27_Session_PostJSON;
+var
+  Response: TResponse;
+  Body, Echoed: TJSONObject;
+begin
+  Body := TJSONObject.Create;
+  try
+    Body.Add('name', 'Ada');
+    Response := FSession.PostJSON('/post', Body);
+  finally
+    Body.Free;
+  end;
+
+  AssertEquals('Status code should be 200', 200, Response.StatusCode);
+  Echoed := TJSONObject(Response.JSON.FindPath('json'));
+  AssertTrue('JSON body should be echoed', Echoed <> nil);
+  AssertEquals('JSON value should match', 'Ada', Echoed.Get('name', ''));
 end;
 
 procedure TRequestSessionTests.TearDown;
@@ -100,6 +118,7 @@ var
 begin
   WriteLn('Test03_PersistentHeaders: Starting');
   // Add a custom header to the session
+  FSession.SetBaseURL('https://httpbin.org/');
   FSession.SetHeader('X-Custom-Header', 'session-value');
   
   Response := FSession.Get('/headers');

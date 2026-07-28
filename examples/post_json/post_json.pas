@@ -10,7 +10,7 @@ begin
   try
     UserData.Add('name', 'Alice');
     UserData.Add('email', 'alice@example.com');
-    Response := Http.PostJSON('https://httpbin.org/post', UserData.AsJSON);
+    Response := Http.PostJSON('https://httpbin.org/post', UserData);
     WriteLn('Status: ', Response.StatusCode);
     JsonResp := TJSONObject(Response.JSON.FindPath('json'));
     if Assigned(JsonResp) then

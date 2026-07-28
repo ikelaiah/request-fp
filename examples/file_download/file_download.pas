@@ -9,7 +9,7 @@ var
 begin
   FileName := GetTempDir + 'downloaded_image.png';
   Response := Http.Get('https://httpbin.org/image/png');
-  if (Response.StatusCode = 200) and (Length(Response.Text) > 0) then
+  if Response.OK and (Length(Response.Text) > 0) then
   begin
     FileStream := TFileStream.Create(FileName, fmCreate);
     try
