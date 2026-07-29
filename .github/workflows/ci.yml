@@ -81,7 +81,36 @@ jobs:
 
       - name: Run tests
         shell: bash
-        run: ./tests/TestRunner -a --format=plain
+        run: |
+          set -euo pipefail
+
+          python3 tests/http_fixture.py --port 18080 &
+          fixture_pid="$!"
+          cleanup() {
+            kill "$fixture_pid" 2>/dev/null || true
+            wait "$fixture_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          fixture_ready=false
+          for _ in {1..50}; do
+            if curl --fail --silent http://127.0.0.1:18080/health \
+              > /dev/null; then
+              fixture_ready=true
+              break
+            fi
+            if ! kill -0 "$fixture_pid" 2>/dev/null; then
+              break
+            fi
+            sleep 0.1
+          done
+          if [[ "$fixture_ready" != true ]]; then
+            echo "Local HTTP fixture failed to start." >&2
+            exit 1
+          fi
+
+          export REQUEST_FP_TEST_BASE_URL=http://127.0.0.1:18080
+          ./tests/TestRunner -a --format=plain
 
   windows:
     name: Windows (Lazarus 4.8)
@@ -137,21 +166,44 @@ jobs:
             'libcrypto-3-x64.dll'
           )
 
-          $gitCommand = Get-Command git.exe -ErrorAction Stop
-          $gitRoot = Split-Path -Parent (
-            Split-Path -Parent $gitCommand.Source
-          )
-          $opensslDirectory = Join-Path $gitRoot 'mingw64\bin'
+          $sslDll = Get-ChildItem `
+            -Path (Join-Path $env:ProgramFiles 'OpenSSL*') `
+            -Recurse `
+            -File `
+            -Filter 'libssl-3-x64.dll' `
+            -ErrorAction SilentlyContinue |
+            Where-Object {
+              Test-Path -LiteralPath (
+                Join-Path $_.DirectoryName 'libcrypto-3-x64.dll'
+              )
+            } |
+            Select-Object -First 1
 
+          if ($null -eq $sslDll) {
+            throw (
+              'The Windows runner did not provide compatible ' +
+              'OpenSSL 3 DLLs.'
+            )
+          }
+
+          $opensslDirectory = $sslDll.DirectoryName
           foreach ($dllName in $requiredDlls) {
-            $source = Join-Path $opensslDirectory $dllName
-            if (-not (Test-Path -LiteralPath $source)) {
-              throw "Git for Windows did not provide $dllName."
-            }
-            Copy-Item -LiteralPath $source -Destination .\tests
+            Copy-Item `
+              -LiteralPath (Join-Path $opensslDirectory $dllName) `
+              -Destination .\tests
           }
 
           $opensslExecutable = Join-Path $opensslDirectory 'openssl.exe'
+          if (-not (Test-Path -LiteralPath $opensslExecutable)) {
+            throw 'The Windows runner did not provide openssl.exe.'
+          }
+
+          # Keep the complete native OpenSSL directory available so Windows
+          # can resolve any transitive DLL dependencies at test runtime.
+          $opensslDirectory |
+            Out-File -FilePath $env:GITHUB_PATH -Append
+          $env:PATH = "$opensslDirectory;$env:PATH"
+
           & $opensslExecutable version
           if ($LASTEXITCODE -ne 0) {
             throw (
@@ -160,7 +212,9 @@ jobs:
             )
           }
 
-          Write-Output "Staged OpenSSL 3 DLLs from $opensslDirectory"
+          Write-Output (
+            "Staged native OpenSSL 3 DLLs from $opensslDirectory"
+          )
 
       - name: Verify compiler versions
         shell: pwsh
@@ -205,7 +259,52 @@ jobs:
       - name: Run tests
         shell: pwsh
         run: |
-          & .\tests\TestRunner.exe -a --format=plain
-          if ($LASTEXITCODE -ne 0) {
-            throw "Test suite failed with exit code $LASTEXITCODE."
+          $ErrorActionPreference = 'Stop'
+          $fixture = Start-Process `
+            -FilePath python.exe `
+            -ArgumentList @(
+              'tests\http_fixture.py'
+              '--port'
+              '18080'
+            ) `
+            -PassThru `
+            -WindowStyle Hidden
+
+          try {
+            $fixtureReady = $false
+            for ($attempt = 0; $attempt -lt 50; $attempt++) {
+              try {
+                $response = Invoke-WebRequest `
+                  -Uri 'http://127.0.0.1:18080/health' `
+                  -UseBasicParsing
+                if ($response.StatusCode -eq 200) {
+                  $fixtureReady = $true
+                  break
+                }
+              }
+              catch {
+                if ($fixture.HasExited) {
+                  break
+                }
+                Start-Sleep -Milliseconds 100
+              }
+            }
+
+            if (-not $fixtureReady) {
+              throw 'Local HTTP fixture failed to start.'
+            }
+
+            $env:REQUEST_FP_TEST_BASE_URL = 'http://127.0.0.1:18080'
+            & .\tests\TestRunner.exe -a --format=plain
+            if ($LASTEXITCODE -ne 0) {
+              throw "Test suite failed with exit code $LASTEXITCODE."
+            }
+          }
+          finally {
+            if (-not $fixture.HasExited) {
+              Stop-Process `
+                -Id $fixture.Id `
+                -Force `
+                -ErrorAction SilentlyContinue
+            }
           }

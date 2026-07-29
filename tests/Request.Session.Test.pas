@@ -7,7 +7,7 @@ interface
 
 uses
   Classes, SysUtils, Sockets, fpcunit, testregistry, fpjson, jsonparser,
-  Request, Request.Session;
+  Request, Request.Session, Test.Support;
 
 type
   { TDelayedResponseServer }
@@ -172,7 +172,7 @@ procedure TRequestSessionTests.SetUp;
 begin
   inherited SetUp;
   // THttpSession is initialized automatically; Init is only needed to reset it.
-  FSession.SetBaseURL('https://httpbin.org');
+  FSession.SetBaseURL(TestBaseURL);
   FSession.SetHeader('Accept', 'application/json');
   FSession.SetHeader('X-Test-Header', 'test-value');
 end;
@@ -225,7 +225,7 @@ begin
     AssertTrue('Response should contain URL', URLNode <> nil);
     
     URL := URLNode.AsString;
-    AssertTrue('URL should contain httpbin.org', Pos('httpbin.org', URL) > 0);
+    AssertTrue('URL should contain the requested path', Pos('/get', URL) > 0);
   except
     // No need to free Response - it's managed by the advanced record
     raise;
@@ -240,7 +240,7 @@ var
 begin
   WriteLn('Test03_PersistentHeaders: Starting');
   // Add a custom header to the session
-  FSession.SetBaseURL('https://httpbin.org/');
+  FSession.SetBaseURL(TestBaseURL + '/');
   FSession.SetHeader('X-Custom-Header', 'session-value');
   
   Response := FSession.Get('/headers');
@@ -642,7 +642,7 @@ begin
   except
     on E: Exception do
     begin
-      // Retry once on transient 502
+      // Retry once when a developer uses the public fallback service.
       if Pos('502', E.Message) > 0 then
         Response := FSession.Post('/post', Body, 'multipart/form-data; boundary=' + Boundary)
       else
@@ -674,11 +674,9 @@ end;
 
 procedure TRequestSessionTests.Test25b_SessionMultipartUpload_Failure;
 var
-  OldBase: string;
   Boundary, Body, CRLF: string;
   ExceptionRaised: Boolean;
 begin
-  OldBase := '/'; // store something; we'll restore httpbin base in SetUp anyway per test
   // Create a minimal multipart body
   Boundary := '----RequestFPTest' + IntToStr(Random(1000000));
   CRLF := #13#10;
@@ -687,8 +685,8 @@ begin
           '1' + CRLF +
           '--' + Boundary + '--' + CRLF;
 
-  // Point to a nonexistent host
-  FSession.SetBaseURL('https://nonexistent.example.com');
+  // Point to a local port that should reject the connection.
+  FSession.SetBaseURL(TestFailureURL);
 
   ExceptionRaised := False;
   try
@@ -697,7 +695,8 @@ begin
     on E: Exception do
       ExceptionRaised := True;
   end;
-  AssertTrue('POST should raise exception on nonexistent host', ExceptionRaised);
+  AssertTrue('POST should raise exception on connection failure',
+    ExceptionRaised);
 
   // No explicit restore needed; each test re-initializes the session in SetUp
 end;
@@ -708,7 +707,7 @@ var
   CT: string;
 begin
   Response := FSession.Get('/get');
-  // Retry once on transient upstream 502 from httpbin
+  // Retry once when a developer uses the public fallback service.
   if Response.StatusCode = 502 then
     Response := FSession.Get('/get');
   AssertEquals('Status code should be 200', 200, Response.StatusCode);
