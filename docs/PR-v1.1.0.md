@@ -42,12 +42,12 @@ This helps users immediately identify:
 
 ### 📚 New Documentation
 
-1. **[docs/SSL-HTTPS-GUIDE.md](docs/SSL-HTTPS-GUIDE.md)**
+1. **[docs/SSL-HTTPS-GUIDE.md](SSL-HTTPS-GUIDE.md)**
    - HTTPS enforcement strategies
    - Debug mode usage guide
    - Helper function examples for forcing HTTPS
 
-2. **[docs/OPENSSL-VERSION-SELECTION.md](docs/OPENSSL-VERSION-SELECTION.md)**
+2. **[docs/OPENSSL-VERSION-SELECTION.md](OPENSSL-VERSION-SELECTION.md)**
    - Resolving version conflicts
    - Understanding Windows DLL search order
    - Solutions when wrong version loads

@@ -7,7 +7,7 @@ interface
 
 uses
   Classes, SysUtils, fpcunit, testregistry, fpjson, jsonparser,
-  Request;
+  openssl, Request, Test.Support;
 
 type
   { TRequestSimpleTests }
@@ -50,6 +50,8 @@ type
 
     // SSL/OpenSSL initialization test (optional, not run in -a mode)
     procedure Test25_SSLInitialization;
+    procedure Test26_ConvenienceHelpers;
+    procedure Test27_PostForm;
   end;
 
 implementation
@@ -58,10 +60,10 @@ procedure TRequestSimpleTests.Test01_SimpleGet;
 var
   Response: TResponse;
 begin
-  Response := Http.Get('https://httpbin.org/get');
-  // Retry once on transient upstream 502 from httpbin
+  Response := Http.Get(TestURL('/get'));
+  // Retry once when a developer uses the public fallback service.
   if Response.StatusCode = 502 then
-    Response := Http.Get('https://httpbin.org/get');
+    Response := Http.Get(TestURL('/get'));
   AssertEquals('Status code should be 200', 200, Response.StatusCode);
   AssertTrue('Response content should not be empty', Response.Text <> '');
   AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
@@ -72,7 +74,7 @@ var
   Response: TResponse;
   FormData: TJSONObject;
 begin
-  Response := Http.Post('https://httpbin.org/post', 'test=value');
+  Response := Http.Post(TestURL('/post'), 'test=value');
   AssertEquals('Status code should be 200', 200, Response.StatusCode);
   AssertTrue('Response text should not be empty', Response.Text <> '');
   AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
@@ -94,9 +96,9 @@ var
 begin
   Q := 'hello world';
   U := 'üñîçødé & symbols?';
-  Response := Http.Get('https://httpbin.org/get', [], [
-    TKeyValue.Create('q', Q),
-    TKeyValue.Create('u', U)
+  Response := Http.GetWithParams(TestURL('/get'), [
+    KV('q', Q),
+    KV('u', U)
   ]);
   AssertEquals('Status code should be 200', 200, Response.StatusCode);
   JsonObj := TJSONObject(Response.JSON);
@@ -107,12 +109,70 @@ begin
   end;
 end;
 
+procedure TRequestSimpleTests.Test26_ConvenienceHelpers;
+var
+  Pair: TKeyValue;
+  Response: TResponse;
+  RequestResult: TRequestResult;
+  RaisedError: Boolean;
+begin
+  Pair := KV('X-Test', 'value');
+  AssertEquals('KV should set the key', 'X-Test', Pair.Key);
+  AssertEquals('KV should set the value', 'value', Pair.Value);
+
+  Response.StatusCode := 204;
+  AssertTrue('OK should be true for 2xx status', Response.OK);
+  Response.RaiseForStatus;
+
+  RequestResult.Success := True;
+  RequestResult.Response.StatusCode := 200;
+  AssertTrue('Result.OK should include transport and HTTP status',
+    RequestResult.OK);
+  RequestResult.Response.StatusCode := 404;
+  AssertFalse('Result.OK should reject non-2xx status', RequestResult.OK);
+
+  Response.StatusCode := 404;
+  RaisedError := False;
+  try
+    Response.RaiseForStatus;
+  except
+    on E: ERequestError do
+      RaisedError := Pos('404', E.Message) > 0;
+  end;
+  AssertTrue('RaiseForStatus should report non-2xx status', RaisedError);
+
+  RequestResult := Http.TryPostJSON(TestFailureURL,
+    TJSONData(nil));
+  AssertFalse('TryPostJSON should reject nil without raising',
+    RequestResult.Success);
+  AssertTrue('TryPostJSON should explain the nil value',
+    Pos('cannot be nil', RequestResult.Error) > 0);
+end;
+
+procedure TRequestSimpleTests.Test27_PostForm;
+var
+  Response: TResponse;
+  FormData: TJSONObject;
+begin
+  Response := Http.PostForm(TestURL('/post'), [
+    KV('name', 'Ada Lovelace'),
+    KV('language', 'Pascal & friends')
+  ]);
+  AssertEquals('Status code should be 200', 200, Response.StatusCode);
+  FormData := TJSONObject(Response.JSON.FindPath('form'));
+  AssertTrue('Form data should exist', FormData <> nil);
+  AssertEquals('Spaces should be encoded and decoded', 'Ada Lovelace',
+    FormData.Get('name', ''));
+  AssertEquals('Symbols should be encoded and decoded', 'Pascal & friends',
+    FormData.Get('language', ''));
+end;
+
 procedure TRequestSimpleTests.Test19_JSONAccessOnNonJSONRaises;
 var
   Response: TResponse;
   RaisedErr: Boolean;
 begin
-  Response := Http.Get('https://httpbin.org/html');
+  Response := Http.Get(TestURL('/html'));
   AssertEquals('Status code should be 200', 200, Response.StatusCode);
   RaisedErr := False;
   try
@@ -128,7 +188,7 @@ procedure TRequestSimpleTests.Test03_SimplePut;
 var
   Response: TResponse;
 begin
-  Response := Http.Put('https://httpbin.org/put', 'test=updated');
+  Response := Http.Put(TestURL('/put'), 'test=updated');
   AssertEquals('Status code should be 200', 200, Response.StatusCode);
   AssertTrue('Response text should not be empty', Response.Text <> '');
   AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
@@ -139,7 +199,7 @@ procedure TRequestSimpleTests.Test04_SimpleDelete;
 var
   Response: TResponse;
 begin
-  Response := Http.Delete('https://httpbin.org/delete');
+  Response := Http.Delete(TestURL('/delete'));
   AssertEquals('Status code should be 200', 200, Response.StatusCode);
   AssertTrue('Response text should not be empty', Response.Text <> '');
   AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
@@ -149,10 +209,20 @@ end;
 procedure TRequestSimpleTests.Test09_JSONRequest;
 var
   Response: TResponse;
-  JsonData: TJSONObject;
+  JsonData, RequestBody: TJSONObject;
+  RequestResult: TRequestResult;
 begin
-  Response := Http.PostJSON('https://httpbin.org/post',
-    '{"name": "John", "age": 30}');
+  RequestBody := TJSONObject.Create;
+  try
+    RequestBody.Add('name', 'John');
+    RequestBody.Add('age', 30);
+    RequestResult := Http.TryPostJSON(TestURL('/post'), RequestBody);
+  finally
+    RequestBody.Free;
+  end;
+
+  AssertTrue('TryPostJSON should succeed', RequestResult.Success);
+  Response := RequestResult.Response;
     
   AssertEquals('Status code should be 200', 200, Response.StatusCode);
   AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
@@ -172,7 +242,7 @@ var
   Response: TResponse;
   FormData: TJSONObject;
 begin
-  Response := Http.Post('https://httpbin.org/post', 'name=John&age=30');
+  Response := Http.Post(TestURL('/post'), 'name=John&age=30');
   AssertEquals('Status code should be 200', 200, Response.StatusCode);
   AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
   
@@ -190,7 +260,7 @@ procedure TRequestSimpleTests.Test11_TryGetSuccess;
 var
   Result: TRequestResult;
 begin
-  Result := Http.TryGet('https://httpbin.org/get');
+  Result := Http.TryGet(TestURL('/get'));
   AssertTrue('Request should succeed', Result.Success);
   AssertEquals('Status code should be 200', 200, Result.Response.StatusCode);
   AssertTrue('Response should be valid JSON', Assigned(Result.Response.JSON));
@@ -201,7 +271,7 @@ procedure TRequestSimpleTests.Test12_TryGetFailure;
 var
   Result: TRequestResult;
 begin
-  Result := Http.TryGet('https://nonexistent.example.com');
+  Result := Http.TryGet(TestFailureURL);
   AssertFalse('Request should fail', Result.Success);
   AssertTrue('Error message should not be empty', Result.Error <> '');
 end;
@@ -210,7 +280,7 @@ procedure TRequestSimpleTests.Test13_TryPostSuccess;
 var
   R: TRequestResult;
 begin
-  R := Http.TryPost('https://httpbin.org/post', 'x=1&y=2');
+  R := Http.TryPost(TestURL('/post'), 'x=1&y=2');
   AssertTrue('TryPost should succeed', R.Success);
   AssertEquals('Status code should be 200', 200, R.Response.StatusCode);
   AssertTrue('Response should be valid JSON', Assigned(R.Response.JSON));
@@ -221,7 +291,7 @@ procedure TRequestSimpleTests.Test13b_TryPostFailure;
 var
   R: TRequestResult;
 begin
-  R := Http.TryPost('https://nonexistent.example.com', 'x=1');
+  R := Http.TryPost(TestFailureURL, 'x=1');
   AssertFalse('TryPost should fail', R.Success);
   AssertTrue('Error should be populated', R.Error <> '');
 end;
@@ -231,13 +301,13 @@ var
   R4, R5: TRequestResult;
 begin
   // 404
-  R4 := Http.TryGet('https://httpbin.org/status/404');
+  R4 := Http.TryGet(TestURL('/status/404'));
   AssertTrue('TryGet should not treat 404 as transport failure', R4.Success);
   AssertEquals('Status code should be 404', 404, R4.Response.StatusCode);
   AssertEquals('No transport error expected', '', R4.Error);
 
   // 500
-  R5 := Http.TryGet('https://httpbin.org/status/500');
+  R5 := Http.TryGet(TestURL('/status/500'));
   AssertTrue('TryGet should not treat 500 as transport failure', R5.Success);
   AssertEquals('Status code should be 500', 500, R5.Response.StatusCode);
   AssertEquals('No transport error expected', '', R5.Error);
@@ -257,12 +327,12 @@ begin
   WriteLn(F, 'Static multipart test!');
   CloseFile(F);
 
-  Response := Http.PostMultipart('https://httpbin.org/post', 
+  Response := Http.PostMultipart(TestURL('/post'),
     [TKeyValue.Create('staticfield', 'staticvalue')],
     [TKeyValue.Create('file2', TempFile)]);
-  // Retry once on transient upstream 502 from httpbin
+  // Retry once when a developer uses the public fallback service.
   if Response.StatusCode = 502 then
-    Response := Http.PostMultipart('https://httpbin.org/post', 
+    Response := Http.PostMultipart(TestURL('/post'),
       [TKeyValue.Create('staticfield', 'staticvalue')],
       [TKeyValue.Create('file2', TempFile)]);
 
@@ -296,12 +366,12 @@ var
   Response: TResponse;
   JsonObj: TJSONObject;
 begin
-  Response := Http.Get('https://httpbin.org/get', 
+  Response := Http.Get(TestURL('/get'),
     [TKeyValue.Create('X-Test-Header', 'HeaderValue')],
     [TKeyValue.Create('foo', 'bar'), TKeyValue.Create('baz', 'qux')]);
-  // Retry once on transient upstream 502 from httpbin
+  // Retry once when a developer uses the public fallback service.
   if Response.StatusCode = 502 then
-    Response := Http.Get('https://httpbin.org/get', 
+    Response := Http.Get(TestURL('/get'),
       [TKeyValue.Create('X-Test-Header', 'HeaderValue')],
       [TKeyValue.Create('foo', 'bar'), TKeyValue.Create('baz', 'qux')]);
   AssertEquals('Status code should be 200', 200, Response.StatusCode);
@@ -320,7 +390,7 @@ procedure TRequestSimpleTests.Test16_TryPutSuccess;
 var
   R: TRequestResult;
 begin
-  R := Http.TryPut('https://httpbin.org/put', 'a=updated');
+  R := Http.TryPut(TestURL('/put'), 'a=updated');
   AssertTrue('TryPut should succeed', R.Success);
   AssertEquals('Status code should be 200', 200, R.Response.StatusCode);
   AssertTrue('Response should be valid JSON', Assigned(R.Response.JSON));
@@ -331,7 +401,7 @@ procedure TRequestSimpleTests.Test16b_TryPutFailure;
 var
   R: TRequestResult;
 begin
-  R := Http.TryPut('https://nonexistent.example.com', 'a=b');
+  R := Http.TryPut(TestFailureURL, 'a=b');
   AssertFalse('TryPut should fail', R.Success);
   AssertTrue('Error should be populated', R.Error <> '');
 end;
@@ -340,7 +410,7 @@ procedure TRequestSimpleTests.Test17_TryDeleteSuccess;
 var
   R: TRequestResult;
 begin
-  R := Http.TryDelete('https://httpbin.org/delete');
+  R := Http.TryDelete(TestURL('/delete'));
   AssertTrue('TryDelete should succeed', R.Success);
   AssertEquals('Status code should be 200', 200, R.Response.StatusCode);
   AssertTrue('Response should be valid JSON', Assigned(R.Response.JSON));
@@ -351,7 +421,7 @@ procedure TRequestSimpleTests.Test17b_TryDeleteFailure;
 var
   R: TRequestResult;
 begin
-  R := Http.TryDelete('https://nonexistent.example.com');
+  R := Http.TryDelete(TestFailureURL);
   AssertFalse('TryDelete should fail', R.Success);
   AssertTrue('Error should be populated', R.Error <> '');
 end;
@@ -361,7 +431,7 @@ var
   Response: TResponse;
   CT: string;
 begin
-  Response := Http.Get('https://httpbin.org/get');
+  Response := Http.Get(TestURL('/get'));
   AssertEquals('Status code should be 200', 200, Response.StatusCode);
   CT := Response.HeaderValue('Content-Type');
   AssertTrue('Content-Type header should exist', CT <> '');
@@ -382,12 +452,12 @@ begin
   WriteLn(F, 'TryPostMultipart content');
   CloseFile(F);
 
-  R := Http.TryPostMultipart('https://httpbin.org/post',
+  R := Http.TryPostMultipart(TestURL('/post'),
     [TKeyValue.Create('staticfield', 'staticvalue')],
     [TKeyValue.Create('file2', TempFile)]);
-  // Retry once on transient upstream 502 from httpbin
+  // Retry once when a developer uses the public fallback service.
   if R.Success and (R.Response.StatusCode = 502) then
-    R := Http.TryPostMultipart('https://httpbin.org/post',
+    R := Http.TryPostMultipart(TestURL('/post'),
       [TKeyValue.Create('staticfield', 'staticvalue')],
       [TKeyValue.Create('file2', TempFile)]);
 
@@ -418,9 +488,9 @@ procedure TRequestSimpleTests.Test22b_TryPostMultipartFailure;
 var
   R: TRequestResult;
 begin
-  R := Http.TryPostMultipart('https://nonexistent.example.com',
+  R := Http.TryPostMultipart(TestFailureURL,
     [TKeyValue.Create('a', '1')], []);
-  AssertFalse('TryPostMultipart should fail on nonexistent host', R.Success);
+  AssertFalse('TryPostMultipart should fail on connection failure', R.Success);
   AssertTrue('Error should be populated', R.Error <> '');
 end;
 
@@ -428,13 +498,13 @@ procedure TRequestSimpleTests.Test23_IsSuccessStatus;
 var
   R200, R404: TResponse;
 begin
-  R200 := Http.Get('https://httpbin.org/get');
-  // Retry once on transient upstream 502 from httpbin
+  R200 := Http.Get(TestURL('/get'));
+  // Retry once when a developer uses the public fallback service.
   if R200.StatusCode = 502 then
-    R200 := Http.Get('https://httpbin.org/get');
+    R200 := Http.Get(TestURL('/get'));
   AssertTrue('200 should be success', R200.IsSuccessStatus);
 
-  R404 := Http.Get('https://httpbin.org/status/404');
+  R404 := Http.Get(TestURL('/status/404'));
   AssertFalse('404 should not be success', R404.IsSuccessStatus);
 end;
 
@@ -445,7 +515,7 @@ var
   Info: TSearchRec;
   HasFile: Boolean;
 begin
-  R := Http.PostJSON('https://httpbin.org/post', '{"a":1}');
+  R := Http.PostJSON(TestURL('/post'), '{"a":1}');
   AssertEquals('Status code should be 200', 200, R.StatusCode);
   TempFile := GetTempDir + 'request_fp_save_test.txt';
   try
@@ -465,47 +535,20 @@ end;
 
 procedure TRequestSimpleTests.Test25_SSLInitialization;
 var
-  Response: TResponse;
   FailureMessage: string;
 begin
-  { This test verifies that SSL/OpenSSL is properly initialized and can handle HTTPS requests.
-    It's particularly useful for troubleshooting Windows OpenSSL setup issues.
-
-    Note: This test is NOT run automatically with -a flag. Run it manually to verify SSL setup:
-      TestRunner.exe -s TRequestSimpleTests.Test25_SSLInitialization
-
-    If this test fails on Windows, you need to install OpenSSL DLLs. See the error message
-    or consult the documentation for installation instructions. }
+  { Verify FPC can load and initialize OpenSSL without depending on an
+    external HTTPS service. }
 
   FailureMessage := '';
   try
-    // Attempt a simple HTTPS GET request
-    Response := Http.Get('https://httpbin.org/get');
-
-    // Check if we got a successful response
-    AssertTrue('HTTPS request should succeed', Response.StatusCode > 0);
-    AssertTrue('Response should contain data', Response.Text <> '');
-
-    // Verify we can parse JSON response (ensures full SSL handshake worked)
-    AssertTrue('Response should be valid JSON', Assigned(Response.JSON));
-
+    AssertTrue('OpenSSL should initialize', InitSSLInterface);
+    AssertTrue('OpenSSL should report as loaded', IsSSLloaded);
     WriteLn('SSL initialization test PASSED - OpenSSL is working correctly');
   except
-    on E: ERequestError do
-    begin
-      FailureMessage := 'SSL initialization test FAILED: ' + E.Message;
-      WriteLn(FailureMessage);
-      WriteLn('');
-      WriteLn('Common fixes for Windows:');
-      WriteLn('1. Install OpenSSL: choco install openssl OR scoop install openssl');
-      WriteLn('2. Or download from: https://slproweb.com/products/Win32OpenSSL.html');
-      WriteLn('3. Copy DLLs (libssl-*.dll, libcrypto-*.dll) to your exe folder or add to PATH');
-      WriteLn('');
-      Fail(FailureMessage);
-    end;
     on E: Exception do
     begin
-      FailureMessage := 'Unexpected error during SSL test: ' + E.Message;
+      FailureMessage := 'SSL initialization test FAILED: ' + E.Message;
       WriteLn(FailureMessage);
       Fail(FailureMessage);
     end;

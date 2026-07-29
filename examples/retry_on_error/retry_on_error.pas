@@ -14,7 +14,7 @@ begin
     Inc(Attempts);
     try
       Response := Http.Get('https://httpbin.org/status/503'); // Always returns 503
-      if (Response.StatusCode >= 200) and (Response.StatusCode < 300) then
+      if Response.OK then
       begin
         WriteLn('Success on attempt ', Attempts, ': ', Response.Text);
         Success := True;

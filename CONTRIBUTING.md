@@ -1,147 +1,149 @@
-# Contributing to TidyKit
+# Contributing to Request-FP
 
-Thank you for your interest in contributing to TidyKit! We want to make contributing to this project as easy and transparent as possible.
+Thank you for helping make Request-FP easier and more reliable.
 
-## 📝 Code of Conduct
+## Prerequisites
 
-- Be respectful and inclusive
-- Use welcoming and inclusive language
-- Be collaborative
-- Focus on what is best for the community
-- Show empathy towards other community members
+- Free Pascal 3.2.2+
+- Lazarus 4.8+
+- `lazbuild` available on `PATH`
+- OpenSSL libraries for HTTPS integration tests
+- Git
 
-## 🚀 Getting Started
+The project is currently tested on Windows and Linux.
 
-1. Fork the repository
-2. Clone your fork:
+## Get started
+
+1. Fork and clone the repository:
+
    ```bash
-   git clone https://github.com/your-username/tidykit-fp.git
+   git clone https://github.com/YOUR-USERNAME/request-fp.git
+   cd request-fp
    ```
-3. Create a new branch:
+
+2. Create a branch:
+
    ```bash
-   git checkout -b feature/your-feature-name
+   git switch -c feature/short-description
    ```
 
-## 💻 Development Guidelines
+3. Make the change, add tests where appropriate, and update the relevant
+   documentation.
 
-### Code Style
+## Build every example
 
-#### Naming Conventions
-- `T` prefix for types (e.g., `TStringKit`, `TDictionary<K,V>`)
-- `I` prefix for interfaces (e.g., `IDictionary<K,V>`)
-- `F` prefix for private fields (e.g., `FCount`, `FBuckets`)
-- `A` prefix for parameters in documentation (e.g., `APath`, `AText`)
-- PascalCase for types, methods, and variables
-- UPPERCASE for constants
+The bulk-build scripts discover all Lazarus projects below `examples/`, skip
+backup directories, clean `example-bin/`, and build everything in Release
+mode.
 
-#### Formatting
-- 2 spaces for indentation (no tabs)
-- No space before opening parenthesis in method calls
-- Space after commas in parameter lists
-- Operators surrounded by spaces (`a := b + c`)
-- Begin/end on new lines for procedures/functions
-- Begin/end on same line for control structures
+Windows PowerShell:
 
-#### Documentation
-- Block comments for class/interface documentation
-- Line comments for implementation details
-- Document public methods using:
-  ```pascal
-  { @description Detailed description
-    @param ParamName Description
-    @return Description of return value }
-  ```
-- Comments should explain why, not what (the code should be self-documenting)
-
-#### Code Organization
-- Public methods first, then protected, then private
-- Group related methods together
-- Implementation details after interface
-- Local variables at the beginning of methods
-- Keep methods focused and small (ideally < 50 lines)
-
-#### Error Handling
-- Use exceptions for error conditions
-- Clean up resources in `finally` blocks
-- Provide meaningful error messages
-- Use custom exception types for specific error cases
-
-### Commit Messages
-
-- Use clear and meaningful commit messages
-- Start with a verb (Add, Fix, Update, etc.)
-- Reference issues when relevant
-
-Example:
-```
-Add string reverse function to TStringKit
-
-- Implement string reversal functionality
-- Add unit tests
-- Update documentation
-Fixes #123
+```powershell
+.\build-examples.ps1
 ```
 
-### Testing
+If required by the local execution policy:
 
-- Add unit tests for new functionality
-- Ensure all tests pass before submitting PR
-- Test on Windows (minimum requirement)
-- If possible, test on Linux/macOS
-
-### Documentation
-
-- Update README.md if needed
-- Add/update API documentation
-- Include examples for new features
-- Update changelog
-
-## 📋 Pull Request Process
-
-1. Update the README.md with details of changes if needed
-2. Update the documentation
-3. Add tests for new functionality
-4. Ensure the test suite passes
-5. Update the CHANGELOG.md
-6. Submit a pull request
-
-### Pull Request Title Format
-
-```
-[Type] Short description
-
-Types:
-- [Feature] - New functionality
-- [Fix] - Bug fixes
-- [Docs] - Documentation only
-- [Test] - Test-related changes
-- [Refactor] - Code refactoring
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build-examples.ps1
 ```
 
-## 🐛 Reporting Issues
+Linux or Git Bash:
 
-- Use the issue tracker
-- Describe the bug or feature request clearly
-- Include code examples if relevant
-- Provide system information (OS, FPC version)
-- Follow the issue template
+```bash
+bash ./build-examples.sh
+```
 
-## 📚 Documentation Contributions
+Successful builds are placed in `example-bin/`, which is intentionally ignored
+by Git.
 
-We especially welcome documentation improvements:
-- Fix typos
-- Add examples
-- Clarify confusing sections
-- Add missing documentation
-- Translate documentation
+## Build and run the tests
 
-## ⭐ Recognition
+Compile the FPCUnit runner:
 
-Contributors will be recognized in:
-- CONTRIBUTORS.md file
-- Release notes
-- Project documentation
+```bash
+lazbuild --build-mode=Release tests/TestRunner.lpi
+```
 
-## 📄 License
+Run it on Windows:
 
-By contributing, you agree that your contributions will be licensed under the MIT License. 
+```powershell
+.\tests\TestRunner.exe -a --format=plain
+```
+
+Run it on Linux:
+
+```bash
+./tests/TestRunner -a --format=plain
+```
+
+The integration suite calls `https://httpbin.org` and requires outbound
+network access. A transient upstream failure can occasionally require a
+rerun.
+
+## Code guidelines
+
+- Use two spaces for indentation and no tabs.
+- Follow existing Object Pascal naming and layout.
+- Keep public APIs small, explicit, and backward compatible where practical.
+- Use `try..finally` for owned resources.
+- Raise `ERequestError` with actionable messages for request failures.
+- Document new public APIs and add a short usage example.
+- Prefer focused changes over unrelated cleanup.
+
+## Documentation checklist
+
+For user-facing changes, review:
+
+- `README.md`
+- `docs/Request.md`
+- `docs/Request.Session.md`
+- `docs/cheat-sheet.md`
+- relevant programs under `examples/`
+- `CHANGELOG.md`
+- `docs/RELEASE-vX.Y.Z.md`
+- `docs/PR-vX.Y.Z.md`
+
+## Commit messages
+
+Use a concise Conventional Commit subject:
+
+```text
+feat: add request timeout options
+fix: preserve response headers across redirects
+docs: clarify OpenSSL setup on Windows
+```
+
+Add a body when several user-visible changes need explanation.
+
+## Pull request checklist
+
+Before opening a pull request:
+
+- [ ] The test project compiles.
+- [ ] The relevant tests pass.
+- [ ] Both platform scripts remain syntactically valid.
+- [ ] All examples compile with the bulk-build script.
+- [ ] Public API changes are documented.
+- [ ] `CHANGELOG.md` is updated.
+- [ ] No generated files from `example-bin/` are committed.
+- [ ] `git diff --check` passes.
+
+## Reporting bugs
+
+Include:
+
+- operating system;
+- FPC and Lazarus versions;
+- Request-FP version;
+- a minimal reproducible example;
+- the full exception message; and
+- OpenSSL version/architecture when HTTPS is involved.
+
+Please follow the repository issue template when one is available.
+
+## Code of conduct and license
+
+Contributors must follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). By
+contributing, you agree that your work is licensed under the
+[MIT License](LICENSE.md).

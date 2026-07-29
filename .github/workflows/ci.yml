@@ -1,0 +1,303 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux (Lazarus 4.8)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install Lazarus 4.8 and FPC 3.2.2
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          install_dir="$RUNNER_TEMP/lazarus-4.8"
+          base_url="https://downloads.sourceforge.net/project/lazarus/Lazarus%20Linux%20amd64%20DEB/Lazarus%204.8"
+          mkdir -p "$install_dir"
+          cd "$install_dir"
+
+          curl --fail --location --retry 5 --retry-delay 5 \
+            --output fpc-laz.deb \
+            "$base_url/fpc-laz_3.2.2-210709_amd64.deb"
+          curl --fail --location --retry 5 --retry-delay 5 \
+            --output fpc-src.deb \
+            "$base_url/fpc-src_3.2.2-210709_amd64.deb"
+          curl --fail --location --retry 5 --retry-delay 5 \
+            --output lazarus-project.deb \
+            "$base_url/lazarus-project_4.8.0-0_amd64.deb"
+
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
+            libssl-dev \
+            "$install_dir/fpc-laz.deb" \
+            "$install_dir/fpc-src.deb" \
+            "$install_dir/lazarus-project.deb"
+
+      - name: Verify compiler versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(fpc -iV)" = "3.2.2"
+          test "$(lazbuild --version)" = "4.8"
+
+      - name: Build all examples
+        shell: bash
+        run: bash ./build-examples.sh
+
+      - name: Verify example outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          output_count="$(find example-bin -maxdepth 1 -type f | wc -l)"
+          if [[ "$output_count" -ne 13 ]]; then
+            echo "Expected 13 example executables, found $output_count." >&2
+            exit 1
+          fi
+
+      - name: Build test runner
+        shell: bash
+        run: >-
+          lazbuild
+          --quiet
+          --quiet
+          --build-all
+          --build-mode=Release
+          --no-write-project
+          tests/TestRunner.lpi
+
+      - name: Run tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 tests/http_fixture.py --port 18080 &
+          fixture_pid="$!"
+          cleanup() {
+            kill "$fixture_pid" 2>/dev/null || true
+            wait "$fixture_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          fixture_ready=false
+          for _ in {1..50}; do
+            if curl --fail --silent http://127.0.0.1:18080/health \
+              > /dev/null; then
+              fixture_ready=true
+              break
+            fi
+            if ! kill -0 "$fixture_pid" 2>/dev/null; then
+              break
+            fi
+            sleep 0.1
+          done
+          if [[ "$fixture_ready" != true ]]; then
+            echo "Local HTTP fixture failed to start." >&2
+            exit 1
+          fi
+
+          export REQUEST_FP_TEST_BASE_URL=http://127.0.0.1:18080
+          ./tests/TestRunner -a --format=plain
+
+  windows:
+    name: Windows (Lazarus 4.8)
+    runs-on: windows-2022
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install Lazarus 4.8 and FPC 3.2.2
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $installer = Join-Path $env:RUNNER_TEMP 'lazarus-4.8-fpc-3.2.2-win64.exe'
+          $url = 'https://downloads.sourceforge.net/project/lazarus/Lazarus%20Windows%2064%20bits/Lazarus%204.8/lazarus-4.8-fpc-3.2.2-win64.exe'
+
+          curl.exe --fail --location --retry 5 --retry-delay 5 `
+            --output $installer `
+            $url
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to download Lazarus installer (exit $LASTEXITCODE)."
+          }
+
+          $arguments = @(
+            '/VERYSILENT'
+            '/SUPPRESSMSGBOXES'
+            '/NORESTART'
+            '/SP-'
+            '/DIR=C:\Lazarus'
+          )
+          $process = Start-Process `
+            -FilePath $installer `
+            -ArgumentList $arguments `
+            -Wait `
+            -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Lazarus installer failed with exit code $($process.ExitCode)."
+          }
+
+          'C:\Lazarus' | Out-File -FilePath $env:GITHUB_PATH -Append
+          'C:\Lazarus\fpc\3.2.2\bin\x86_64-win64' |
+            Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Stage OpenSSL DLLs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $requiredDlls = @(
+            'libssl-3-x64.dll'
+            'libcrypto-3-x64.dll'
+          )
+
+          $opensslDirectory = Join-Path `
+            $env:ProgramFiles `
+            'OpenSSL\bin'
+          if (-not (Test-Path -LiteralPath $opensslDirectory)) {
+            throw (
+              'The Windows runner OpenSSL directory was not found: ' +
+              $opensslDirectory
+            )
+          }
+
+          foreach ($dllName in $requiredDlls) {
+            $source = Join-Path $opensslDirectory $dllName
+            if (-not (Test-Path -LiteralPath $source)) {
+              throw "The Windows runner did not provide $dllName."
+            }
+            Copy-Item `
+              -LiteralPath $source `
+              -Destination .\tests
+          }
+
+          $opensslExecutable = Join-Path $opensslDirectory 'openssl.exe'
+          if (-not (Test-Path -LiteralPath $opensslExecutable)) {
+            throw 'The Windows runner did not provide openssl.exe.'
+          }
+
+          # Keep the complete native OpenSSL directory available so Windows
+          # can resolve any transitive DLL dependencies at test runtime.
+          $opensslDirectory |
+            Out-File -FilePath $env:GITHUB_PATH -Append
+          $env:PATH = "$opensslDirectory;$env:PATH"
+
+          & $opensslExecutable version
+          if ($LASTEXITCODE -ne 0) {
+            throw (
+              "OpenSSL version check failed with exit " +
+              "code $LASTEXITCODE."
+            )
+          }
+
+          Write-Output (
+            "Staged native OpenSSL 3 DLLs from $opensslDirectory"
+          )
+
+      - name: Verify compiler versions
+        shell: pwsh
+        run: |
+          $fpcVersion = (& fpc -iV).Trim()
+          $lazarusVersion = (& lazbuild --version).Trim()
+          if ($fpcVersion -ne '3.2.2') {
+            throw "Expected FPC 3.2.2, found $fpcVersion."
+          }
+          if ($lazarusVersion -ne '4.8') {
+            throw "Expected Lazarus 4.8, found $lazarusVersion."
+          }
+
+      - name: Build all examples
+        shell: pwsh
+        run: .\build-examples.ps1
+
+      - name: Verify example outputs
+        shell: pwsh
+        run: |
+          $outputCount = @(
+            Get-ChildItem -LiteralPath .\example-bin -File
+          ).Count
+          if ($outputCount -ne 13) {
+            throw "Expected 13 example executables, found $outputCount."
+          }
+
+      - name: Build test runner
+        shell: pwsh
+        run: |
+          & lazbuild `
+            '--quiet' `
+            '--quiet' `
+            '--build-all' `
+            '--build-mode=Release' `
+            '--no-write-project' `
+            'tests\TestRunner.lpi'
+          if ($LASTEXITCODE -ne 0) {
+            throw "Test runner build failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Run tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $fixture = Start-Process `
+            -FilePath python.exe `
+            -ArgumentList @(
+              'tests\http_fixture.py'
+              '--port'
+              '18080'
+            ) `
+            -PassThru `
+            -WindowStyle Hidden
+
+          try {
+            $fixtureReady = $false
+            for ($attempt = 0; $attempt -lt 50; $attempt++) {
+              try {
+                $response = Invoke-WebRequest `
+                  -Uri 'http://127.0.0.1:18080/health' `
+                  -UseBasicParsing
+                if ($response.StatusCode -eq 200) {
+                  $fixtureReady = $true
+                  break
+                }
+              }
+              catch {
+                if ($fixture.HasExited) {
+                  break
+                }
+                Start-Sleep -Milliseconds 100
+              }
+            }
+
+            if (-not $fixtureReady) {
+              throw 'Local HTTP fixture failed to start.'
+            }
+
+            $env:REQUEST_FP_TEST_BASE_URL = 'http://127.0.0.1:18080'
+            & .\tests\TestRunner.exe -a --format=plain
+            if ($LASTEXITCODE -ne 0) {
+              throw "Test suite failed with exit code $LASTEXITCODE."
+            }
+          }
+          finally {
+            if (-not $fixture.HasExited) {
+              Stop-Process `
+                -Id $fixture.Id `
+                -Force `
+                -ErrorAction SilentlyContinue
+            }
+          }

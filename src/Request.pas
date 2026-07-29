@@ -13,7 +13,7 @@ uses
   {$IFDEF WINDOWS}, Windows{$ENDIF};
 
 const
-  REQUEST_FP_VERSION = '1.2.0';
+  REQUEST_FP_VERSION = '1.3.0';
   DEFAULT_USER_AGENT = 'Request-FP/' + REQUEST_FP_VERSION;
   {$IFDEF DEBUG}
     DEBUG_MODE = True;
@@ -40,6 +40,7 @@ type
     FContent: string;
     FHeaders: string;
     FJSON: TJSONData;
+    function GetOK: Boolean;
     
     {
       @description Returns the content body of the HTTP response as text
@@ -65,6 +66,8 @@ type
     
     property Text: string read GetText;
     property JSON: TJSONData read GetJSON;
+    { True when the response status is in the 200..299 range. }
+    property OK: Boolean read GetOK;
 
     // Returns the value of a response header (case-insensitive), or empty string if not found
     function HeaderValue(const Name: string): string;
@@ -72,6 +75,8 @@ type
     procedure SetHeadersText(const AHeaders: string);
     // True if status is within 200..299
     function IsSuccessStatus: Boolean;
+    // Raises ERequestError when status is outside 200..299
+    procedure RaiseForStatus;
     // Saves response body to a file (UTF-8 as stored in Text)
     procedure SaveToFile(const FilePath: string);
     
@@ -123,9 +128,14 @@ type
            potential failures gracefully without exceptions
   }
   TRequestResult = record
+  private
+    function GetOK: Boolean;
+  public
     Success: Boolean;
     Response: TResponse;  // Will be automatically initialized and finalized
     Error: string;
+    { True only when transport succeeded and the response status is 2xx. }
+    property OK: Boolean read GetOK;
   end;
 
   { Global HTTP functions }
@@ -258,6 +268,10 @@ type
         end;
     }
     class function PostJSON(const URL: string; const JSON: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse; static;
+    class function PostJSON(const URL: string; const JSON: TJSONData; const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse; static; overload;
+
+    { Encodes Fields as application/x-www-form-urlencoded and posts them. }
+    class function PostForm(const URL: string; const Fields: array of TKeyValue; const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse; static;
     
     {
       @description Performs a HTTP GET request with error handling
@@ -315,6 +329,9 @@ type
         end;
     }
     class function TryPost(const URL: string; const Data: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult; static;
+    class function TryPostForm(const URL: string; const Fields: array of TKeyValue; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult; static;
+    class function TryPostJSON(const URL: string; const JSON: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult; static; overload;
+    class function TryPostJSON(const URL: string; const JSON: TJSONData; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult; static; overload;
     {
       @description Performs a HTTP PUT request with error handling
     }
@@ -358,19 +375,31 @@ type
     // Ergonomic overloads for procedural API
     class function Get(const URL: string): TResponse; static; overload;
     class function Get(const URL: string; const Headers: array of TKeyValue): TResponse; static; overload;
+    class function GetWithParams(const URL: string; const Params: array of TKeyValue): TResponse; static;
     class function Post(const URL: string; const Data: string): TResponse; static; overload;
     class function Post(const URL: string; const Data: string; const Headers: array of TKeyValue): TResponse; static; overload;
+    class function PostForm(const URL: string; const Fields: array of TKeyValue): TResponse; static; overload;
+    class function PostForm(const URL: string; const Fields: array of TKeyValue; const Headers: array of TKeyValue): TResponse; static; overload;
     class function Put(const URL: string; const Data: string): TResponse; static; overload;
     class function Put(const URL: string; const Data: string; const Headers: array of TKeyValue): TResponse; static; overload;
     class function Delete(const URL: string): TResponse; static; overload;
     class function Delete(const URL: string; const Headers: array of TKeyValue): TResponse; static; overload;
     class function PostJSON(const URL: string; const JSON: string): TResponse; static; overload;
     class function PostJSON(const URL: string; const JSON: string; const Headers: array of TKeyValue): TResponse; static; overload;
+    class function PostJSON(const URL: string; const JSON: TJSONData): TResponse; static; overload;
+    class function PostJSON(const URL: string; const JSON: TJSONData; const Headers: array of TKeyValue): TResponse; static; overload;
     // Ergonomic overloads for TryGet and TryPost
     class function TryGet(const URL: string): TRequestResult; static; overload;
     class function TryGet(const URL: string; const Headers: array of TKeyValue): TRequestResult; static; overload;
+    class function TryGetWithParams(const URL: string; const Params: array of TKeyValue): TRequestResult; static;
     class function TryPost(const URL: string; const Data: string): TRequestResult; static; overload;
     class function TryPost(const URL: string; const Data: string; const Headers: array of TKeyValue): TRequestResult; static; overload;
+    class function TryPostForm(const URL: string; const Fields: array of TKeyValue): TRequestResult; static; overload;
+    class function TryPostForm(const URL: string; const Fields: array of TKeyValue; const Headers: array of TKeyValue): TRequestResult; static; overload;
+    class function TryPostJSON(const URL: string; const JSON: string): TRequestResult; static; overload;
+    class function TryPostJSON(const URL: string; const JSON: string; const Headers: array of TKeyValue): TRequestResult; static; overload;
+    class function TryPostJSON(const URL: string; const JSON: TJSONData): TRequestResult; static; overload;
+    class function TryPostJSON(const URL: string; const JSON: TJSONData; const Headers: array of TKeyValue): TRequestResult; static; overload;
     class function TryPut(const URL: string; const Data: string): TRequestResult; static; overload;
     class function TryPut(const URL: string; const Data: string; const Headers: array of TKeyValue): TRequestResult; static; overload;
     class function TryDelete(const URL: string): TRequestResult; static; overload;
@@ -385,6 +414,8 @@ type
     class function TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue): TRequestResult; static; overload;
   end;
 
+{ Short key/value helper for headers, query parameters, forms, and multipart data. }
+function KV(const Key, Value: string): TKeyValue;
 
 
 const
@@ -435,6 +466,20 @@ begin
       Result := Result + '%20'
     else
       Result := Result + '%' + IntToHex(B, 2);
+  end;
+end;
+
+function EncodeFormFields(const Fields: array of TKeyValue): string;
+var
+  I: Integer;
+begin
+  Result := '';
+  for I := 0 to High(Fields) do
+  begin
+    if Result <> '' then
+      Result := Result + '&';
+    Result := Result + EncodeURIComponent(Fields[I].Key) + '=' +
+      EncodeURIComponent(Fields[I].Value);
   end;
 end;
 
@@ -513,6 +558,20 @@ begin
     end;
   end;
 end;
+
+procedure ConfigureOpenSSL3LibraryNames;
+begin
+  { FPC 3.2.2 supports the OpenSSL 3 API, but its Windows loader still
+    searches for legacy and OpenSSL 1.1 DLL names. Use OpenSSL 3 as the
+    primary candidate while leaving FPC's existing fallback names intact. }
+  {$IFDEF CPU64}
+  DLLSSLName := 'libssl-3-x64.dll';
+  DLLUtilName := 'libcrypto-3-x64.dll';
+  {$ELSE}
+  DLLSSLName := 'libssl-3.dll';
+  DLLUtilName := 'libcrypto-3.dll';
+  {$ENDIF}
+end;
 {$ENDIF}
 
 procedure InitSSL;
@@ -528,7 +587,9 @@ begin
       if DEBUG_MODE then
         WriteLn('[DEBUG] Initializing OpenSSL...');
 
-      InitSSLInterface;
+      ConfigureOpenSSL3LibraryNames;
+      if not InitSSLInterface then
+        raise ERequestError.Create('Could not initialize OpenSSL library');
       SSLInitialized := True;
 
       if DEBUG_MODE then
@@ -590,6 +651,11 @@ begin
   Result.Value := AValue;
 end;
 
+function KV(const Key, Value: string): TKeyValue;
+begin
+  Result := TKeyValue.Create(Key, Value);
+end;
+
 { TResponse }
 
 // Advanced record management: TResponse uses Initialize, Finalize, and Copy operators
@@ -626,6 +692,11 @@ end;
 function TResponse.GetText: string;
 begin
   Result := FContent;
+end;
+
+function TResponse.GetOK: Boolean;
+begin
+  Result := IsSuccessStatus;
 end;
 
 procedure TResponse.SetContent(const AContent: string; AJSON: TJSONData = nil);
@@ -706,6 +777,13 @@ begin
   Result := (StatusCode >= 200) and (StatusCode <= 299);
 end;
 
+procedure TResponse.RaiseForStatus;
+begin
+  if not IsSuccessStatus then
+    raise ERequestError.CreateFmt(
+      'HTTP request returned non-success status %d', [StatusCode]);
+end;
+
 procedure TResponse.SaveToFile(const FilePath: string);
 var
   FS: TFileStream;
@@ -720,6 +798,11 @@ begin
   finally
     FS.Free;
   end;
+end;
+
+function TRequestResult.GetOK: Boolean;
+begin
+  Result := Success and Response.IsSuccessStatus;
 end;
 
 { THttp }
@@ -1376,6 +1459,98 @@ begin
   end;
 end;
 
+class function THttp.PostJSON(const URL: string; const JSON: TJSONData;
+  const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse;
+begin
+  if JSON = nil then
+    raise ERequestError.Create('JSON data cannot be nil');
+  Result := PostJSON(URL, JSON.AsJSON, Headers, Params);
+end;
+
+class function THttp.PostForm(const URL: string; const Fields: array of TKeyValue;
+  const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse;
+var
+  FormHeaders: array of TKeyValue;
+  I: Integer;
+  HasContentType: Boolean;
+begin
+  HasContentType := False;
+  for I := 0 to High(Headers) do
+    if SameText(Headers[I].Key, 'Content-Type') then
+    begin
+      HasContentType := True;
+      Break;
+    end;
+
+  SetLength(FormHeaders, Length(Headers) + Ord(not HasContentType));
+  for I := 0 to High(Headers) do
+    FormHeaders[I] := Headers[I];
+  if not HasContentType then
+    FormHeaders[High(FormHeaders)] :=
+      KV('Content-Type', 'application/x-www-form-urlencoded');
+
+  Result := Post(URL, EncodeFormFields(Fields), FormHeaders, Params);
+end;
+
+class function THttp.TryPostForm(const URL: string;
+  const Fields: array of TKeyValue; const Headers: array of TKeyValue;
+  const Params: array of TKeyValue): TRequestResult;
+begin
+  try
+    Result.Response := PostForm(URL, Fields, Headers, Params);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+    begin
+      Result.Success := False;
+      Result.Error := E.Message;
+      Result.Response.FContent := '';
+      Result.Response.FHeaders := '';
+      Result.Response.StatusCode := 0;
+      Result.Response.FJSON := nil;
+    end;
+  end;
+end;
+
+class function THttp.TryPostJSON(const URL, JSON: string;
+  const Headers: array of TKeyValue;
+  const Params: array of TKeyValue): TRequestResult;
+begin
+  try
+    Result.Response := PostJSON(URL, JSON, Headers, Params);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+    begin
+      Result.Success := False;
+      Result.Error := E.Message;
+      Result.Response.FContent := '';
+      Result.Response.FHeaders := '';
+      Result.Response.StatusCode := 0;
+      Result.Response.FJSON := nil;
+    end;
+  end;
+end;
+
+class function THttp.TryPostJSON(const URL: string; const JSON: TJSONData;
+  const Headers: array of TKeyValue;
+  const Params: array of TKeyValue): TRequestResult;
+begin
+  if JSON = nil then
+  begin
+    Result.Success := False;
+    Result.Error := 'JSON data cannot be nil';
+    Result.Response.FContent := '';
+    Result.Response.FHeaders := '';
+    Result.Response.StatusCode := 0;
+    Result.Response.FJSON := nil;
+    Exit;
+  end;
+  Result := TryPostJSON(URL, JSON.AsJSON, Headers, Params);
+end;
+
 class function THttp.PostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse;
 var
   Client: TFPHTTPClient;
@@ -1549,6 +1724,12 @@ begin
   Result := Get(URL, Headers, []);
 end;
 
+class function THttp.GetWithParams(const URL: string;
+  const Params: array of TKeyValue): TResponse;
+begin
+  Result := Get(URL, [], Params);
+end;
+
 class function THttp.Post(const URL: string; const Data: string): TResponse;
 begin
   Result := Post(URL, Data, [], []);
@@ -1557,6 +1738,18 @@ end;
 class function THttp.Post(const URL: string; const Data: string; const Headers: array of TKeyValue): TResponse;
 begin
   Result := Post(URL, Data, Headers, []);
+end;
+
+class function THttp.PostForm(const URL: string;
+  const Fields: array of TKeyValue): TResponse;
+begin
+  Result := PostForm(URL, Fields, [], []);
+end;
+
+class function THttp.PostForm(const URL: string; const Fields: array of TKeyValue;
+  const Headers: array of TKeyValue): TResponse;
+begin
+  Result := PostForm(URL, Fields, Headers, []);
 end;
 
 class function THttp.Put(const URL: string; const Data: string): TResponse;
@@ -1589,6 +1782,17 @@ begin
   Result := PostJSON(URL, JSON, Headers, []);
 end;
 
+class function THttp.PostJSON(const URL: string; const JSON: TJSONData): TResponse;
+begin
+  Result := PostJSON(URL, JSON, [], []);
+end;
+
+class function THttp.PostJSON(const URL: string; const JSON: TJSONData;
+  const Headers: array of TKeyValue): TResponse;
+begin
+  Result := PostJSON(URL, JSON, Headers, []);
+end;
+
 // Ergonomic overloads for TryGet and TryPost
 class function THttp.TryGet(const URL: string): TRequestResult;
 begin
@@ -1600,6 +1804,12 @@ begin
   Result := TryGet(URL, Headers, []);
 end;
 
+class function THttp.TryGetWithParams(const URL: string;
+  const Params: array of TKeyValue): TRequestResult;
+begin
+  Result := TryGet(URL, [], Params);
+end;
+
 class function THttp.TryPost(const URL: string; const Data: string): TRequestResult;
 begin
   Result := TryPost(URL, Data, [], []);
@@ -1608,6 +1818,42 @@ end;
 class function THttp.TryPost(const URL: string; const Data: string; const Headers: array of TKeyValue): TRequestResult;
 begin
   Result := TryPost(URL, Data, Headers, []);
+end;
+
+class function THttp.TryPostForm(const URL: string;
+  const Fields: array of TKeyValue): TRequestResult;
+begin
+  Result := TryPostForm(URL, Fields, [], []);
+end;
+
+class function THttp.TryPostForm(const URL: string;
+  const Fields: array of TKeyValue;
+  const Headers: array of TKeyValue): TRequestResult;
+begin
+  Result := TryPostForm(URL, Fields, Headers, []);
+end;
+
+class function THttp.TryPostJSON(const URL, JSON: string): TRequestResult;
+begin
+  Result := TryPostJSON(URL, JSON, [], []);
+end;
+
+class function THttp.TryPostJSON(const URL, JSON: string;
+  const Headers: array of TKeyValue): TRequestResult;
+begin
+  Result := TryPostJSON(URL, JSON, Headers, []);
+end;
+
+class function THttp.TryPostJSON(const URL: string;
+  const JSON: TJSONData): TRequestResult;
+begin
+  Result := TryPostJSON(URL, JSON, [], []);
+end;
+
+class function THttp.TryPostJSON(const URL: string; const JSON: TJSONData;
+  const Headers: array of TKeyValue): TRequestResult;
+begin
+  Result := TryPostJSON(URL, JSON, Headers, []);
 end;
 
 class function THttp.TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue; const Params: array of TKeyValue): TRequestResult;

@@ -6,10 +6,23 @@ unit Request.Session.Test;
 interface
 
 uses
-  Classes, SysUtils, fpcunit, testregistry, fpjson, jsonparser,
-  Request, Request.Session;
+  Classes, SysUtils, Sockets, fpcunit, testregistry, fpjson, jsonparser,
+  Request, Request.Session, Test.Support;
 
 type
+  { TDelayedResponseServer }
+  TDelayedResponseServer = class(TThread)
+  private
+    FListenSocket: LongInt;
+    FPort: Word;
+  protected
+    procedure Execute; override;
+  public
+    constructor Create;
+    destructor Destroy; override;
+    property Port: Word read FPort;
+  end;
+
   { TRequestSessionTests }
   TRequestSessionTests = class(TTestCase)
   private
@@ -39,21 +52,148 @@ type
     procedure Test25_SessionMultipartUpload_Success;
     procedure Test25b_SessionMultipartUpload_Failure;
     procedure Test26_Session_ResponseHeaderValue;
+    procedure Test27_Session_PostJSON;
   end;
 
 implementation
+
+{ TDelayedResponseServer }
+
+constructor TDelayedResponseServer.Create;
+var
+  Address: TInetSockAddr;
+  AddressLength: TSockLen;
+begin
+  inherited Create(True);
+  FreeOnTerminate := False;
+  FListenSocket := fpSocket(AF_INET, SOCK_STREAM, 0);
+  if FListenSocket < 0 then
+    raise Exception.CreateFmt(
+      'Could not create timeout test socket (error %d)', [SocketError]);
+
+  FillChar(Address, SizeOf(Address), 0);
+  Address.sin_family := AF_INET;
+  Address.sin_addr := StrToNetAddr('127.0.0.1');
+  Address.sin_port := htons(0);
+
+  if fpBind(FListenSocket, @Address, SizeOf(Address)) <> 0 then
+  begin
+    CloseSocket(FListenSocket);
+    FListenSocket := -1;
+    raise Exception.CreateFmt(
+      'Could not bind timeout test socket (error %d)', [SocketError]);
+  end;
+
+  if fpListen(FListenSocket, 1) <> 0 then
+  begin
+    CloseSocket(FListenSocket);
+    FListenSocket := -1;
+    raise Exception.CreateFmt(
+      'Could not listen on timeout test socket (error %d)', [SocketError]);
+  end;
+
+  AddressLength := SizeOf(Address);
+  if fpGetSockName(FListenSocket, @Address, @AddressLength) <> 0 then
+  begin
+    CloseSocket(FListenSocket);
+    FListenSocket := -1;
+    raise Exception.CreateFmt(
+      'Could not read timeout test port (error %d)', [SocketError]);
+  end;
+
+  FPort := ntohs(Address.sin_port);
+  Start;
+end;
+
+destructor TDelayedResponseServer.Destroy;
+var
+  Address: TInetSockAddr;
+  WakeSocket: LongInt;
+begin
+  Terminate;
+
+  // Wake a thread that is still blocked in accept.
+  if FListenSocket >= 0 then
+  begin
+    WakeSocket := fpSocket(AF_INET, SOCK_STREAM, 0);
+    if WakeSocket >= 0 then
+    begin
+      FillChar(Address, SizeOf(Address), 0);
+      Address.sin_family := AF_INET;
+      Address.sin_addr := StrToNetAddr('127.0.0.1');
+      Address.sin_port := htons(FPort);
+      fpConnect(WakeSocket, @Address, SizeOf(Address));
+      CloseSocket(WakeSocket);
+    end;
+  end;
+
+  WaitFor;
+  inherited Destroy;
+end;
+
+procedure TDelayedResponseServer.Execute;
+var
+  Buffer: array[0..1023] of Byte;
+  ClientSocket: LongInt;
+  I: Integer;
+begin
+  ClientSocket := -1;
+  try
+    ClientSocket := fpAccept(FListenSocket, nil, nil);
+    if ClientSocket < 0 then
+      Exit;
+
+    // Read the request, then deliberately withhold the response for two
+    // seconds. The client timeout should fire well before the socket closes.
+    fpRecv(ClientSocket, @Buffer[0], SizeOf(Buffer), 0);
+    for I := 1 to 200 do
+    begin
+      if Terminated then
+        Exit;
+      Sleep(10);
+    end;
+  finally
+    if ClientSocket >= 0 then
+    begin
+      fpShutdown(ClientSocket, SHUT_RDWR);
+      CloseSocket(ClientSocket);
+    end;
+    if FListenSocket >= 0 then
+    begin
+      CloseSocket(FListenSocket);
+      FListenSocket := -1;
+    end;
+  end;
+end;
 
 { TRequestSessionTests }
 
 procedure TRequestSessionTests.SetUp;
 begin
   inherited SetUp;
-  // Don't use Default(THttpSession) as it doesn't call Initialize
-  // Instead, use the explicit Init method
-  FSession.Init;
-  FSession.SetBaseURL('https://httpbin.org');
+  // THttpSession is initialized automatically; Init is only needed to reset it.
+  FSession.SetBaseURL(TestBaseURL);
   FSession.SetHeader('Accept', 'application/json');
   FSession.SetHeader('X-Test-Header', 'test-value');
+end;
+
+procedure TRequestSessionTests.Test27_Session_PostJSON;
+var
+  Response: TResponse;
+  Body, Echoed: TJSONObject;
+begin
+  Body := TJSONObject.Create;
+  try
+    Body.Add('name', 'Ada');
+    Response := FSession.PostJSON('/post', Body);
+  finally
+    Body.Free;
+  end;
+
+  AssertEquals('Status code should be 200', 200, Response.StatusCode);
+  Echoed := TJSONObject(Response.JSON.FindPath('json'));
+  AssertTrue('JSON body should be echoed', Echoed <> nil);
+  AssertEquals('JSON value should match', 'Ada', Echoed.Get('name', ''));
 end;
 
 procedure TRequestSessionTests.TearDown;
@@ -85,7 +225,7 @@ begin
     AssertTrue('Response should contain URL', URLNode <> nil);
     
     URL := URLNode.AsString;
-    AssertTrue('URL should contain httpbin.org', Pos('httpbin.org', URL) > 0);
+    AssertTrue('URL should contain the requested path', Pos('/get', URL) > 0);
   except
     // No need to free Response - it's managed by the advanced record
     raise;
@@ -100,6 +240,7 @@ var
 begin
   WriteLn('Test03_PersistentHeaders: Starting');
   // Add a custom header to the session
+  FSession.SetBaseURL(TestBaseURL + '/');
   FSession.SetHeader('X-Custom-Header', 'session-value');
   
   Response := FSession.Get('/headers');
@@ -343,34 +484,44 @@ end;
 procedure TRequestSessionTests.Test22_TimeoutHandling;
 var
   Response: TResponse;
+  Server: TDelayedResponseServer;
   ExceptionRaised: Boolean;
+  StartedAt, ElapsedMS: QWord;
   OldTimeout: Integer;
 begin
 
 WriteLn('Test22_TimeoutHandling: Starting');
 
-  // Save old timeout
-  OldTimeout := 30000; // Default timeout
-  
+  OldTimeout := 30000;
+  ElapsedMS := 0;
+  Server := TDelayedResponseServer.Create;
   try
-    // Set a very short timeout
-    FSession.SetTimeout(100); // 100ms
-    
-    // This should timeout
+    FSession.SetBaseURL(
+      'http://127.0.0.1:' + IntToStr(Server.Port));
+    FSession.SetTimeout(100);
+
     ExceptionRaised := False;
+    StartedAt := GetTickCount64;
     try
-      Response := FSession.Get('/delay/1'); // 1 second delay
+      Response := FSession.Get('/');
       Fail('Timeout exception was not raised');
     except
       on E: ERequestError do
+      begin
         ExceptionRaised := True;
+        ElapsedMS := GetTickCount64 - StartedAt;
+      end;
     end;
-    
+
     AssertTrue('Timeout exception should be raised', ExceptionRaised);
-    
+    AssertTrue(
+      Format(
+        'Timeout should occur before the server closes the connection (%dms)',
+        [ElapsedMS]),
+      ElapsedMS < 1500);
   finally
-    // Restore timeout
     FSession.SetTimeout(OldTimeout);
+    Server.Free;
   end;
 
   WriteLn('Test22_TimeoutHandling: Completed');
@@ -491,7 +642,7 @@ begin
   except
     on E: Exception do
     begin
-      // Retry once on transient 502
+      // Retry once when a developer uses the public fallback service.
       if Pos('502', E.Message) > 0 then
         Response := FSession.Post('/post', Body, 'multipart/form-data; boundary=' + Boundary)
       else
@@ -523,11 +674,9 @@ end;
 
 procedure TRequestSessionTests.Test25b_SessionMultipartUpload_Failure;
 var
-  OldBase: string;
   Boundary, Body, CRLF: string;
   ExceptionRaised: Boolean;
 begin
-  OldBase := '/'; // store something; we'll restore httpbin base in SetUp anyway per test
   // Create a minimal multipart body
   Boundary := '----RequestFPTest' + IntToStr(Random(1000000));
   CRLF := #13#10;
@@ -536,8 +685,8 @@ begin
           '1' + CRLF +
           '--' + Boundary + '--' + CRLF;
 
-  // Point to a nonexistent host
-  FSession.SetBaseURL('https://nonexistent.example.com');
+  // Point to a local port that should reject the connection.
+  FSession.SetBaseURL(TestFailureURL);
 
   ExceptionRaised := False;
   try
@@ -546,7 +695,8 @@ begin
     on E: Exception do
       ExceptionRaised := True;
   end;
-  AssertTrue('POST should raise exception on nonexistent host', ExceptionRaised);
+  AssertTrue('POST should raise exception on connection failure',
+    ExceptionRaised);
 
   // No explicit restore needed; each test re-initializes the session in SetUp
 end;
@@ -557,7 +707,7 @@ var
   CT: string;
 begin
   Response := FSession.Get('/get');
-  // Retry once on transient upstream 502 from httpbin
+  // Retry once when a developer uses the public fallback service.
   if Response.StatusCode = 502 then
     Response := FSession.Get('/get');
   AssertEquals('Status code should be 200', 200, Response.StatusCode);

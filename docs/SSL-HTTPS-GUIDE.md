@@ -1,47 +1,60 @@
-# SSL/HTTPS Configuration Guide
+# SSL/HTTPS configuration guide
 
-## How HTTPS is Determined
+## How HTTPS is selected
 
-Request-FP automatically uses HTTPS when:
-1. The URL starts with `https://`
-2. This triggers automatic SSL initialization before making the request
-
-There is **no global switch** to force all requests to use HTTPS, as this is determined by the URL protocol.
-
-## Ensuring HTTPS is Used
-
-### Option 1: Always Use `https://` in URLs
-
-The simplest approach - explicitly use HTTPS URLs:
+Request-FP uses HTTPS whenever the request URL starts with `https://`. There
+is no global HTTPS switch: the URL scheme determines whether TLS is used.
 
 ```pascal
-// Good - uses HTTPS
-Response := Http.Get('https://api.example.com/data');
-
-// Bad - uses HTTP (unencrypted)
-Response := Http.Get('http://api.example.com/data');
+Response := Http.Get('https://api.example.com/data'); // Encrypted
+Response := Http.Get('http://api.example.com/data');  // Not encrypted
 ```
 
-### Option 2: Use Base URL with Sessions
-
-For session-based requests, set the base URL with `https://`:
+For sessions, put HTTPS in the base URL:
 
 ```pascal
 var
   Session: THttpSession;
 begin
-  Session.Init;
-  Session.SetBaseURL('https://api.example.com');  // Forces HTTPS for all session requests
-
-  // All these use HTTPS because of the base URL:
+  Session.SetBaseURL('https://api.example.com');
   Response := Session.Get('/users');
-  Response := Session.Post('/data', 'payload');
 end;
 ```
 
-### Option 3: Create a Helper Function
+## Windows setup
 
-Wrap the HTTP functions to enforce HTTPS:
+HTTPS requires OpenSSL DLLs whose architecture matches the executable.
+
+| Executable | OpenSSL 3 DLLs |
+| --- | --- |
+| 64-bit | `libssl-3-x64.dll`, `libcrypto-3-x64.dll` |
+| 32-bit | `libssl-3.dll`, `libcrypto-3.dll` |
+
+Put both DLLs beside the executable or add their installation directory to
+`PATH`.
+
+FPC 3.2.2 has an unusual Windows compatibility issue: its bindings support
+OpenSSL 3, but its loader does not try the OpenSSL 3 filenames. Request-FP
+v1.3.0 handles this automatically by selecting the OpenSSL 3 names first and
+retaining FPC's OpenSSL 1.1 fallback. You do not need to modify FPC, rename
+system DLLs, or add special code to your application.
+
+See [OpenSSL version selection](OPENSSL-VERSION-SELECTION.md) for the exact
+loading behavior and troubleshooting steps.
+
+## Linux setup
+
+Install the OpenSSL package supplied by the distribution. For example:
+
+```bash
+sudo apt-get install libssl-dev
+```
+
+Request-FP uses FPC's normal Unix library discovery on Linux.
+
+## Enforcing HTTPS in an application
+
+If your application must reject plain HTTP, validate URLs at its boundary:
 
 ```pascal
 function SecureGet(const URL: string): TResponse;
@@ -50,112 +63,64 @@ begin
     raise ERequestError.Create('Only HTTPS URLs are allowed');
   Result := Http.Get(URL);
 end;
-
-// Usage:
-Response := SecureGet('https://api.example.com/data');  // OK
-Response := SecureGet('http://api.example.com/data');   // Raises exception
 ```
 
-### Option 4: URL Validation Function
+This is an application policy; Request-FP does not silently rewrite URLs.
 
-Create a validation helper:
+## Diagnostics
 
-```pascal
-function EnsureHTTPS(const URL: string): string;
-begin
-  if Pos('http://', LowerCase(URL)) = 1 then
-    Result := 'https://' + Copy(URL, 8, Length(URL))  // Replace http:// with https://
-  else if Pos('https://', LowerCase(URL)) = 1 then
-    Result := URL  // Already HTTPS
-  else
-    Result := 'https://' + URL;  // Add https:// prefix
-end;
+Build the included diagnostic example:
 
-// Usage:
-Response := Http.Get(EnsureHTTPS('api.example.com/data'));       // Adds https://
-Response := Http.Get(EnsureHTTPS('http://api.example.com'));    // Converts to https://
-Response := Http.Get(EnsureHTTPS('https://api.example.com'));   // No change
+```powershell
+cd examples\ssl_debug
+lazbuild --build-mode=Debug ssl_debug.lpi
+.\ssl_debug.exe
 ```
 
-## Debug Mode: See Where DLLs Are Loaded
+On Windows, debug output includes the executable architecture, OpenSSL
+version, and actual DLL paths:
 
-### Enable Debug Output
-
-Compile your program with DEBUG mode to see SSL initialization details:
-
-```bash
-fpc -dDEBUG yourprogram.pas
-```
-
-Or add to your source code:
-
-```pascal
-{$DEFINE DEBUG}
-```
-
-### What Debug Mode Shows
-
-When DEBUG mode is enabled, you'll see output like:
-
-**On Windows:**
-```
+```text
 [DEBUG] Initializing OpenSSL...
 [DEBUG] OpenSSL initialized successfully (Windows)
-[DEBUG] OpenSSL version: OpenSSL 3.0.11 19 Sep 2023
+[DEBUG] libssl loaded from: C:\Program Files\OpenSSL\bin\libssl-3-x64.dll
+[DEBUG] libcrypto loaded from: C:\Program Files\OpenSSL\bin\libcrypto-3-x64.dll
+[DEBUG] OpenSSL version: OpenSSL 3.6.3 ...
 ```
 
-**On Linux:**
-```
-[DEBUG] Initializing OpenSSL...
-[DEBUG] OpenSSL initialized successfully (Unix)
-```
+You can also check what is visible through `PATH`:
 
-This shows:
-- When SSL initialization begins
-- Confirmation of successful initialization
-- **OpenSSL version**: Exact version string from the loaded library (Windows only, as returned by the library)
-
-### Finding DLL Locations on Windows
-
-The debug handles don't show the file path, but you can find where DLLs are loaded from using:
-
-```bash
-# Check system PATH for OpenSSL DLLs
-where libssl-3-x64.dll
-where libcrypto-3-x64.dll
-
-# Or for OpenSSL 1.1.x:
-where libssl-1_1-x64.dll
-where libcrypto-1_1-x64.dll
+```powershell
+where.exe libssl-3-x64.dll
+where.exe libcrypto-3-x64.dll
 ```
 
-### Advanced DLL Path Detection (Windows)
+## Common failures
 
-For a more detailed approach, you can use Windows API to get the loaded DLL path:
+### Could not initialize OpenSSL library
 
-```pascal
-{$IFDEF WINDOWS}
-uses
-  Windows;
+Check that:
 
-function GetLoadedDLLPath(Handle: THandle): string;
-var
-  Path: array[0..MAX_PATH] of Char;
-begin
-  if GetModuleFileName(Handle, Path, MAX_PATH) > 0 then
-    Result := Path
-  else
-    Result := 'Unable to determine DLL path';
-end;
-{$ENDIF}
+- both DLLs are present;
+- their architecture matches the executable;
+- they came from the same OpenSSL build; and
+- their directory is beside the executable or on `PATH`.
 
-// Usage (in DEBUG mode after SSL is initialized):
-WriteLn('SSL DLL path: ', GetLoadedDLLPath(SSLLibraryHandle));
-WriteLn('Crypto DLL path: ', GetLoadedDLLPath(SSLUtilHandle));
-```
+### OpenSSL works in a terminal but Request-FP cannot initialize it
 
-## See Also
+`openssl.exe version` only proves that the command-line program can find its
+own libraries. Run `examples/ssl_debug` to verify what the FPC application
+loads.
 
-- [Troubleshooting Guide](../README.md#-troubleshooting) - OpenSSL installation help
-- [SSL Debug Example](../examples/ssl_debug/) - Example program with debug output
-- [API Reference](Request.md) - Full API documentation
+### The wrong version is loaded
+
+Windows searches the executable directory before most `PATH` locations.
+Place the intended pair beside the executable, then use the debug example to
+confirm the loaded paths. Do not rename or remove DLLs from `System32`.
+
+## See also
+
+- [OpenSSL version selection](OPENSSL-VERSION-SELECTION.md)
+- [Technical details](TECHNICAL-DETAILS.md#windows-openssl-3-loading-with-fpc-322)
+- [SSL debug example](../examples/ssl_debug/)
+- [API reference](Request.md)

@@ -73,13 +73,13 @@ Perfect for troubleshooting or verifying your setup!
 
 Three new documentation files to help you master HTTPS and OpenSSL:
 
-1. **[SSL-HTTPS-GUIDE.md](docs/SSL-HTTPS-GUIDE.md)**
+1. **[SSL-HTTPS-GUIDE.md](SSL-HTTPS-GUIDE.md)**
    - How HTTPS is determined (by URL protocol)
    - Strategies to enforce HTTPS in your apps
    - Helper function examples
    - Debug mode details
 
-2. **[OPENSSL-VERSION-SELECTION.md](docs/OPENSSL-VERSION-SELECTION.md)**
+2. **[OPENSSL-VERSION-SELECTION.md](OPENSSL-VERSION-SELECTION.md)**
    - Understanding Windows DLL search order
    - Why the wrong version might load
    - 3 solutions to control which version is used
@@ -172,15 +172,15 @@ We listened, and v1.1.0 ensures no one else faces this confusion!
 
 ## 📝 Full Changelog
 
-See [CHANGELOG.md](CHANGELOG.md#110---2026-01-01) for complete details.
+See [CHANGELOG.md](../CHANGELOG.md#110---2026-01-01) for complete details.
 
 ## 🔗 Quick Links
 
-- **Documentation**: [README.md](README.md)
-- **API Reference**: [docs/Request.md](docs/Request.md)
-- **SSL/HTTPS Guide**: [docs/SSL-HTTPS-GUIDE.md](docs/SSL-HTTPS-GUIDE.md)
-- **Troubleshooting**: [README.md#troubleshooting](README.md#-troubleshooting)
-- **Examples**: [examples/](examples/)
+- **Documentation**: [README.md](../README.md)
+- **API Reference**: [docs/Request.md](Request.md)
+- **SSL/HTTPS Guide**: [docs/SSL-HTTPS-GUIDE.md](SSL-HTTPS-GUIDE.md)
+- **Troubleshooting**: [SSL/HTTPS guide](SSL-HTTPS-GUIDE.md)
+- **Examples**: [examples/](../examples/)
 
 ## 🎯 What's Next?
 

@@ -1,311 +1,332 @@
 # Request-FP
 
+<p align="center">
+  <img src="docs/assets/request-fp-logo.svg" alt="Request-FP — easy HTTP for Free Pascal" width="720">
+</p>
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-1E3A8A.svg)](https://opensource.org/licenses/MIT)
 [![Free Pascal](https://img.shields.io/badge/Free%20Pascal-3.2.2+-3B82F6.svg)](https://www.freepascal.org/)
-[![Lazarus](https://img.shields.io/badge/Lazarus-4.0+-60A5FA.svg)](https://www.lazarus-ide.org/)
+[![Lazarus](https://img.shields.io/badge/Lazarus-4.8+-60A5FA.svg)](https://www.lazarus-ide.org/)
 ![Supports Windows](https://img.shields.io/badge/support-Windows-F59E0B?logo=Windows)
 ![Supports Linux](https://img.shields.io/badge/support-Linux-F59E0B?logo=Linux)
-[![Version](https://img.shields.io/badge/version-1.2.0-8B5CF6.svg)](CHANGELOG.md)
-![No Dependencies](https://img.shields.io/badge/dependencies-none-10B981.svg)
+[![Version](https://img.shields.io/badge/version-1.3.0-8B5CF6.svg)](CHANGELOG.md)
 
-Zero‑memory‑leak, high‑level HTTP client for Free Pascal. Built on top of FPC's HTTP stack with a clean API and zero boilerplate.
+An easy, memory-safe HTTP client for Free Pascal. Request-FP wraps FPC's HTTP
+stack with a small API, automatic cleanup, and no application-level
+dependencies.
 
-## ❓ Why Request-FP?
+## Start here
 
-Request-FP is a thin, high-level wrapper around the Free Pascal HTTP client. If you like the built-in client but want fewer lines of code and safer lifetimes, this library gives you:
-
-- Less boilerplate with expressive, procedural helpers.
-- RAII-style advanced records for automatic cleanup (no leaks).
-- A consistent, predictable API for common tasks (headers, params, JSON, multipart).
-
-Use it when you want the power of FPC's HTTP client without the repetitive setup and manual memory management.
-
-## ✨ Features
-
-- **Zero memory leaks:** RAII-style advanced records handle cleanup for you.
-- **High-level API over FPC:** Built on the stock Free Pascal HTTP client—no extra runtime deps.
-- **Stateless or session-based:** `Http.Get(...)` for quick calls, `THttpSession` for cookies/state.
-- **Headers, params, JSON, multipart:** First-class helpers for common patterns.
-- **Simple error handling:** Exceptions or try-pattern results—your choice.
-- **Battle-tested:** Cross-platform with a comprehensive test suite.
-
-## ⚡ Getting Started in 30 Seconds
+Add `src` to your unit search path and make a request:
 
 ```pascal
 uses Request;
+
 var
-  R: TResponse;
+  Response: TResponse;
 begin
-  R := Http.Get('https://httpbin.org/get');
-  WriteLn(R.Text);
+  Response := Http.Get('https://api.example.com/users');
+  Response.RaiseForStatus;
+  WriteLn(Response.Text);
+end.
+```
+
+There is no client to create or free. `TResponse` cleans itself up.
+
+Use the stateless `Http` API for one-off requests. Use `THttpSession` when
+requests need to share a base URL, headers, or cookies.
+
+## Common requests
+
+### Query parameters
+
+`KV` is the short syntax for a header, query parameter, form field, or
+multipart field:
+
+```pascal
+Response := Http.GetWithParams('https://api.example.com/search', [
+  KV('q', 'free pascal'),
+  KV('page', '2')
+]);
+```
+
+Request-FP percent-encodes names and values as UTF-8.
+
+### Headers and query parameters together
+
+```pascal
+Response := Http.Get('https://api.example.com/search',
+  [KV('Authorization', 'Bearer ' + Token)],
+  [KV('q', 'free pascal')]);
+```
+
+The second array is headers and the third is query parameters.
+`TKeyValue.Create(...)` remains available for existing code.
+
+### Form data
+
+```pascal
+Response := Http.PostForm('https://api.example.com/login', [
+  KV('email', 'ada@example.com'),
+  KV('password', Password)
+]);
+```
+
+`PostForm` performs the form encoding and sets
+`application/x-www-form-urlencoded`. Use `Http.Post` when the body is already
+encoded or is another content type.
+
+### JSON
+
+Post a JSON string:
+
+```pascal
+Response := Http.PostJSON(
+  'https://api.example.com/users',
+  '{"name":"Ada"}'
+);
+```
+
+Or pass an existing `TJSONData` value directly:
+
+```pascal
+uses Request, fpjson;
+
+var
+  Body: TJSONObject;
+begin
+  Body := TJSONObject.Create;
+  try
+    Body.Add('name', 'Ada');
+    Response := Http.PostJSON('https://api.example.com/users', Body);
+  finally
+    Body.Free;
+  end;
 end;
 ```
 
-> That's it! No manual memory management, no setup headaches.
-
-
-## Usage Styles
-
-Request-FP offers two ways to make HTTP requests:
-
-| If you want...                        | Use this style         | Example                |
-|---------------------------------------|------------------------|------------------------|
-| The simplest, one-off requests        | Stateless API          | `Http.Get(...)`        |
-| To keep cookies/headers across calls  | Session API            | `THttpSession`         |
-
-- **Start with the stateless API** for quick scripts, demos, or simple tools.
-- **Use the session API** if you need to log in, reuse cookies, or make many related requests.
-
-> Most users only need the stateless API. The session API is there for advanced needs—use it when you need more control or state.
-
-> Note: `THttpSession` is an advanced record—call `Session.Init` before using methods like `Session.Get(...)`.
-
-## Examples
-
-### Simple GET
-```pascal
-Response := Http.Get('https://api.example.com/data');
-WriteLn(Response.Text);
-```
-
-### GET with custom headers and query parameters
-```pascal
-Response := Http.Get('https://api.example.com/data',
-  [TKeyValue.Create('X-Api-Key', 'my-secret-key')],
-  [TKeyValue.Create('search', 'pascal')]);
-WriteLn(Response.Text);
-```
-
-### POST with data
-```pascal
-Response := Http.Post('https://api.example.com/data', 'foo=bar');
-```
-
-### POST with custom headers and params
+Request-FP reads JSON responses lazily:
 
 ```pascal
-Response := Http.Post('https://api.example.com/data', 'foo=bar',
-  [TKeyValue.Create('Authorization', 'Bearer token')],
-  [TKeyValue.Create('debug', '1')]);
+WriteLn(Response.JSON.FindPath('user.name').AsString);
 ```
 
-### POST JSON
-```pascal
-Response := Http.PostJSON('https://api.example.com/data', '{"foo": "bar"}');
-```
+`Response` owns the parsed value returned by `Response.JSON`. Do not free that
+value yourself. Invalid JSON raises `ERequestError` with a `JSON Parse Error`
+message.
 
-### Multipart upload
+### Multipart file upload
 
 ```pascal
 Response := Http.PostMultipart('https://api.example.com/upload',
-  [TKeyValue.Create('field1', 'value1')],
-  [TKeyValue.Create('file1', 'myfile.txt')]);
+  [KV('description', 'avatar')],
+  [KV('file', 'avatar.png')]);
 ```
 
-### Error handling
+The key in the files array is the form field name; the value is the local file
+path.
+
+## Handling success and errors
+
+Choose the style that fits your program.
+
+### Exceptions for transport errors
+
+Normal methods raise `ERequestError` for network, TLS, and request failures.
+Inspect the response or opt in to raising for a non-2xx status:
+
 ```pascal
 try
-  Response := Http.Get('https://api.example.com/secure');
+  Response := Http.Get('https://api.example.com/users/42');
+  Response.RaiseForStatus;
+  WriteLn(Response.Text);
 except
   on E: ERequestError do
-    WriteLn('HTTP Error: ', E.Message);
+    WriteLn(E.Message);
 end;
 ```
 
-### Try-pattern (no exceptions)
+You can also branch without raising:
+
 ```pascal
-Result := Http.TryGet('https://api.example.com/secure');
-if Result.Success then
-  WriteLn('Status: ', Result.Response.StatusCode)
+if Response.OK then
+  WriteLn(Response.Text)
 else
-  WriteLn('Error: ', Result.Error);
+  WriteLn('HTTP status: ', Response.StatusCode);
 ```
 
-### Behavior: Try* vs Exceptions
+`Response.OK` and `Response.IsSuccessStatus` are true for status codes 200
+through 299.
 
-- **Procedural methods (`Http.Get/Post/...`)**: Raise `ERequestError` on transport failures (network/SSL) and may still return non-2xx responses (e.g., 404/500) without raising.
-- **Try-pattern methods (`Http.TryGet/TryPost/...`)**: Never raise; return `TRequestResult` with `Success`, `Response`, and `Error` populated. Non-2xx status codes are treated as successful transports.
-- **JSON parsing**: Accessing `Response.JSON` on non-JSON content raises `ERequestError` with a clear "JSON Parse Error" prefix.
+### No exceptions
 
-### Reading response headers
+Every `Try*` method catches request exceptions:
 
 ```pascal
-var CT: string;
-CT := Response.HeaderValue('Content-Type');
-if Pos('application/json', LowerCase(CT)) > 0 then
-  WriteLn('Looks like JSON');
+Result := Http.TryGet('https://api.example.com/users/42');
+if Result.OK then
+  WriteLn(Result.Response.Text)
+else if not Result.Success then
+  WriteLn('Request failed: ', Result.Error)
+else
+  WriteLn('HTTP status: ', Result.Response.StatusCode);
 ```
 
-## 🧪 Testing
+- `Result.Success` means the HTTP exchange completed, even if the server
+  returned 404 or 500.
+- `Result.OK` means the exchange completed and the status is 2xx.
+- `TryGet`, `TryGetWithParams`, `TryPost`, `TryPostForm`, `TryPostJSON`,
+  `TryPut`, `TryDelete`, and `TryPostMultipart` do not raise request
+  exceptions.
 
-Request-FP includes a comprehensive test suite that ensures reliability and catches regressions.
+## Sessions
 
-First, compile the test suite using Lazarus IDE or `lazbuild`.
+Add `Request.Session` when calls should share configuration or cookies:
 
-### Running Tests
+```pascal
+uses Request, Request.Session;
+
+var
+  Session: THttpSession;
+  Response: TResponse;
+begin
+  Session.SetBaseURL('https://api.example.com');
+  Session.SetHeader('Authorization', 'Bearer ' + Token);
+
+  Response := Session.Get('/profile');
+  if Response.OK then
+    WriteLn(Response.Text);
+end.
+```
+
+Sessions initialize and clean themselves up automatically. You do not need to
+call `Session.Init`; call it only when you want to reset an existing session to
+its defaults.
+
+The base URL works with or without a trailing slash, and paths work with or
+without a leading slash.
+
+Post JSON with the same convenience as the stateless API:
+
+```pascal
+Response := Session.PostJSON('/profile', '{"displayName":"Ada"}');
+```
+
+See the [session guide](docs/Request.Session.md) for cookies, timeouts, and the
+complete API.
+
+## Installation
+
+1. Copy `src/Request.pas` and, if needed, `src/Request.Session.pas` into your
+   project, or clone this repository.
+2. Add the `src` directory to the project's unit search path.
+3. Add `Request` to your `uses` clause.
+
+Requirements:
+
+- Free Pascal 3.2.2+ or Lazarus 4.8+
+- Windows or Linux
+- OpenSSL libraries for HTTPS
+
+On Linux, install the distribution's OpenSSL development package. On Windows,
+the OpenSSL DLL architecture must match the executable architecture.
+Request-FP v1.3.0 automatically handles FPC 3.2.2's OpenSSL 3 DLL-name issue
+and retains its OpenSSL 1.1 fallback; applications do not need to patch FPC.
+If HTTPS setup fails, run `examples/ssl_debug` and follow the
+[SSL/HTTPS guide](docs/SSL-HTTPS-GUIDE.md).
+
+## API at a glance
+
+```pascal
+// Requests
+Http.Get(URL)
+Http.GetWithParams(URL, Params)
+Http.Post(URL, Body)
+Http.PostForm(URL, Fields)
+Http.PostJSON(URL, JSON)
+Http.Put(URL, Body)
+Http.Delete(URL)
+Http.PostMultipart(URL, Fields, Files)
+
+// Response
+Response.StatusCode
+Response.Text
+Response.JSON
+Response.OK
+Response.HeaderValue('Content-Type')
+Response.RaiseForStatus
+Response.SaveToFile('output.dat')
+```
+
+Most methods also have header/query-parameter overloads and exception-free
+`Try*` counterparts. See the [API reference](docs/Request.md) for exact
+signatures.
+
+## Documentation and examples
+
+- [Cheat sheet](docs/cheat-sheet.md)
+- [Stateless API reference](docs/Request.md)
+- [Session guide](docs/Request.Session.md)
+- [SSL/HTTPS guide](docs/SSL-HTTPS-GUIDE.md)
+- [Windows OpenSSL version selection](docs/OPENSSL-VERSION-SELECTION.md)
+- [Technical details](docs/TECHNICAL-DETAILS.md)
+- [Examples](examples/)
+
+## Build all examples
+
+The repository includes scripts that compile every Lazarus example in Release
+mode and collect the executables in `example-bin/`.
+
+Windows PowerShell:
+
+```powershell
+.\build-examples.ps1
+```
+
+If script execution is disabled by local policy:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build-examples.ps1
+```
+
+Linux or Git Bash:
 
 ```bash
-# Navigate to the tests directory
-cd tests
-
-# Run all tests
-./TestRunner.exe -a --format=plain
-
-# On Linux
-./TestRunner -a --format=plain
+bash ./build-examples.sh
 ```
 
-### Test Coverage
+Both scripts require `lazbuild` on `PATH`. They discover all `.lpi` projects
+under `examples/`, skip Lazarus backup directories, and clean `example-bin/`
+before compiling. The generated directory is ignored by Git.
 
-- ✅ Comprehensive tests for HTTP methods, headers/params, JSON, multipart, and error handling
-- ✅ Cross-platform: Windows and Linux
-- ✅ Memory-safe by construction: advanced records manage lifetimes; JSON parse errors raise `ERequestError`
+Run an example after building:
 
-### CI / Network Requirements
+```powershell
+.\example-bin\easy_get.exe
+```
 
-- Tests target `https://httpbin.org` and assume outbound network access.
-- Some endpoints can intermittently return `502` from httpbin's upstream. Tests include a minimal 1x retry on 502 to reduce flakiness. No core library behavior is altered by this.
-
-## 📚 Documentation
-
-### Quick References
-
-- **[📋 Cheat Sheet](docs/Cheat-Sheet.md)** - Quick reference for common patterns
-- **[📖 API Reference](docs/Request.md)** - Complete API documentation
-- **[📖 Session API](docs/Request.Session.md)** - Session-based HTTP client guide
-- **[🔧 Technical Details](docs/TECHNICAL-DETAILS.md)** - Implementation details
-
-### Examples
-
-Explore practical examples in the [`examples/`](examples/) directory:
-- **[Basic GET](examples/easy_get/)** - Simple HTTP GET request
-- **[Custom Headers](examples/custom_headers_params/)** - Headers and query parameters
-- **[Authentication](examples/basic_auth/)** - Basic authentication
-- **[JSON POST](examples/post_json/)** - POST requests with JSON
-- **[File Upload](examples/multipart_upload/)** - Multipart file uploads
-- **[File Download](examples/file_download/)** - Download files
-- **[Error Handling](examples/retry_on_error/)** - Robust error handling
-- **[Sessions](examples/session_easy_get/)** - Session-based requests
-
-## 🚀 Installation
-
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/iwank/request-fp.git
-   cd request-fp
-   ```
-
-2. **Add to your project**:
-   - Copy `src/Request.pas` and `src/Request.Session.pas` to your project
-   - Add the `src` directory to your unit search path
-   - Include `uses Request;` in your code
-
-3. **Dependencies**:
-   - **Free Pascal 3.2.2+** or **Lazarus 4.0+**
-   - **OpenSSL** (for HTTPS support)
-     - **Windows**: Install via [Chocolatey](https://chocolatey.org/) (`choco install openssl`), [Scoop](https://scoop.sh/) (`scoop install openssl`), or download the [Win64 OpenSSL installer](https://slproweb.com/products/Win32OpenSSL.html). Copy `libssl-*.dll` and `libcrypto-*.dll` into your executable folder or add their location to PATH.
-     - **Linux**: `sudo apt-get install libssl-dev` (Ubuntu/Debian) or `sudo dnf install openssl-devel` (Fedora/RHEL)
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
-
-### Development Setup
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Make your changes
-4. Run tests: `cd tests && ./TestRunner.exe -a --format=plain`
-5. Commit your changes: `git commit -m 'Add amazing feature'`
-6. Push to the branch: `git push origin feature/amazing-feature`
-7. Open a Pull Request
-
-## 📋 Requirements
-
-- **Free Pascal 3.2.2+** or **Lazarus 4.0+**
-- **OpenSSL** libraries (for HTTPS) - see [Installation](#-installation) for platform-specific setup
-- **Windows** or **Linux** (cross-platform)
-
-## 🔧 Troubleshooting
-
-### OpenSSL Errors on Windows
-
-If you encounter OpenSSL initialization errors on Windows (e.g., "OpenSSL initialization failed"), you need to install the OpenSSL DLLs.
-
-**IMPORTANT:** The DLL architecture (32-bit vs 64-bit) must match your FPC installation:
-- **fpcupdeluxe defaults to 32-bit FPC** (common choice for lower memory footprint and smaller executables)
-- If you have 32-bit FPC, you need 32-bit OpenSSL DLLs (no `-x64` suffix)
-- If you have 64-bit FPC, you need 64-bit OpenSSL DLLs (with `-x64` suffix)
-- Use `examples/ssl_debug` to check your executable architecture
-
-**Required DLL Files:**
-
-FPC automatically tries multiple OpenSSL versions in priority order (newest first):
-- **64-bit**: `libssl-3-x64.dll` → `libssl-1_1-x64.dll` → older versions
-- **32-bit**: `libssl-3.dll` → `libssl-1_1.dll` → older versions
-
-**Important:** While FPC prefers newer versions, Windows DLL search order may override this. If you have multiple OpenSSL versions installed (e.g., in System32), Windows may load an older version due to Known DLLs registry or search path priority. Use the `ssl_debug` example to verify which version actually loads.
-
-Install either OpenSSL 3.x (recommended) or 1.1.x:
-- **OpenSSL 3.x**: `libssl-3-x64.dll` and `libcrypto-3-x64.dll` (64-bit) or `libssl-3.dll` / `libcrypto-3.dll` (32-bit)
-- **OpenSSL 1.1.x**: `libssl-1_1-x64.dll` and `libcrypto-1_1-x64.dll` (64-bit) or `libssl-1_1.dll` / `libcrypto-1_1.dll` (32-bit)
-
-**Installation Options:**
-
-1. **Via Package Manager (Recommended)**:
-   - [Chocolatey](https://chocolatey.org/): `choco install openssl`
-   - [Scoop](https://scoop.sh/): `scoop install openssl`
-
-2. **Manual Installation**:
-   - Download from [Shining Light Productions](https://slproweb.com/products/Win32OpenSSL.html)
-   - Choose the appropriate installer for your architecture (Win64 or Win32)
-   - Install to a location like `C:\OpenSSL-Win64\`
-
-3. **Deploy DLLs**:
-   - **Option A**: Copy the DLL files to the same folder as your executable
-   - **Option B**: Add the OpenSSL `bin` directory to your system PATH environment variable
-
-**Verifying Installation:**
 ```bash
-# Check if OpenSSL DLLs are accessible
-where libssl-3-x64.dll
-where libcrypto-3-x64.dll
+./example-bin/easy_get
 ```
 
-### OpenSSL Errors on Linux
+## Testing
 
-If you encounter OpenSSL errors on Linux, install the development libraries:
+Build the suite with Lazarus or:
 
-**Ubuntu/Debian**:
 ```bash
-sudo apt-get update
-sudo apt-get install libssl-dev
+lazbuild --build-mode=Release tests/TestRunner.lpi
+tests/TestRunner.exe -a --format=plain
 ```
 
-**Fedora/RHEL**:
-```bash
-sudo dnf install openssl-devel
-```
+On Linux, run `tests/TestRunner`. CI starts `tests/http_fixture.py` and points
+the suite at that local service, so CI does not depend on a public HTTP test
+service. A direct local run without `REQUEST_FP_TEST_BASE_URL` falls back to
+`https://httpbin.org` and therefore requires network access.
 
-### Network and Certificate Errors
+## Contributing
 
-- **Certificate validation failures**: Ensure your system's CA certificates are up to date
-- **Connection timeouts**: Check firewall settings and network connectivity
-- **502 errors from httpbin**: Some test endpoints may intermittently return 502; this is a known httpbin upstream issue and does not indicate a library problem
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## 📄 License
+## License
 
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
-
-
-## 🙏 Acknowledgments
-
-- [Free Pascal Dev Team](https://www.freepascal.org/) for the Pascal compiler
-- [Lazarus IDE Team](https://www.lazarus-ide.org/) for such an amazing IDE
-- The kind and helpful individuals on various online platforms such as:
-    - [Unofficial Free Pascal discord server](https://discord.com/channels/570025060312547359/570091337173696513)
-    - [Free Pascal & Lazarus forum](https://forum.lazarus.freepascal.org/index.php)
-    - [Tweaking4All Delphi, Lazarus, Free Pascal forum](https://www.tweaking4all.com/forum/delphi-lazarus-free-pascal/)
-    - [Laz Planet - Blogspot](https://lazplanet.blogspot.com/) / [Laz Planet - GitLab](https://lazplanet.gitlab.io/)
-    - [Delphi Basics](https://www.delphibasics.co.uk/index.html)
-- All contributors who have helped improve this project
+Request-FP is available under the [MIT License](LICENSE.md).

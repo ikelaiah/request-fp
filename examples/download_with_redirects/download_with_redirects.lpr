@@ -16,7 +16,7 @@ begin
 
   WriteLn('Final status: ', Response.StatusCode);
 
-  if (Response.StatusCode = 200) and (Length(Response.Text) > 0) then
+  if Response.OK and (Length(Response.Text) > 0) then
   begin
     FileStream := TFileStream.Create(FileName, fmCreate);
     try

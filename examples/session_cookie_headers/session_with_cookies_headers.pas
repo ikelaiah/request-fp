@@ -6,7 +6,6 @@ var
   Session: THttpSession;
   Response: TResponse;
 begin
-  Session.Init;
   Session.SetBaseURL('https://httpbin.org');
   Session.SetHeader('X-Test-Header', 'RequestFP');
   Session.SetCookie('mycookie', 'cookievalue');

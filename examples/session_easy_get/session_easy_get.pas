@@ -7,7 +7,6 @@ var
   Session: THttpSession;
   Response: TResponse;
 begin
-  Session.Init;
   Response := Session.Get('https://httpbin.org/get');
   WriteLn('Status: ', Response.StatusCode);
   WriteLn('Body: ', Response.Text);

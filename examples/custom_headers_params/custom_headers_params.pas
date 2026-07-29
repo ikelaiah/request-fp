@@ -6,8 +6,8 @@ var
   Response: TResponse;
 begin
   Response := Http.Get('https://httpbin.org/get',
-                       [TKeyValue.Create('X-Custom-Header', 'MyValue')],
-                       [TKeyValue.Create('foo', 'bar'), TKeyValue.Create('baz', 'qux')]);
+                       [KV('X-Custom-Header', 'MyValue')],
+                       [KV('foo', 'bar'), KV('baz', 'qux')]);
   WriteLn('Status: ', Response.StatusCode);
   WriteLn('Body: ', Response.Text);
 end.

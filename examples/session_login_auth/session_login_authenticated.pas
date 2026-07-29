@@ -7,7 +7,6 @@ var
   Response: TResponse;
   LoginData: TJSONObject;
 begin
-  Session.Init;
   Session.SetBaseURL('https://httpbin.org');
 
   // Simulate login (httpbin.org/post just echoes data)
@@ -15,7 +14,7 @@ begin
   try
     LoginData.Add('username', 'user');
     LoginData.Add('password', 'pass');
-    Response := Session.Post('/post', LoginData.AsJSON);
+    Response := Session.PostJSON('/post', LoginData);
     WriteLn('Login Status: ', Response.StatusCode);
     WriteLn('Login Response: ', Response.Text);
   finally
