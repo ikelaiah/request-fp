@@ -127,36 +127,40 @@ jobs:
           'C:\Lazarus\fpc\3.2.2\bin\x86_64-win64' |
             Out-File -FilePath $env:GITHUB_PATH -Append
 
-      - name: Install OpenSSL
+      - name: Stage OpenSSL DLLs
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          choco install openssl --version=3.6.0 --yes --no-progress
-          if ($LASTEXITCODE -ne 0) {
-            throw "OpenSSL installation failed with exit code $LASTEXITCODE."
-          }
 
           $requiredDlls = @(
             'libssl-3-x64.dll'
             'libcrypto-3-x64.dll'
           )
-          $availableDlls = @(
-            Get-ChildItem `
-              -Path 'C:\Program Files\OpenSSL*' `
-              -Recurse `
-              -File `
-              -ErrorAction SilentlyContinue
+
+          $gitCommand = Get-Command git.exe -ErrorAction Stop
+          $gitRoot = Split-Path -Parent (
+            Split-Path -Parent $gitCommand.Source
           )
+          $opensslDirectory = Join-Path $gitRoot 'mingw64\bin'
 
           foreach ($dllName in $requiredDlls) {
-            $dll = $availableDlls |
-              Where-Object Name -EQ $dllName |
-              Select-Object -First 1
-            if ($null -eq $dll) {
-              throw "OpenSSL did not install $dllName."
+            $source = Join-Path $opensslDirectory $dllName
+            if (-not (Test-Path -LiteralPath $source)) {
+              throw "Git for Windows did not provide $dllName."
             }
-            Copy-Item -LiteralPath $dll.FullName -Destination .\tests
+            Copy-Item -LiteralPath $source -Destination .\tests
           }
+
+          $opensslExecutable = Join-Path $opensslDirectory 'openssl.exe'
+          & $opensslExecutable version
+          if ($LASTEXITCODE -ne 0) {
+            throw (
+              "OpenSSL version check failed with exit " +
+              "code $LASTEXITCODE."
+            )
+          }
+
+          Write-Output "Staged OpenSSL 3 DLLs from $opensslDirectory"
 
       - name: Verify compiler versions
         shell: pwsh
