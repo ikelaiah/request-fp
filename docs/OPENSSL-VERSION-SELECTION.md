@@ -1,140 +1,111 @@
-# OpenSSL Version Selection on Windows
+# OpenSSL version selection on Windows
 
-## The Problem
+## The FPC 3.2.2 filename problem
 
-When you have multiple OpenSSL versions installed on Windows, the wrong version might be loaded. This happens because:
+FPC 3.2.2's OpenSSL bindings can use the OpenSSL 3 API, but its Windows
+loader does not try the standard OpenSSL 3 DLL names. On 64-bit Windows, its
+newest default candidates are:
 
-1. **FPC's opensslsockets unit** searches for DLLs in this order:
-   - OpenSSL 1.1.x: `libssl-1_1-x64.dll`, `libcrypto-1_1-x64.dll`
-   - OpenSSL 3.x: `libssl-3-x64.dll`, `libcrypto-3-x64.dll`
+- `libssl-1_1-x64.dll`
+- `libcrypto-1_1-x64.dll`
 
-2. **Windows DLL search order:**
-   - Application directory (where your .exe is)
-   - `C:\Windows\System32\`
-   - Directories in PATH environment variable
+Installing OpenSSL 3 can therefore leave `InitSSLInterface` returning `False`
+even when `openssl.exe version` works. The command-line program finding its
+own libraries does not prove that an FPC application knows their filenames.
 
-## Diagnosing Which Version is Loaded
+## Request-FP's v1.3.0 compatibility override
 
-Use the debug mode to see exactly which DLLs are being loaded:
+Request-FP selects the OpenSSL 3 names before initializing HTTPS:
 
-```bash
-cd examples/ssl_debug
+```pascal
+{$IFDEF CPU64}
+DLLSSLName := 'libssl-3-x64.dll';
+DLLUtilName := 'libcrypto-3-x64.dll';
+{$ELSE}
+DLLSSLName := 'libssl-3.dll';
+DLLUtilName := 'libcrypto-3.dll';
+{$ENDIF}
+
+if not InitSSLInterface then
+  raise ERequestError.Create('Could not initialize OpenSSL library');
+```
+
+Only FPC's primary candidates are replaced. Its existing OpenSSL 1.1
+fallback candidates remain available, so older deployments continue to work.
+Applications do not need to patch or rebuild FPC.
+
+This was easy to miss on development machines that already had OpenSSL 1.1
+DLLs in `C:\Windows\System32`: FPC silently loaded those instead. The clean
+Windows CI runner had only OpenSSL 3, which exposed the filename mismatch.
+
+## Required DLLs
+
+| Executable | SSL DLL | Crypto DLL |
+| --- | --- | --- |
+| 64-bit | `libssl-3-x64.dll` | `libcrypto-3-x64.dll` |
+| 32-bit | `libssl-3.dll` | `libcrypto-3.dll` |
+
+Both DLLs must come from the same OpenSSL build, and their architecture must
+match the executable—not merely the Windows installation.
+
+## Recommended setup
+
+Install a maintained OpenSSL 3 build, then use either of these approaches:
+
+1. Put its `bin` directory on `PATH`.
+2. Copy both matching DLLs from that `bin` directory beside your executable.
+
+The executable directory is the most predictable option for a deployed
+application:
+
+```powershell
+$opensslBin = 'C:\Program Files\OpenSSL\bin'
+Copy-Item "$opensslBin\libssl-3-x64.dll" .\your-exe-directory
+Copy-Item "$opensslBin\libcrypto-3-x64.dll" .\your-exe-directory
+```
+
+Adjust the path and filenames for your installation and architecture.
+
+Do not rename or remove DLLs from `C:\Windows\System32`. That can break other
+applications and is no longer needed by Request-FP.
+
+## Diagnosing the loaded version
+
+Build and run the debug example:
+
+```powershell
+cd examples\ssl_debug
 lazbuild --build-mode=Debug ssl_debug.lpi
-./ssl_debug.exe
+.\ssl_debug.exe
 ```
 
-You'll see output like:
+The debug build reports the OpenSSL version and loaded DLL paths:
 
-```
-[DEBUG] OpenSSL version: OpenSSL 1.1.1o  3 May 2022
-[DEBUG] libssl loaded from: C:\WINDOWS\SYSTEM32\libssl-1_1-x64.dll
-[DEBUG] libcrypto loaded from: C:\WINDOWS\SYSTEM32\libcrypto-1_1-x64.dll
-```
-
-## Solutions
-
-### Solution 1: Copy DLLs to Your Executable Directory (Recommended)
-
-This ensures your application always uses the specific version you want:
-
-```bash
-# If you installed OpenSSL 3.6.0
-copy "C:\Windows\System32\libssl-3-x64.dll" "your-exe-directory\"
-copy "C:\Windows\System32\libcrypto-3-x64.dll" "your-exe-directory\"
+```text
+[DEBUG] OpenSSL version: OpenSSL 3.6.3 ...
+[DEBUG] libssl loaded from: C:\Program Files\OpenSSL\bin\libssl-3-x64.dll
+[DEBUG] libcrypto loaded from: C:\Program Files\OpenSSL\bin\libcrypto-3-x64.dll
 ```
 
-Advantages:
-- ✅ Application-specific - won't affect other programs
-- ✅ No admin rights needed
-- ✅ Portable - you can distribute these DLLs with your app
-
-### Solution 2: Remove Old DLLs from System32 (Requires Admin)
-
-**⚠️ WARNING:** This may break other applications that depend on OpenSSL 1.1.x!
+You can also inspect candidates visible through `PATH`:
 
 ```powershell
-# Run PowerShell as Administrator
-cd C:\Windows\System32
-ren libssl-1_1-x64.dll libssl-1_1-x64.dll.bak
-ren libcrypto-1_1-x64.dll libcrypto-1_1-x64.dll.bak
+where.exe libssl-3-x64.dll
+where.exe libcrypto-3-x64.dll
+where.exe libssl-1_1-x64.dll
+where.exe libcrypto-1_1-x64.dll
 ```
 
-After this, FPC will find and use the OpenSSL 3.x DLLs.
+## Troubleshooting checklist
 
-To undo:
-```powershell
-cd C:\Windows\System32
-ren libssl-1_1-x64.dll.bak libssl-1_1-x64.dll
-ren libcrypto-1_1-x64.dll.bak libcrypto-1_1-x64.dll
-```
+1. Confirm both SSL and crypto DLLs are present.
+2. Confirm both DLLs came from the same OpenSSL build.
+3. Confirm the DLL and executable architectures match.
+4. Restart Lazarus or the terminal after changing `PATH`.
+5. Run `examples/ssl_debug` to see what was actually loaded.
 
-### Solution 3: Modify FPC's opensslsockets Unit (Advanced)
+## See also
 
-You can modify FPC's opensslsockets unit to search for OpenSSL 3.x first:
-
-1. Locate: `C:\lazarus\fpc\3.2.2\source\packages\openssl\src\opensslsockets.pp`
-2. Find the DLL name constants
-3. Swap the order so 3.x is checked before 1.1.x
-4. Recompile the RTL
-
-**This is complex and not recommended for most users.**
-
-## Which OpenSSL Version Should You Use?
-
-### OpenSSL 1.1.1 (May 2022 - EOL September 2023)
-- ✅ Widely compatible
-- ✅ Stable and well-tested
-- ❌ **No longer supported** (end of life)
-- ❌ No security updates
-
-### OpenSSL 3.x (Current - LTS until 2026)
-- ✅ **Current LTS version**
-- ✅ Active security updates
-- ✅ Modern cryptography
-- ⚠️ Some API changes from 1.1.x (mostly transparent to users)
-
-**Recommendation:** Use OpenSSL 3.x for new applications. The FPC opensslsockets unit supports both versions transparently.
-
-## Verifying Your Choice
-
-After applying one of the solutions, run the debug tool again:
-
-```bash
-cd examples/ssl_debug
-./ssl_debug.exe
-```
-
-You should see:
-
-```
-[DEBUG] OpenSSL version: OpenSSL 3.6.0 ...
-[DEBUG] libssl loaded from: [your chosen location]
-```
-
-## Troubleshooting
-
-### Multiple Versions in Different Locations
-
-Run this command to see all OpenSSL DLLs on your system:
-
-```powershell
-# Find OpenSSL 1.1.x
-where libssl-1_1-x64.dll
-where libcrypto-1_1-x64.dll
-
-# Find OpenSSL 3.x
-where libssl-3-x64.dll
-where libcrypto-3-x64.dll
-```
-
-### Application Still Uses Wrong Version
-
-1. Make sure you copied **both** DLLs (libssl AND libcrypto)
-2. Check the DLL names match exactly (x64 suffix, version number)
-3. Restart your terminal/IDE to pick up environment changes
-4. Use the debug tool to verify
-
-## See Also
-
-- [SSL/HTTPS Guide](SSL-HTTPS-GUIDE.md) - General HTTPS setup and diagnostics
-- [SSL Debug Example](../examples/ssl_debug/) - Tool to diagnose DLL loading
+- [SSL/HTTPS guide](SSL-HTTPS-GUIDE.md)
+- [Technical details](TECHNICAL-DETAILS.md#windows-openssl-3-loading-with-fpc-322)
+- [SSL debug example](../examples/ssl_debug/)

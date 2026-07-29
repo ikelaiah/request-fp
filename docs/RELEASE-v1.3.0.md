@@ -115,6 +115,22 @@ Both scripts discover the Lazarus projects under `examples/`, skip backup
 directories, clean the generated `example-bin/` directory, and compile all
 examples in Release mode. `lazbuild` must be available on `PATH`.
 
+### OpenSSL 3 on Windows with FPC 3.2.2
+
+FPC 3.2.2's OpenSSL bindings support OpenSSL 3, but its Windows loader does
+not try the standard OpenSSL 3 DLL filenames. Request-FP now selects
+`libssl-3-x64.dll` and `libcrypto-3-x64.dll` first for 64-bit applications
+(or the equivalent names without `-x64` for 32-bit applications).
+
+FPC's existing OpenSSL 1.1 candidates remain as a compatibility fallback.
+Users do not need to patch FPC or rename system DLLs. Request-FP also checks
+the result of `InitSSLInterface`, so a failed load is no longer recorded as a
+successful initialization.
+
+See the [SSL/HTTPS guide](SSL-HTTPS-GUIDE.md) for setup and the
+[OpenSSL version selection guide](OPENSSL-VERSION-SELECTION.md) for the
+technical background.
+
 ## Documentation
 
 The README, stateless API reference, session guide, cheat sheet, examples, and
@@ -123,7 +139,9 @@ contributor guides now include the cross-platform bulk-build workflow.
 
 The README now leads with everyday operations and links to detailed SSL
 diagnostics instead of placing setup troubleshooting in the main learning
-path.
+path. The dedicated SSL documents now explain Request-FP's automatic FPC
+3.2.2/OpenSSL 3 compatibility handling and explicitly avoid unsafe
+`System32` modifications.
 
 ## Compatibility
 
@@ -132,6 +150,8 @@ v1.3.0 is backward compatible with v1.2.0:
 - existing `TKeyValue.Create` calls still work;
 - all existing request overloads remain;
 - existing `Session.Init` calls remain valid; and
+- Windows OpenSSL 1.1 remains available as a fallback while OpenSSL 3 is
+  preferred; and
 - the error meaning of `TRequestResult.Success` is unchanged.
 
 ## Upgrade

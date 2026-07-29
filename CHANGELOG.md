@@ -47,14 +47,23 @@ All notable changes to this project will be documented in this file.
   short, copyable common-task examples and a consistent error-handling guide.
 - Reduced setup noise in the main README while retaining detailed SSL
   diagnostics in the dedicated guides.
+- Reworked the Windows OpenSSL documentation to explain FPC 3.2.2's DLL-name
+  behavior, Request-FP's automatic compatibility override, and safe
+  deployment without modifying `System32`.
 - Added a one-command example build workflow to the README, examples guide,
   contributor guide, release notes, and pull request notes.
+- Made CI integration tests self-contained with a local HTTP fixture instead
+  of relying on a public test service.
 
 ### Fixed
 
 - `Session.Init` now frees an existing client, clears headers and cookies, and
   uses the current version in the default user agent.
 - Corrected case-sensitive documentation links to `docs/cheat-sheet.md`.
+- Windows builds with FPC 3.2.2 now try the standard OpenSSL 3 DLL names
+  before FPC's existing OpenSSL 1.1 fallback names.
+- SSL initialization now treats a `False` result from `InitSSLInterface` as a
+  failure instead of marking OpenSSL as initialized.
 
 
 ## [1.2.0] - 2026-01-01

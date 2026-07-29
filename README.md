@@ -229,8 +229,10 @@ Requirements:
 - OpenSSL libraries for HTTPS
 
 On Linux, install the distribution's OpenSSL development package. On Windows,
-the OpenSSL DLL architecture must match the executable architecture. If HTTPS
-setup fails, run the `examples/ssl_debug` project and follow the
+the OpenSSL DLL architecture must match the executable architecture.
+Request-FP v1.3.0 automatically handles FPC 3.2.2's OpenSSL 3 DLL-name issue
+and retains its OpenSSL 1.1 fallback; applications do not need to patch FPC.
+If HTTPS setup fails, run `examples/ssl_debug` and follow the
 [SSL/HTTPS guide](docs/SSL-HTTPS-GUIDE.md).
 
 ## API at a glance
@@ -266,6 +268,7 @@ signatures.
 - [Stateless API reference](docs/Request.md)
 - [Session guide](docs/Request.Session.md)
 - [SSL/HTTPS guide](docs/SSL-HTTPS-GUIDE.md)
+- [Windows OpenSSL version selection](docs/OPENSSL-VERSION-SELECTION.md)
 - [Technical details](docs/TECHNICAL-DETAILS.md)
 - [Examples](examples/)
 
@@ -315,8 +318,10 @@ lazbuild --build-mode=Release tests/TestRunner.lpi
 tests/TestRunner.exe -a --format=plain
 ```
 
-On Linux, run `tests/TestRunner`. The integration tests use
-`https://httpbin.org` and therefore require network access.
+On Linux, run `tests/TestRunner`. CI starts `tests/http_fixture.py` and points
+the suite at that local service, so CI does not depend on a public HTTP test
+service. A direct local run without `REQUEST_FP_TEST_BASE_URL` falls back to
+`https://httpbin.org` and therefore requires network access.
 
 ## Contributing
 

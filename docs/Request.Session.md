@@ -9,7 +9,7 @@ flow or a group of calls to the same service.
 ## Quick start
 
 ```pascal
-uses Request, Request.Session;
+uses SysUtils, Request, Request.Session;
 
 var
   Session: THttpSession;
@@ -145,20 +145,24 @@ See the [Request API reference](Request.md#tresponse) for all response helpers.
 
 ## Error handling
 
-Session methods raise `ERequestError` when the underlying request fails. Use a
-`try..except` block when the program should recover:
+Session methods raise exceptions when the underlying request fails. `Get`,
+`Put`, and `Delete` normalize those failures to `ERequestError`; `Post` and
+`PostJSON` currently allow the underlying FPC exception type to propagate.
+Catch `Exception` when one handler must cover every session method:
 
 ```pascal
 try
   Response := Session.Get('/profile');
 except
-  on E: ERequestError do
+  on E: Exception do
     WriteLn('Request failed: ', E.Message);
 end;
 ```
 
-The session API currently follows the accepted-status behavior of its
-underlying FPC calls. If you need the stateless API's transport/status
+The session API follows the accepted-status behavior of its underlying FPC
+calls. `Post` and `Put` accept 200, 201, and 204; `Delete` accepts 200 and 204;
+`Get` uses the FPC client's default accepted status. Other response statuses
+may raise an exception. If you need the stateless API's transport/status
 separation or an exception-free result, use `Http.Try*`.
 
 ## API reference
@@ -208,5 +212,10 @@ Result := Http.TryPostMultipart('https://api.example.com/upload',
 
 ## HTTPS
 
-Session requests use the same FPC/OpenSSL stack as the stateless API. See the
-[SSL/HTTPS guide](SSL-HTTPS-GUIDE.md) if setup fails.
+Session requests use the same FPC/OpenSSL stack and automatic Windows
+OpenSSL 3 filename selection as the stateless API. No session-specific TLS
+configuration is required.
+
+See the [SSL/HTTPS guide](SSL-HTTPS-GUIDE.md) if setup fails, or
+[OpenSSL version selection](OPENSSL-VERSION-SELECTION.md) for the FPC 3.2.2
+compatibility details.

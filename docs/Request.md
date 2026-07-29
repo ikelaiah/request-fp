@@ -236,8 +236,8 @@ procedure SaveToFile(const FilePath: string);
 ```
 
 - `Text` is the response body decoded as UTF-8.
-- `JSON` lazily parses `Text`. It raises `ERequestError` with a
-  `JSON Parse Error` prefix when the body is invalid.
+- `JSON` lazily parses `Text`. An empty body returns `nil`; a non-empty invalid
+  body raises `ERequestError` with a `JSON Parse Error` prefix.
 - `OK` and `IsSuccessStatus` are true for HTTP status 200 through 299.
 - `HeaderValue` performs a case-insensitive response-header lookup and returns
   an empty string when the header is absent.
@@ -271,6 +271,11 @@ Stateless methods separate transport success from HTTP status:
 
 ## HTTPS
 
-Request-FP uses FPC's OpenSSL support. If HTTPS setup fails, run the
-`examples/ssl_debug` project and follow the
-[SSL/HTTPS guide](SSL-HTTPS-GUIDE.md).
+Request-FP uses FPC's OpenSSL support. On Windows, v1.3.0 automatically works
+around FPC 3.2.2's DLL-name issue by selecting the standard OpenSSL 3 names
+first while retaining FPC's OpenSSL 1.1 fallback. The installed DLL
+architecture must still match the executable.
+
+If HTTPS setup fails, run `examples/ssl_debug` and follow the
+[SSL/HTTPS guide](SSL-HTTPS-GUIDE.md). For the exact Windows loading order,
+see [OpenSSL version selection](OPENSSL-VERSION-SELECTION.md).
