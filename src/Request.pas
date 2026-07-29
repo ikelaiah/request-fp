@@ -558,6 +558,20 @@ begin
     end;
   end;
 end;
+
+procedure ConfigureOpenSSL3LibraryNames;
+begin
+  { FPC 3.2.2 supports the OpenSSL 3 API, but its Windows loader still
+    searches for legacy and OpenSSL 1.1 DLL names. Use OpenSSL 3 as the
+    primary candidate while leaving FPC's existing fallback names intact. }
+  {$IFDEF CPU64}
+  DLLSSLName := 'libssl-3-x64.dll';
+  DLLUtilName := 'libcrypto-3-x64.dll';
+  {$ELSE}
+  DLLSSLName := 'libssl-3.dll';
+  DLLUtilName := 'libcrypto-3.dll';
+  {$ENDIF}
+end;
 {$ENDIF}
 
 procedure InitSSL;
@@ -573,7 +587,9 @@ begin
       if DEBUG_MODE then
         WriteLn('[DEBUG] Initializing OpenSSL...');
 
-      InitSSLInterface;
+      ConfigureOpenSSL3LibraryNames;
+      if not InitSSLInterface then
+        raise ERequestError.Create('Could not initialize OpenSSL library');
       SSLInitialized := True;
 
       if DEBUG_MODE then
