@@ -166,30 +166,23 @@ jobs:
             'libcrypto-3-x64.dll'
           )
 
-          $sslDll = Get-ChildItem `
-            -Path (Join-Path $env:ProgramFiles 'OpenSSL*') `
-            -Recurse `
-            -File `
-            -Filter 'libssl-3-x64.dll' `
-            -ErrorAction SilentlyContinue |
-            Where-Object {
-              Test-Path -LiteralPath (
-                Join-Path $_.DirectoryName 'libcrypto-3-x64.dll'
-              )
-            } |
-            Select-Object -First 1
-
-          if ($null -eq $sslDll) {
+          $opensslDirectory = Join-Path `
+            $env:ProgramFiles `
+            'OpenSSL\bin'
+          if (-not (Test-Path -LiteralPath $opensslDirectory)) {
             throw (
-              'The Windows runner did not provide compatible ' +
-              'OpenSSL 3 DLLs.'
+              'The Windows runner OpenSSL directory was not found: ' +
+              $opensslDirectory
             )
           }
 
-          $opensslDirectory = $sslDll.DirectoryName
           foreach ($dllName in $requiredDlls) {
+            $source = Join-Path $opensslDirectory $dllName
+            if (-not (Test-Path -LiteralPath $source)) {
+              throw "The Windows runner did not provide $dllName."
+            }
             Copy-Item `
-              -LiteralPath (Join-Path $opensslDirectory $dllName) `
+              -LiteralPath $source `
               -Destination .\tests
           }
 
