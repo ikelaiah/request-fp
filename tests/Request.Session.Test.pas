@@ -6,10 +6,23 @@ unit Request.Session.Test;
 interface
 
 uses
-  Classes, SysUtils, fpcunit, testregistry, fpjson, jsonparser,
+  Classes, SysUtils, Sockets, fpcunit, testregistry, fpjson, jsonparser,
   Request, Request.Session;
 
 type
+  { TDelayedResponseServer }
+  TDelayedResponseServer = class(TThread)
+  private
+    FListenSocket: LongInt;
+    FPort: Word;
+  protected
+    procedure Execute; override;
+  public
+    constructor Create;
+    destructor Destroy; override;
+    property Port: Word read FPort;
+  end;
+
   { TRequestSessionTests }
   TRequestSessionTests = class(TTestCase)
   private
@@ -43,6 +56,115 @@ type
   end;
 
 implementation
+
+{ TDelayedResponseServer }
+
+constructor TDelayedResponseServer.Create;
+var
+  Address: TInetSockAddr;
+  AddressLength: TSockLen;
+begin
+  inherited Create(True);
+  FreeOnTerminate := False;
+  FListenSocket := fpSocket(AF_INET, SOCK_STREAM, 0);
+  if FListenSocket < 0 then
+    raise Exception.CreateFmt(
+      'Could not create timeout test socket (error %d)', [SocketError]);
+
+  FillChar(Address, SizeOf(Address), 0);
+  Address.sin_family := AF_INET;
+  Address.sin_addr := StrToNetAddr('127.0.0.1');
+  Address.sin_port := htons(0);
+
+  if fpBind(FListenSocket, @Address, SizeOf(Address)) <> 0 then
+  begin
+    CloseSocket(FListenSocket);
+    FListenSocket := -1;
+    raise Exception.CreateFmt(
+      'Could not bind timeout test socket (error %d)', [SocketError]);
+  end;
+
+  if fpListen(FListenSocket, 1) <> 0 then
+  begin
+    CloseSocket(FListenSocket);
+    FListenSocket := -1;
+    raise Exception.CreateFmt(
+      'Could not listen on timeout test socket (error %d)', [SocketError]);
+  end;
+
+  AddressLength := SizeOf(Address);
+  if fpGetSockName(FListenSocket, @Address, @AddressLength) <> 0 then
+  begin
+    CloseSocket(FListenSocket);
+    FListenSocket := -1;
+    raise Exception.CreateFmt(
+      'Could not read timeout test port (error %d)', [SocketError]);
+  end;
+
+  FPort := ntohs(Address.sin_port);
+  Start;
+end;
+
+destructor TDelayedResponseServer.Destroy;
+var
+  Address: TInetSockAddr;
+  WakeSocket: LongInt;
+begin
+  Terminate;
+
+  // Wake a thread that is still blocked in accept.
+  if FListenSocket >= 0 then
+  begin
+    WakeSocket := fpSocket(AF_INET, SOCK_STREAM, 0);
+    if WakeSocket >= 0 then
+    begin
+      FillChar(Address, SizeOf(Address), 0);
+      Address.sin_family := AF_INET;
+      Address.sin_addr := StrToNetAddr('127.0.0.1');
+      Address.sin_port := htons(FPort);
+      fpConnect(WakeSocket, @Address, SizeOf(Address));
+      CloseSocket(WakeSocket);
+    end;
+  end;
+
+  WaitFor;
+  inherited Destroy;
+end;
+
+procedure TDelayedResponseServer.Execute;
+var
+  Buffer: array[0..1023] of Byte;
+  ClientSocket: LongInt;
+  I: Integer;
+begin
+  ClientSocket := -1;
+  try
+    ClientSocket := fpAccept(FListenSocket, nil, nil);
+    if ClientSocket < 0 then
+      Exit;
+
+    // Read the request, then deliberately withhold the response for two
+    // seconds. The client timeout should fire well before the socket closes.
+    fpRecv(ClientSocket, @Buffer[0], SizeOf(Buffer), 0);
+    for I := 1 to 200 do
+    begin
+      if Terminated then
+        Exit;
+      Sleep(10);
+    end;
+  finally
+    if ClientSocket >= 0 then
+    begin
+      fpShutdown(ClientSocket, SHUT_RDWR);
+      CloseSocket(ClientSocket);
+    end;
+    if FListenSocket >= 0 then
+    begin
+      CloseSocket(FListenSocket);
+      FListenSocket := -1;
+    end;
+  end;
+end;
 
 { TRequestSessionTests }
 
@@ -362,34 +484,44 @@ end;
 procedure TRequestSessionTests.Test22_TimeoutHandling;
 var
   Response: TResponse;
+  Server: TDelayedResponseServer;
   ExceptionRaised: Boolean;
+  StartedAt, ElapsedMS: QWord;
   OldTimeout: Integer;
 begin
 
 WriteLn('Test22_TimeoutHandling: Starting');
 
-  // Save old timeout
-  OldTimeout := 30000; // Default timeout
-  
+  OldTimeout := 30000;
+  ElapsedMS := 0;
+  Server := TDelayedResponseServer.Create;
   try
-    // Set a very short timeout
-    FSession.SetTimeout(100); // 100ms
-    
-    // This should timeout
+    FSession.SetBaseURL(
+      'http://127.0.0.1:' + IntToStr(Server.Port));
+    FSession.SetTimeout(100);
+
     ExceptionRaised := False;
+    StartedAt := GetTickCount64;
     try
-      Response := FSession.Get('/delay/1'); // 1 second delay
+      Response := FSession.Get('/');
       Fail('Timeout exception was not raised');
     except
       on E: ERequestError do
+      begin
         ExceptionRaised := True;
+        ElapsedMS := GetTickCount64 - StartedAt;
+      end;
     end;
-    
+
     AssertTrue('Timeout exception should be raised', ExceptionRaised);
-    
+    AssertTrue(
+      Format(
+        'Timeout should occur before the server closes the connection (%dms)',
+        [ElapsedMS]),
+      ElapsedMS < 1500);
   finally
-    // Restore timeout
     FSession.SetTimeout(OldTimeout);
+    Server.Free;
   end;
 
   WriteLn('Test22_TimeoutHandling: Completed');

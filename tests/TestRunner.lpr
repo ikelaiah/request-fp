@@ -3,6 +3,9 @@ program TestRunner;
 {$mode objfpc}{$H+}{$J-}
 
 uses
+  {$IFDEF UNIX}
+  cthreads,
+  {$ENDIF}
   Classes
   , consoletestrunner
   , Request.Test

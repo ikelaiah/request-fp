@@ -2,6 +2,8 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
 
@@ -129,7 +131,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          choco install openssl --yes --no-progress
+          choco install openssl --version=3.6.0 --yes --no-progress
           if ($LASTEXITCODE -ne 0) {
             throw "OpenSSL installation failed with exit code $LASTEXITCODE."
           }
