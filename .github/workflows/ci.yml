@@ -1,0 +1,205 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux (Lazarus 4.8)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install Lazarus 4.8 and FPC 3.2.2
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          install_dir="$RUNNER_TEMP/lazarus-4.8"
+          base_url="https://downloads.sourceforge.net/project/lazarus/Lazarus%20Linux%20amd64%20DEB/Lazarus%204.8"
+          mkdir -p "$install_dir"
+          cd "$install_dir"
+
+          curl --fail --location --retry 5 --retry-delay 5 \
+            --output fpc-laz.deb \
+            "$base_url/fpc-laz_3.2.2-210709_amd64.deb"
+          curl --fail --location --retry 5 --retry-delay 5 \
+            --output fpc-src.deb \
+            "$base_url/fpc-src_3.2.2-210709_amd64.deb"
+          curl --fail --location --retry 5 --retry-delay 5 \
+            --output lazarus-project.deb \
+            "$base_url/lazarus-project_4.8.0-0_amd64.deb"
+
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
+            libssl-dev \
+            "$install_dir/fpc-laz.deb" \
+            "$install_dir/fpc-src.deb" \
+            "$install_dir/lazarus-project.deb"
+
+      - name: Verify compiler versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(fpc -iV)" = "3.2.2"
+          test "$(lazbuild --version)" = "4.8"
+
+      - name: Build all examples
+        shell: bash
+        run: bash ./build-examples.sh
+
+      - name: Verify example outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          output_count="$(find example-bin -maxdepth 1 -type f | wc -l)"
+          if [[ "$output_count" -ne 13 ]]; then
+            echo "Expected 13 example executables, found $output_count." >&2
+            exit 1
+          fi
+
+      - name: Build test runner
+        shell: bash
+        run: >-
+          lazbuild
+          --quiet
+          --quiet
+          --build-all
+          --build-mode=Release
+          --no-write-project
+          tests/TestRunner.lpi
+
+      - name: Run tests
+        shell: bash
+        run: ./tests/TestRunner -a --format=plain
+
+  windows:
+    name: Windows (Lazarus 4.8)
+    runs-on: windows-2022
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install Lazarus 4.8 and FPC 3.2.2
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $installer = Join-Path $env:RUNNER_TEMP 'lazarus-4.8-fpc-3.2.2-win64.exe'
+          $url = 'https://downloads.sourceforge.net/project/lazarus/Lazarus%20Windows%2064%20bits/Lazarus%204.8/lazarus-4.8-fpc-3.2.2-win64.exe'
+
+          curl.exe --fail --location --retry 5 --retry-delay 5 `
+            --output $installer `
+            $url
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to download Lazarus installer (exit $LASTEXITCODE)."
+          }
+
+          $arguments = @(
+            '/VERYSILENT'
+            '/SUPPRESSMSGBOXES'
+            '/NORESTART'
+            '/SP-'
+            '/DIR=C:\Lazarus'
+          )
+          $process = Start-Process `
+            -FilePath $installer `
+            -ArgumentList $arguments `
+            -Wait `
+            -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Lazarus installer failed with exit code $($process.ExitCode)."
+          }
+
+          'C:\Lazarus' | Out-File -FilePath $env:GITHUB_PATH -Append
+          'C:\Lazarus\fpc\3.2.2\bin\x86_64-win64' |
+            Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Install OpenSSL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install openssl --yes --no-progress
+          if ($LASTEXITCODE -ne 0) {
+            throw "OpenSSL installation failed with exit code $LASTEXITCODE."
+          }
+
+          $requiredDlls = @(
+            'libssl-3-x64.dll'
+            'libcrypto-3-x64.dll'
+          )
+          $availableDlls = @(
+            Get-ChildItem `
+              -Path 'C:\Program Files\OpenSSL*' `
+              -Recurse `
+              -File `
+              -ErrorAction SilentlyContinue
+          )
+
+          foreach ($dllName in $requiredDlls) {
+            $dll = $availableDlls |
+              Where-Object Name -EQ $dllName |
+              Select-Object -First 1
+            if ($null -eq $dll) {
+              throw "OpenSSL did not install $dllName."
+            }
+            Copy-Item -LiteralPath $dll.FullName -Destination .\tests
+          }
+
+      - name: Verify compiler versions
+        shell: pwsh
+        run: |
+          $fpcVersion = (& fpc -iV).Trim()
+          $lazarusVersion = (& lazbuild --version).Trim()
+          if ($fpcVersion -ne '3.2.2') {
+            throw "Expected FPC 3.2.2, found $fpcVersion."
+          }
+          if ($lazarusVersion -ne '4.8') {
+            throw "Expected Lazarus 4.8, found $lazarusVersion."
+          }
+
+      - name: Build all examples
+        shell: pwsh
+        run: .\build-examples.ps1
+
+      - name: Verify example outputs
+        shell: pwsh
+        run: |
+          $outputCount = @(
+            Get-ChildItem -LiteralPath .\example-bin -File
+          ).Count
+          if ($outputCount -ne 13) {
+            throw "Expected 13 example executables, found $outputCount."
+          }
+
+      - name: Build test runner
+        shell: pwsh
+        run: |
+          & lazbuild `
+            '--quiet' `
+            '--quiet' `
+            '--build-all' `
+            '--build-mode=Release' `
+            '--no-write-project' `
+            'tests\TestRunner.lpi'
+          if ($LASTEXITCODE -ne 0) {
+            throw "Test runner build failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Run tests
+        shell: pwsh
+        run: |
+          & .\tests\TestRunner.exe -a --format=plain
+          if ($LASTEXITCODE -ne 0) {
+            throw "Test suite failed with exit code $LASTEXITCODE."
+          }
