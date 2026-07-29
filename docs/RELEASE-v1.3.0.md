@@ -97,10 +97,29 @@ Session initialization and cleanup are automatic. `Session.Init` remains as an
 optional reset method. Base URL/path joining now handles slash combinations
 automatically.
 
+### Build every example with one command
+
+Windows PowerShell:
+
+```powershell
+.\build-examples.ps1
+```
+
+Linux or Git Bash:
+
+```bash
+bash ./build-examples.sh
+```
+
+Both scripts discover the Lazarus projects under `examples/`, skip backup
+directories, clean the generated `example-bin/` directory, and compile all
+examples in Release mode. `lazbuild` must be available on `PATH`.
+
 ## Documentation
 
 The README, stateless API reference, session guide, cheat sheet, examples, and
-SSL session example have been updated for the v1.3.0 API.
+SSL session example have been updated for the v1.3.0 API. The examples and
+contributor guides now include the cross-platform bulk-build workflow.
 
 The README now leads with everyday operations and links to detailed SSL
 diagnostics instead of placing setup troubleshooting in the main learning
@@ -120,4 +139,4 @@ v1.3.0 is backward compatible with v1.2.0:
 Replace the source units with the v1.3.0 versions. No code migration is
 required. Existing code can adopt the new helpers incrementally.
 
-See [CHANGELOG.md](CHANGELOG.md#130---2026-07-29) for the complete change list.
+See [CHANGELOG.md](../CHANGELOG.md#130---2026-07-29) for the complete change list.

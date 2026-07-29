@@ -136,5 +136,5 @@ where libcrypto-3-x64.dll
 
 ## See Also
 
-- [Troubleshooting Guide](../README.md#-troubleshooting) - General OpenSSL troubleshooting
+- [SSL/HTTPS Guide](SSL-HTTPS-GUIDE.md) - General HTTPS setup and diagnostics
 - [SSL Debug Example](../examples/ssl_debug/) - Tool to diagnose DLL loading

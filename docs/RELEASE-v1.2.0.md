@@ -86,13 +86,13 @@ All v1.1.0 code continues to work without modification.
 
 ## 📝 Full Changelog
 
-See [CHANGELOG.md](CHANGELOG.md#120---2026-01-01) for complete details.
+See [CHANGELOG.md](../CHANGELOG.md#120---2026-01-01) for complete details.
 
 ## 🔗 Quick Links
 
-- **Documentation**: [README.md](README.md)
-- **Troubleshooting**: [README.md#-troubleshooting](README.md#-troubleshooting)
-- **SSL Debug Tool**: [examples/ssl_debug/](examples/ssl_debug/)
+- **Documentation**: [README.md](../README.md)
+- **Troubleshooting**: [SSL/HTTPS guide](SSL-HTTPS-GUIDE.md)
+- **SSL Debug Tool**: [examples/ssl_debug/](../examples/ssl_debug/)
 
 ## 💡 For Users Still Having Issues
 

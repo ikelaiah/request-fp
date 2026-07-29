@@ -33,6 +33,8 @@ All notable changes to this project will be documented in this file.
 - `Response.RaiseForStatus` for opting in to exceptions on non-2xx responses.
 - `Session.PostJSON` overloads for JSON strings and `TJSONData`.
 - New SVG project logo displayed in the README.
+- `build-examples.ps1` and `build-examples.sh` scripts that compile every
+  Lazarus example in Release mode into `example-bin/`.
 
 ### Changed
 
@@ -45,6 +47,8 @@ All notable changes to this project will be documented in this file.
   short, copyable common-task examples and a consistent error-handling guide.
 - Reduced setup noise in the main README while retaining detailed SSL
   diagnostics in the dedicated guides.
+- Added a one-command example build workflow to the README, examples guide,
+  contributor guide, release notes, and pull request notes.
 
 ### Fixed
 

@@ -155,6 +155,6 @@ WriteLn('Crypto DLL path: ', GetLoadedDLLPath(SSLUtilHandle));
 
 ## See Also
 
-- [Troubleshooting Guide](../README.md#-troubleshooting) - OpenSSL installation help
+- [OpenSSL version selection](OPENSSL-VERSION-SELECTION.md) - Windows DLL troubleshooting
 - [SSL Debug Example](../examples/ssl_debug/) - Example program with debug output
 - [API Reference](Request.md) - Full API documentation

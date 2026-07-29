@@ -117,6 +117,8 @@ Passing a JSON object does not transfer ownership. The caller remains
 responsible for freeing it:
 
 ```pascal
+uses Request, fpjson;
+
 var
   Body: TJSONObject;
 begin

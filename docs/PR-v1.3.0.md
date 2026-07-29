@@ -15,6 +15,8 @@ removing or changing existing APIs.
 - Makes sessions usable without an explicit `Init`.
 - Adds `Session.PostJSON`.
 - Normalizes base URL/path slash joining.
+- Adds PowerShell and Bash scripts that compile all examples into
+  `example-bin/`.
 
 ## Documentation changes
 
@@ -23,6 +25,7 @@ removing or changing existing APIs.
 - Updates shipped examples to use v1.3.0's shortest syntax.
 - Adds release notes and a complete changelog entry.
 - Keeps detailed TLS setup in the dedicated SSL documentation.
+- Documents the bulk example build workflow for users and contributors.
 
 ## Compatibility
 
@@ -34,5 +37,6 @@ The release is additive and backward compatible. Existing overloads,
 - Compile the FPCUnit project in Release mode.
 - Run the complete integration suite against `https://httpbin.org`.
 - Compile all example projects.
+- Verify both example build scripts produce all executables in `example-bin/`.
 - Check the final diff for stale 1.2.0 version references and mandatory
   `Session.Init` guidance.

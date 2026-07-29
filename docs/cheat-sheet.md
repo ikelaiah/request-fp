@@ -1,9 +1,12 @@
 # Request-FP cheat sheet
 
+For complete signatures and behavior, see the [stateless API reference](Request.md)
+and [session guide](Request.Session.md).
+
 ## Setup
 
 ```pascal
-uses Request;
+uses Request, fpjson; // fpjson is needed only when constructing JSON values
 
 var
   Response: TResponse;
@@ -37,9 +40,10 @@ Response := Http.PostForm('https://api.example.com/login', [
   KV('password', Password)
 ]);
 
-// JSON string or TJSONData
+// JSON string or an existing TJSONData value
 Response := Http.PostJSON('https://api.example.com/users',
   '{"name":"Ada"}');
+// The caller retains ownership of JsonObject.
 Response := Http.PostJSON('https://api.example.com/users', JsonObject);
 
 // DELETE

@@ -4,6 +4,12 @@
 
 We were experiencing access violations in several test methods when working with JSON responses. The root cause was related to how JSON objects were being managed in memory.
 
+The examples below use `TJSONObject` from FPC's `fpjson` unit:
+
+```pascal
+uses Request, fpjson;
+```
+
 ### Problematic Pattern
 
 ```pascal
@@ -25,8 +31,9 @@ end;
 ### Root Cause
 
 1. **Ownership Issue**: The `FindPath` method returns a reference to an object that is owned by the parent `Response.JSON` object.
-2. **Double Free**: When we called `Headers.Free`, we were trying to free memory that would later be freed by the `TResponse` destructor.
-3. **Race Condition**: This led to access violations when the parent `TResponse` object tried to free already-freed memory.
+2. **Double Free**: When we called `Headers.Free`, we were trying to free memory that would later be freed by the `TResponse` finalizer.
+3. **Use After Free**: This led to access violations when the parent
+   `TResponse` record later finalized the already-freed JSON value.
 
 ### Correct Pattern
 
@@ -48,7 +55,7 @@ end;
 ### Key Points
 
 1. **No Manual Freeing**: Never free objects obtained via `FindPath` or similar methods from `TJSONData`.
-2. **Ownership**: The `TResponse` class manages the lifetime of the JSON data structure.
+2. **Ownership**: The `TResponse` record manages the lifetime of the JSON data structure.
 3. **Null Safety**: Always check if the returned object is not nil before using it.
 4. **Testing**: Added more robust assertions to catch issues earlier.
 
@@ -114,15 +121,6 @@ end; // <-- Automatic cleanup happens here
 
 ## Testing
 
-All tests now pass without memory leaks or access violations:
-
-```
-Number of run tests: 12
-Number of errors:    0
-Number of failures:  0
-
-Heap dump by heaptrc unit:
-0 unfreed memory blocks : 0
-```
-
-This confirms that our memory management is now correct.
+The FPCUnit suite covers repeated JSON access, response copying, and automatic
+cleanup. Build and run the current suite using the commands in
+[CONTRIBUTING.md](../CONTRIBUTING.md#build-and-run-the-tests).

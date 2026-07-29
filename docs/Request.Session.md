@@ -83,6 +83,8 @@ Response := Session.PostJSON('/users', '{"name":"Ada"}');
 Or pass a `TJSONData` value:
 
 ```pascal
+uses Request, Request.Session, fpjson;
+
 var
   Body: TJSONObject;
 begin

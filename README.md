@@ -269,6 +269,43 @@ signatures.
 - [Technical details](docs/TECHNICAL-DETAILS.md)
 - [Examples](examples/)
 
+## Build all examples
+
+The repository includes scripts that compile every Lazarus example in Release
+mode and collect the executables in `example-bin/`.
+
+Windows PowerShell:
+
+```powershell
+.\build-examples.ps1
+```
+
+If script execution is disabled by local policy:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build-examples.ps1
+```
+
+Linux or Git Bash:
+
+```bash
+bash ./build-examples.sh
+```
+
+Both scripts require `lazbuild` on `PATH`. They discover all `.lpi` projects
+under `examples/`, skip Lazarus backup directories, and clean `example-bin/`
+before compiling. The generated directory is ignored by Git.
+
+Run an example after building:
+
+```powershell
+.\example-bin\easy_get.exe
+```
+
+```bash
+./example-bin/easy_get
+```
+
 ## Testing
 
 Build the suite with Lazarus or:

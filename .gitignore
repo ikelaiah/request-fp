@@ -1,5 +1,6 @@
 # SimpleLog-FP project specific
 /bin
+/example-bin/
 test_dir/
 
 # Compiled l10n files: .mo should be ignored

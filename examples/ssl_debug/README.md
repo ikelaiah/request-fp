@@ -100,4 +100,6 @@ fpc -dDEBUG yourprogram.pas
 
 ## Troubleshooting
 
-If you see an error instead of debug output, refer to the main [Troubleshooting Guide](../../README.md#-troubleshooting) for OpenSSL installation instructions.
+If you see an error instead of debug output, follow the
+[SSL/HTTPS guide](../../docs/SSL-HTTPS-GUIDE.md) for OpenSSL installation and
+diagnostic instructions.
