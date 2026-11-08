@@ -527,8 +527,10 @@ function AppendQueryParams(const URL: string;
   const Params: array of TKeyValue): string;
 { Encodes Fields as application/x-www-form-urlencoded. }
 function EncodeFormFields(const Fields: array of TKeyValue): string;
-{ Builds a multipart/form-data body. Files values are file paths. The caller
-  frees the result. Raises ERequestError if a file cannot be read. }
+{ Builds a multipart/form-data body. Files values are file paths; they are
+  opened now and read from disk while sending, so large files are not loaded
+  into memory. The caller frees the result, which closes the files. Raises
+  ERequestError if a file cannot be opened. }
 function BuildMultipartBody(const Fields, Files: array of TKeyValue;
   out ContentType: string): TStream;
 
@@ -1363,10 +1365,122 @@ begin
     StringReplace(Copy(GUIDToString(G), 2, 36), '-', '', [rfReplaceAll]);
 end;
 
-procedure WriteRaw(Stream: TStream; const S: string);
+type
+  { One piece of a multipart body: literal text, or an owned file stream. }
+  TBodyPart = record
+    Text: string;
+    Source: TStream;
+    Start: Int64;
+    Size: Int64;
+  end;
+
+  { Read-only body that joins text parts and open files without copying the
+    files into memory. Seekable, so FPC can take its Size and rewind it. }
+  TMultipartStream = class(TStream)
+  private
+    FParts: array of TBodyPart;
+    FSize: Int64;
+    FPosition: Int64;
+    procedure AddPart(const AText: string; ASource: TStream; ASize: Int64);
+  protected
+    function GetSize: Int64; override;
+  public
+    destructor Destroy; override;
+    procedure AddText(const AText: string);
+    { Takes ownership of Source. }
+    procedure AddFile(Source: TStream);
+    function Read(var Buffer; Count: Longint): Longint; override;
+    function Write(const Buffer; Count: Longint): Longint; override;
+    function Seek(const Offset: Int64; Origin: TSeekOrigin): Int64; override;
+  end;
+
+destructor TMultipartStream.Destroy;
+var
+  I: Integer;
 begin
-  if S <> '' then
-    Stream.WriteBuffer(Pointer(S)^, Length(S));
+  for I := 0 to High(FParts) do
+    FParts[I].Source.Free;
+  inherited Destroy;
+end;
+
+procedure TMultipartStream.AddPart(const AText: string; ASource: TStream;
+  ASize: Int64);
+var
+  N: Integer;
+begin
+  N := Length(FParts);
+  SetLength(FParts, N + 1);
+  FParts[N].Text := AText;
+  FParts[N].Source := ASource;
+  FParts[N].Start := FSize;
+  FParts[N].Size := ASize;
+  Inc(FSize, ASize);
+end;
+
+procedure TMultipartStream.AddText(const AText: string);
+begin
+  if AText <> '' then
+    AddPart(AText, nil, Length(AText));
+end;
+
+procedure TMultipartStream.AddFile(Source: TStream);
+begin
+  AddPart('', Source, Source.Size);
+end;
+
+function TMultipartStream.GetSize: Int64;
+begin
+  Result := FSize;
+end;
+
+function TMultipartStream.Read(var Buffer; Count: Longint): Longint;
+var
+  Dest: PByte;
+  I: Integer;
+  Offset, N: Int64;
+begin
+  Result := 0;
+  Dest := @Buffer;
+  I := 0;
+  while (Count > 0) and (FPosition < FSize) do
+  begin
+    while FPosition >= FParts[I].Start + FParts[I].Size do
+      Inc(I);
+    Offset := FPosition - FParts[I].Start;
+    N := FParts[I].Size - Offset;
+    if N > Count then
+      N := Count;
+    if FParts[I].Source = nil then
+      Move(FParts[I].Text[1 + Offset], Dest^, N)
+    else
+    begin
+      FParts[I].Source.Position := Offset;
+      N := FParts[I].Source.Read(Dest^, N);
+      if N <= 0 then
+        Break; // file shrank after the body was built
+    end;
+    Inc(Dest, N);
+    Inc(Result, N);
+    Dec(Count, N);
+    Inc(FPosition, N);
+  end;
+end;
+
+function TMultipartStream.Write(const Buffer; Count: Longint): Longint;
+begin
+  raise EStreamError.Create('TMultipartStream is read-only');
+end;
+
+function TMultipartStream.Seek(const Offset: Int64; Origin: TSeekOrigin): Int64;
+begin
+  case Origin of
+    soBeginning: FPosition := Offset;
+    soCurrent: FPosition := FPosition + Offset;
+    soEnd: FPosition := FSize + Offset;
+  end;
+  if FPosition < 0 then
+    FPosition := 0;
+  Result := FPosition;
 end;
 
 function BuildMultipartBody(const Fields, Files: array of TKeyValue;
@@ -1375,16 +1489,16 @@ const
   CRLF = #13#10;
 var
   Boundary, FileName: string;
-  Body: TMemoryStream;
+  Body: TMultipartStream;
   FileStream: TFileStream;
   I: Integer;
 begin
   Boundary := NewMultipartBoundary;
   ContentType := 'multipart/form-data; boundary=' + Boundary;
-  Body := TMemoryStream.Create;
+  Body := TMultipartStream.Create;
   try
     for I := 0 to High(Fields) do
-      WriteRaw(Body, '--' + Boundary + CRLF +
+      Body.AddText('--' + Boundary + CRLF +
         'Content-Disposition: form-data; name="' +
         EscapeDispositionValue(Fields[I].Key) + '"' + CRLF + CRLF +
         Fields[I].Value + CRLF);
@@ -1400,22 +1514,16 @@ begin
           raise ERequestError.Create('Cannot read upload file "' +
             Files[I].Value + '": ' + E.Message);
       end;
-      try
-        WriteRaw(Body, '--' + Boundary + CRLF +
-          'Content-Disposition: form-data; name="' +
-          EscapeDispositionValue(Files[I].Key) + '"; filename="' +
-          EscapeDispositionValue(FileName) + '"' + CRLF +
-          'Content-Type: ' + GuessContentType(FileName) + CRLF + CRLF);
-        if FileStream.Size > 0 then
-          Body.CopyFrom(FileStream, FileStream.Size);
-        WriteRaw(Body, CRLF);
-      finally
-        FileStream.Free;
-      end;
+      Body.AddText('--' + Boundary + CRLF +
+        'Content-Disposition: form-data; name="' +
+        EscapeDispositionValue(Files[I].Key) + '"; filename="' +
+        EscapeDispositionValue(FileName) + '"' + CRLF +
+        'Content-Type: ' + GuessContentType(FileName) + CRLF + CRLF);
+      Body.AddFile(FileStream);
+      Body.AddText(CRLF);
     end;
 
-    WriteRaw(Body, '--' + Boundary + '--' + CRLF);
-    Body.Position := 0;
+    Body.AddText('--' + Boundary + '--' + CRLF);
     Result := Body;
   except
     Body.Free;

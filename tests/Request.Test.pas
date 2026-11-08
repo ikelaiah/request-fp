@@ -7,7 +7,7 @@ interface
 
 uses
   Classes, SysUtils, fpcunit, testregistry, fpjson, jsonparser,
-  openssl, Request, Test.Support;
+  openssl, md5, Request, Test.Support;
 
 type
   { TRequestSimpleTests }
@@ -73,6 +73,9 @@ type
     procedure Test39_DownloadCancelKeepsOldFile;
     procedure Test40_TruncatedDownloadRaises;
     procedure Test41_GetToStreamRedirectAndPlainProc;
+    // Streaming uploads
+    procedure Test42_MultipartStreamsLargeFile;
+    procedure Test43_MultipartBodyRewindsAndReadsFully;
   end;
 
 implementation
@@ -972,6 +975,114 @@ begin
       Raised := True;
   end;
   AssertTrue('nil stream raises ERequestError', Raised);
+end;
+
+{ Streaming uploads }
+
+procedure WritePatternFile(const Path: string; Count: Int64);
+var
+  FS: TFileStream;
+  Chunk: array[0..65535] of Byte;
+  I: Integer;
+  N: Int64;
+begin
+  for I := 0 to High(Chunk) do
+    Chunk[I] := I mod 251;
+  FS := TFileStream.Create(Path, fmCreate);
+  try
+    while Count > 0 do
+    begin
+      N := Count;
+      if N > SizeOf(Chunk) then
+        N := SizeOf(Chunk);
+      FS.WriteBuffer(Chunk, N);
+      Dec(Count, N);
+    end;
+  finally
+    FS.Free;
+  end;
+end;
+
+procedure TRequestSimpleTests.Test42_MultipartStreamsLargeFile;
+const
+  FileSize = 8 * 1024 * 1024;
+var
+  Path, ContentType: string;
+  Body: TStream;
+  HeapBefore, HeapGrowth: PtrUInt;
+  R: TResponse;
+begin
+  Path := GetTempDir + 'request_fp_upload_large.bin';
+  WritePatternFile(Path, FileSize);
+  try
+    HeapBefore := GetFPCHeapStatus.CurrHeapUsed;
+    Body := BuildMultipartBody([KV('note', 'big')], [KV('blob', Path)],
+      ContentType);
+    try
+      HeapGrowth := GetFPCHeapStatus.CurrHeapUsed - HeapBefore;
+      AssertTrue('File is not loaded into memory (grew ' +
+        IntToStr(HeapGrowth) + ' bytes)', HeapGrowth < 1024 * 1024);
+      AssertTrue('Body size includes the file', Body.Size > FileSize);
+    finally
+      Body.Free;
+    end;
+
+    R := Http.PostMultipart(TestURL('/upload-summary'),
+      [KV('note', 'big')], [KV('blob', Path)]);
+    AssertEquals('Status', 200, R.StatusCode);
+    AssertEquals('Field', 'big', R.JSON.FindPath('form.note').AsString);
+    AssertEquals('Uploaded size', FileSize,
+      R.JSON.FindPath('files.blob.size').AsInt64);
+    AssertEquals('Uploaded bytes match', MD5Print(MD5File(Path)),
+      R.JSON.FindPath('files.blob.md5').AsString);
+    AssertEquals('Sent with Content-Length, not chunked', '',
+      R.JSON.FindPath('transfer_encoding').AsString);
+  finally
+    DeleteFile(Path);
+  end;
+end;
+
+procedure TRequestSimpleTests.Test43_MultipartBodyRewindsAndReadsFully;
+var
+  PathA, PathB, ContentType: string;
+  Body: TStream;
+  First, Second: TMemoryStream;
+  Text: RawByteString;
+begin
+  PathA := GetTempDir + 'request_fp_part_a.txt';
+  PathB := GetTempDir + 'request_fp_part_empty.bin';
+  WriteFileText(PathA, 'alpha');
+  WriteFileText(PathB, '');
+  First := TMemoryStream.Create;
+  Second := TMemoryStream.Create;
+  try
+    Body := BuildMultipartBody([KV('x', '1')],
+      [KV('a', PathA), KV('empty', PathB)], ContentType);
+    try
+      First.CopyFrom(Body, 0);
+      Body.Position := 0;
+      Second.CopyFrom(Body, 0);
+      AssertEquals('Size matches bytes read', Body.Size, First.Size);
+      AssertEquals('Rewound read is identical', First.Size, Second.Size);
+      AssertTrue('Rewound bytes are identical',
+        CompareMem(First.Memory, Second.Memory, First.Size));
+    finally
+      Body.Free;
+    end;
+    Text := StreamText(First);
+    AssertTrue('File content present', Pos(#13#10#13#10'alpha'#13#10, Text) > 0);
+    AssertTrue('Empty file part present',
+      Pos('filename="request_fp_part_empty.bin"', Text) > 0);
+    AssertTrue('Closing boundary last',
+      Copy(Text, Length(Text) - 3, 4) = '--'#13#10);
+    AssertTrue('Files are closed when the body is freed',
+      DeleteFile(PathA) and DeleteFile(PathB));
+  finally
+    First.Free;
+    Second.Free;
+    DeleteFile(PathA);
+    DeleteFile(PathB);
+  end;
 end;
 
 procedure TRequestSimpleTests.Test25_SSLInitialization;

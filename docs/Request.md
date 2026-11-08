@@ -189,7 +189,8 @@ Response := Http.PostMultipart('https://api.example.com/upload',
   `application/octet-stream`.
 - Quotes and line breaks in field names and filenames are percent-encoded.
 - A file that cannot be opened raises `ERequestError`.
-- Files are read into memory before sending.
+- Files are streamed from disk while sending, so large uploads use little
+  memory. They are opened before the request starts and closed when it ends.
 
 ### Downloads and streaming
 
