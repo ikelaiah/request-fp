@@ -27,6 +27,9 @@ All notable changes to this project will be documented in this file.
 - `Http.SetProxy` / session `SetProxy` for `http://` URLs, with optional proxy
   credentials. `https://` requests raise `ERequestError` while a proxy is
   set, because FPC 3.2.2 cannot tunnel HTTPS.
+- Session cookies honour `Domain`, `Path`, `Secure`, `Max-Age`, and `Expires`
+  (RFC 6265), via the public `TCookieJar`. `SetCookie` cookies stay global.
+- Examples: `streaming_download`, `session_login_redirect`, `typed_errors`.
 - macOS support: Request-FP finds Homebrew or MacPorts OpenSSL 3, and CI
   builds and tests on macOS with FPC 3.2.2.
 - `run-tests.sh` and `run-tests.ps1`: build the suite, start the local test
@@ -45,6 +48,9 @@ All notable changes to this project will be documented in this file.
 - Linux needs only the OpenSSL 3 runtime (`libssl3`), not the `-dev` package:
   `.3` is added to FPC 3.2.2's library version search.
 - Tests default to the local test server instead of `https://httpbin.org`.
+- Session cookies from servers are no longer sent to every host and path; see
+  Added. Cookies set with `SetCookie` behave as before.
+- `retry_on_error` example shows the built-in retries.
 
 ### Fixed
 

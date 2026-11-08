@@ -246,6 +246,24 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             self.close_connection = True
+        elif path.startswith("/scope/"):
+            # /scope/<any>/set?h=<Set-Cookie value>[&h=...] sends those
+            # Set-Cookie headers; any other /scope/ path echoes the cookies.
+            if path.endswith("/set"):
+                values = parse_qs(urlsplit(self.path).query).get("h", [])
+                body = b'{"ok":true}'
+                self.send_response(200)
+                for value in values:
+                    self.send_header("Set-Cookie", value)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            else:
+                cookie = SimpleCookie(self.headers.get("Cookie", ""))
+                self.send_json(
+                    {"cookies": {k: m.value for k, m in cookie.items()}}
+                )
         elif path == "/proxy-echo":
             # When used as an HTTP proxy, the request target is the full URL.
             self.send_json(
