@@ -59,27 +59,27 @@ by Git.
 
 ## Build and run the tests
 
-Compile the FPCUnit runner:
+Use the run scripts. They build the FPCUnit runner, start the local test
+server (`tests/http_fixture.py`, needs Python 3), and run every test:
 
 ```bash
-lazbuild --build-mode=Release tests/TestRunner.lpi
+./run-tests.sh                # Linux, macOS, Git Bash
+./run-tests.sh --leak-check   # must report 0 unfreed memory blocks
 ```
-
-Run it on Windows:
 
 ```powershell
-.\tests\TestRunner.exe -a --format=plain
+.\run-tests.ps1
+.\run-tests.ps1 -LeakCheck
 ```
 
-Run it on Linux:
-
-```bash
-./tests/TestRunner -a --format=plain
-```
-
-The integration suite calls `https://httpbin.org` and requires outbound
-network access. A transient upstream failure can occasionally require a
-rerun.
+- Both scripts use `lazbuild` when available and `fpc` otherwise (`--fpc` /
+  `-Fpc` forces `fpc`).
+- Pass runner options after `--` (bash) or with `-RunnerArgs` (PowerShell),
+  for example `./run-tests.sh -- --suite=Test29_PatchAndHead --format=plain`.
+- To test against another server, set `REQUEST_FP_TEST_BASE_URL` (for example
+  `https://httpbin.org`); the local server is then not started. Some tests
+  use routes that only the local server provides.
+- New tests that need a server route should add it to `tests/http_fixture.py`.
 
 ## Code guidelines
 

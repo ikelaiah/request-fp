@@ -15,9 +15,10 @@ uses
 
 function TestBaseURL: string;
 begin
+  // Defaults to the local fixture started by run-tests.sh / run-tests.ps1.
   Result := GetEnvironmentVariable('REQUEST_FP_TEST_BASE_URL');
   if Result = '' then
-    Result := 'https://httpbin.org';
+    Result := 'http://127.0.0.1:18080';
 
   while (Length(Result) > 0) and (Result[Length(Result)] = '/') do
     Delete(Result, Length(Result), 1);

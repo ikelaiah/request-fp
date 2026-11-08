@@ -6,15 +6,26 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- (none)
+- macOS support: Request-FP finds Homebrew or MacPorts OpenSSL 3, and CI
+  builds and tests on macOS with FPC 3.2.2.
+- `run-tests.sh` and `run-tests.ps1`: build the suite, start the local test
+  server, and run all tests; `--leak-check` / `-LeakCheck` fails on unfreed
+  memory.
+- `fpc` fallback for the run scripts and `build-examples.sh` when Lazarus is
+  not installed.
+- CI runs a heaptrc leak check on Linux, Windows, and macOS.
 
 ### Changed
 
-- (none)
+- Linux needs only the OpenSSL 3 runtime (`libssl3`), not the `-dev` package:
+  `.3` is added to FPC 3.2.2's library version search.
+- Tests default to the local test server instead of `https://httpbin.org`.
 
 ### Fixed
 
-- (none)
+- Timeouts close to the configured limit were sometimes reported as
+  `ENetworkError` instead of `ETimeoutError` on Windows, because of the
+  system timer's ~16 ms resolution.
 
 ## [1.4.0] - 2026-11-09
 

@@ -480,6 +480,7 @@ uses
 
 const
   FORM_CONTENT_TYPE = 'application/x-www-form-urlencoded';
+  TIMEOUT_TOLERANCE_MS = 50;
 
 var
   SSLInitialized: Boolean = False;
@@ -588,6 +589,48 @@ begin
 end;
 {$ENDIF}
 
+{$IFDEF UNIX}
+procedure ConfigureOpenSSL3Versions;
+var
+  I: Integer;
+begin
+  { FPC 3.2.2 tries the unversioned library (from the -dev package), then
+    1.1 and older, but never OpenSSL 3 (".3"). Insert ".3" right after the
+    unversioned name and drop the oldest 0.9.x entry. Newer FPC versions
+    that already list ".3" are left alone. }
+  for I := Low(DLLVersions) to High(DLLVersions) do
+    if DLLVersions[I] = '.3' then
+      Exit;
+  for I := High(DLLVersions) downto Low(DLLVersions) + 2 do
+    DLLVersions[I] := DLLVersions[I - 1];
+  DLLVersions[Low(DLLVersions) + 1] := '.3';
+end;
+{$ENDIF}
+
+{$IFDEF DARWIN}
+procedure ConfigureDarwinOpenSSLPath;
+const
+  { Homebrew (Apple silicon, Intel) and MacPorts install locations. macOS
+    does not search these by default, and its own libcrypto must not be
+    loaded by applications. }
+  Dirs: array[0..2] of string = (
+    '/opt/homebrew/opt/openssl@3/lib/',
+    '/usr/local/opt/openssl@3/lib/',
+    '/opt/local/lib/');
+var
+  I: Integer;
+begin
+  for I := Low(Dirs) to High(Dirs) do
+    if FileExists(Dirs[I] + 'libssl.3.dylib') and
+       FileExists(Dirs[I] + 'libcrypto.3.dylib') then
+    begin
+      DLLSSLName := Dirs[I] + 'libssl';
+      DLLUtilName := Dirs[I] + 'libcrypto';
+      Exit;
+    end;
+end;
+{$ENDIF}
+
 function SSLSetupHint: string;
 begin
   {$IFDEF WINDOWS}
@@ -606,10 +649,16 @@ begin
     'Or download from: https://slproweb.com/products/Win32OpenSSL.html' + LineEnding +
     'IMPORTANT: Ensure DLL architecture (32-bit vs 64-bit) matches your executable!';
   {$ELSE}
+  {$IFDEF DARWIN}
   Result :=
-    'You need to install the OpenSSL development libraries:' + LineEnding +
-    'On Ubuntu/Debian: sudo apt-get install libssl-dev' + LineEnding +
-    'On Fedora/RHEL: sudo dnf install openssl-devel';
+    'Install OpenSSL 3 with Homebrew: brew install openssl@3' + LineEnding +
+    '(or MacPorts: sudo port install openssl3).';
+  {$ELSE}
+  Result :=
+    'Install the OpenSSL 3 libraries:' + LineEnding +
+    'On Ubuntu/Debian: sudo apt-get install libssl3' + LineEnding +
+    'On Fedora/RHEL: sudo dnf install openssl-libs';
+  {$ENDIF}
   {$ENDIF}
 end;
 
@@ -893,8 +942,10 @@ begin
   if LooksLikeNetworkError(E.Message) then
   begin
     { FPC reports an I/O timeout as a generic socket read error, so treat a
-      transport failure after the timeout has elapsed as a timeout. }
-    if (TimeoutMS > 0) and (ElapsedMS >= QWord(TimeoutMS)) then
+      transport failure after the timeout has elapsed as a timeout. The
+      tolerance covers the coarse tick (~16 ms) of GetTickCount64 on Windows. }
+    if (TimeoutMS > 0) and
+       (ElapsedMS + TIMEOUT_TOLERANCE_MS >= QWord(TimeoutMS)) then
       Exit(ETimeoutError.Create(Msg));
     Exit(ENetworkError.Create(Msg));
   end;
@@ -1521,6 +1572,12 @@ initialization
     library names here so FPC's own loader finds OpenSSL 3 as well. }
   {$IFDEF WINDOWS}
   ConfigureOpenSSL3LibraryNames;
+  {$ENDIF}
+  {$IFDEF UNIX}
+  ConfigureOpenSSL3Versions;
+  {$ENDIF}
+  {$IFDEF DARWIN}
+  ConfigureDarwinOpenSSLPath;
   {$ENDIF}
 
 finalization
