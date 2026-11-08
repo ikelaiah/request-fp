@@ -55,6 +55,12 @@ type
     procedure Test27_Session_PostJSON;
     procedure Test28_Session_NonSuccessStatusReturned;
     procedure Test29_Session_TransportErrorRaisesRequestError;
+    procedure Test30_Session_PatchHeadSend;
+    procedure Test31_Session_TryVariants;
+    procedure Test32_Session_PostFormAndMultipart;
+    procedure Test33_Session_ServerCookiesAndExpiry;
+    procedure Test34_Session_RedirectKeepsCookies;
+    procedure Test35_Session_CrossHostRedirectDropsCookies;
   end;
 
 implementation
@@ -260,6 +266,160 @@ begin
   ExpectRequestError('POST');
   ExpectRequestError('PUT');
   ExpectRequestError('DELETE');
+end;
+
+procedure TRequestSessionTests.Test30_Session_PatchHeadSend;
+var
+  Response: TResponse;
+begin
+  Response := FSession.Patch('/patch', '{"name":"Ada"}');
+  AssertEquals('PATCH status', 200, Response.StatusCode);
+  AssertEquals('PATCH JSON echoed', 'Ada',
+    Response.JSON.FindPath('json.name').AsString);
+
+  Response := FSession.Head('/get');
+  AssertEquals('HEAD status', 200, Response.StatusCode);
+  AssertEquals('HEAD has no body', '', Response.Text);
+  AssertEquals('HEAD headers returned', 'yes',
+    Response.HeaderValue('X-Fixture-Head'));
+
+  Response := FSession.Send('get', '/get', '', '',
+    [KV('X-Test-Header', 'per-request'), KV('X-One', '1')], [KV('q', 'a b')]);
+  AssertEquals('Send status', 200, Response.StatusCode);
+  AssertEquals('Per-request header sent', '1',
+    Response.JSON.FindPath('headers.X-One').AsString);
+  AssertEquals('Per-request header overrides session header', 'per-request',
+    Response.JSON.FindPath('headers.X-Test-Header').AsString);
+  AssertEquals('Query param sent', 'a b',
+    Response.JSON.FindPath('args.q').AsString);
+
+  Response := FSession.GetWithParams('/get', [KV('page', '2')]);
+  AssertEquals('GetWithParams param sent', '2',
+    Response.JSON.FindPath('args.page').AsString);
+
+  Response := FSession.Get('/get');
+  AssertEquals('Session header restored after Send', 'test-value',
+    Response.JSON.FindPath('headers.X-Test-Header').AsString);
+end;
+
+procedure TRequestSessionTests.Test31_Session_TryVariants;
+var
+  Res: TRequestResult;
+begin
+  Res := FSession.TryGet('/status/500');
+  AssertTrue('TryGet transport succeeded', Res.Success);
+  AssertEquals('TryGet status', 500, Res.Response.StatusCode);
+  AssertFalse('TryGet 500 is not OK', Res.OK);
+
+  Res := FSession.TryPostJSON('/post', '{"a":1}');
+  AssertTrue('TryPostJSON OK', Res.OK);
+
+  Res := FSession.TryHead('/get');
+  AssertTrue('TryHead OK', Res.OK);
+
+  FSession.SetBaseURL(TestFailureURL);
+  Res := FSession.TryGet('/get');
+  AssertFalse('TryGet failure reported', Res.Success);
+  AssertTrue('TryGet error message set', Res.Error <> '');
+  AssertEquals('TryGet failure status', 0, Res.Response.StatusCode);
+
+  Res := FSession.TryDelete('/delete');
+  AssertFalse('TryDelete failure reported', Res.Success);
+end;
+
+procedure TRequestSessionTests.Test32_Session_PostFormAndMultipart;
+var
+  Response: TResponse;
+  TempFile: string;
+  FS: TFileStream;
+const
+  Content = 'session upload';
+begin
+  Response := FSession.PostForm('/post', [KV('user', 'ada lovelace')]);
+  AssertEquals('PostForm status', 200, Response.StatusCode);
+  AssertEquals('PostForm field echoed', 'ada lovelace',
+    Response.JSON.FindPath('form.user').AsString);
+
+  TempFile := GetTempDir + 'request_fp_session_upload.json';
+  FS := TFileStream.Create(TempFile, fmCreate);
+  try
+    FS.WriteBuffer(Content[1], Length(Content));
+  finally
+    FS.Free;
+  end;
+  try
+    Response := FSession.PostMultipart('/post', [KV('kind', 'doc')],
+      [KV('file', TempFile)]);
+    AssertEquals('PostMultipart status', 200, Response.StatusCode);
+    AssertEquals('Multipart field echoed', 'doc',
+      Response.JSON.FindPath('form.kind').AsString);
+    AssertEquals('Multipart file echoed', Content,
+      Response.JSON.FindPath('files.file').AsString);
+    AssertEquals('Multipart file type', 'application/json',
+      Response.JSON.FindPath('file_types.file').AsString);
+  finally
+    DeleteFile(TempFile);
+  end;
+end;
+
+procedure TRequestSessionTests.Test33_Session_ServerCookiesAndExpiry;
+var
+  Response: TResponse;
+begin
+  FSession.Get('/set-cookie?sid=abc&theme=dark');
+  AssertEquals('Server cookie stored', 'abc', FSession.GetCookie('sid'));
+  AssertEquals('Second server cookie stored', 'dark',
+    FSession.GetCookie('theme'));
+
+  FSession.Get('/expire-cookie?name=sid&mode=max-age');
+  AssertEquals('Max-Age=0 removes cookie', '', FSession.GetCookie('sid'));
+  AssertEquals('Other cookie kept', 'dark', FSession.GetCookie('theme'));
+
+  FSession.Get('/expire-cookie?name=theme&mode=expires');
+  AssertEquals('Past Expires removes cookie', '', FSession.GetCookie('theme'));
+
+  // Cleared cookies must not be resent by FPC's own cookie list either.
+  FSession.Get('/set-cookie?temp=1');
+  FSession.ClearCookies;
+  Response := FSession.Get('/cookies');
+  AssertEquals('No cookies after ClearCookies', 0,
+    TJSONObject(Response.JSON.FindPath('cookies')).Count);
+end;
+
+procedure TRequestSessionTests.Test34_Session_RedirectKeepsCookies;
+var
+  Response: TResponse;
+  Cookies: TJSONObject;
+begin
+  FSession.SetCookie('existing', 'yes');
+  Response := FSession.Get(
+    '/redirect-set-cookie?name=login&value=ok&to=/cookies');
+  AssertEquals('Final status', 200, Response.StatusCode);
+  Cookies := TJSONObject(Response.JSON.FindPath('cookies'));
+  AssertEquals('Redirect cookie sent on next hop', 'ok',
+    Cookies.Get('login', ''));
+  AssertEquals('Existing cookie still sent', 'yes',
+    Cookies.Get('existing', ''));
+  AssertEquals('Redirect cookie stored in session', 'ok',
+    FSession.GetCookie('login'));
+end;
+
+procedure TRequestSessionTests.Test35_Session_CrossHostRedirectDropsCookies;
+var
+  Response: TResponse;
+  OtherHostURL: string;
+begin
+  if Pos('127.0.0.1', TestBaseURL) = 0 then
+    Exit; // Needs the local fixture, reachable as both 127.0.0.1 and localhost.
+  OtherHostURL := StringReplace(TestBaseURL, '127.0.0.1', 'localhost', []) +
+    '/cookies';
+  FSession.SetCookie('secret', 'token');
+  Response := FSession.Get('/redirect-to?url=' + OtherHostURL);
+  AssertEquals('Final status', 200, Response.StatusCode);
+  AssertEquals('Cookies not sent to another host', 0,
+    TJSONObject(Response.JSON.FindPath('cookies')).Count);
+  AssertEquals('Session keeps its cookie', 'token',
+    FSession.GetCookie('secret'));
 end;
 
 procedure TRequestSessionTests.TearDown;
@@ -574,12 +734,12 @@ WriteLn('Test22_TimeoutHandling: Starting');
     except
       on E: ERequestError do
       begin
-        ExceptionRaised := True;
+        ExceptionRaised := E is ETimeoutError;
         ElapsedMS := GetTickCount64 - StartedAt;
       end;
     end;
 
-    AssertTrue('Timeout exception should be raised', ExceptionRaised);
+    AssertTrue('ETimeoutError should be raised', ExceptionRaised);
     AssertTrue(
       Format(
         'Timeout should occur before the server closes the connection (%dms)',

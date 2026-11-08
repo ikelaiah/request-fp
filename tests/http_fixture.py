@@ -3,6 +3,8 @@
 
 import argparse
 import json
+import sys
+import time
 from email import policy
 from email.parser import BytesParser
 from http.cookies import SimpleCookie
@@ -59,6 +61,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         content_type = self.headers.get("Content-Type", "")
         form = {}
         files = {}
+        file_types = {}
         json_body = None
 
         if content_type.startswith("application/json"):
@@ -88,6 +91,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                     form[name] = value
                 else:
                     files[name] = value
+                    file_types[name] = part.get_content_type()
         else:
             form = single_values(
                 parse_qs(
@@ -97,7 +101,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 )
             )
 
-        return form, files, json_body
+        return form, files, file_types, json_body
 
     def send_request_echo(self):
         details = self.request_details()
@@ -113,17 +117,68 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def send_body_echo(self):
         body = self.read_body()
-        form, files, json_body = self.parse_body(body)
+        form, files, file_types, json_body = self.parse_body(body)
         details = self.request_details()
         details.update(
             {
                 "data": body.decode("utf-8", errors="replace"),
                 "files": files,
+                "file_types": file_types,
                 "form": form,
                 "json": json_body,
             }
         )
         self.send_json(details)
+
+    def send_redirect(self, location, cookies=()):
+        self.send_response(302)
+        self.send_header("Location", location)
+        for cookie in cookies:
+            self.send_header("Set-Cookie", cookie)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def send_cookie_routes(self, path):
+        """Cookie and redirect helpers. Returns True if handled."""
+        args = single_values(
+            parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+        )
+        if path == "/set-cookie":
+            # /set-cookie?name=value[&name2=value2]
+            body = b'{"ok":true}'
+            self.send_response(200)
+            for key, value in args.items():
+                self.send_header("Set-Cookie", "{}={}; Path=/".format(key, value))
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif path == "/expire-cookie":
+            # /expire-cookie?name=sid&mode=max-age|expires
+            name = args.get("name", "")
+            if args.get("mode") == "expires":
+                attr = "Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+            else:
+                attr = "Max-Age=0"
+            body = b'{"ok":true}'
+            self.send_response(200)
+            self.send_header("Set-Cookie", "{}=; {}; Path=/".format(name, attr))
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif path == "/redirect-set-cookie":
+            # /redirect-set-cookie?name=n&value=v&to=/cookies
+            self.send_redirect(
+                args.get("to", "/cookies"),
+                ["{}={}; Path=/".format(args.get("name", "c"),
+                                        args.get("value", "1"))],
+            )
+        elif path == "/redirect-to":
+            self.send_redirect(args.get("url", "/get"))
+        else:
+            return False
+        return True
 
     def send_status(self, path):
         """Handle /status/<code> for any method. Returns True if handled."""
@@ -144,8 +199,15 @@ class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlsplit(self.path).path
 
-        if self.send_status(path):
+        if self.send_status(path) or self.send_cookie_routes(path):
             pass
+        elif path.startswith("/delay/"):
+            try:
+                seconds = min(float(path.rsplit("/", 1)[1]), 10.0)
+            except ValueError:
+                seconds = 1.0
+            time.sleep(seconds)
+            self.send_request_echo()
         elif path.startswith("/bytes/"):
             # Deterministic binary body: bytes 0..255 repeated.
             try:
@@ -185,9 +247,35 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not self.send_status(urlsplit(self.path).path):
             self.send_body_echo()
 
+    def do_PATCH(self):
+        if not self.send_status(urlsplit(self.path).path):
+            self.send_body_echo()
+
+    def do_HEAD(self):
+        path = urlsplit(self.path).path
+        status = 200
+        if path.startswith("/status/"):
+            try:
+                status = int(path.rsplit("/", 1)[1])
+            except ValueError:
+                status = 400
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", "42")
+        self.send_header("X-Fixture-Head", "yes")
+        self.end_headers()
+
     def do_DELETE(self):
         if not self.send_status(urlsplit(self.path).path):
             self.send_request_echo()
+
+
+class FixtureServer(ThreadingHTTPServer):
+    def handle_error(self, request, client_address):
+        # Clients that time out on purpose close the socket mid-response.
+        if isinstance(sys.exc_info()[1], ConnectionError):
+            return
+        super().handle_error(request, client_address)
 
 
 def main():
@@ -196,7 +284,7 @@ def main():
     parser.add_argument("--port", type=int, default=18080)
     args = parser.parse_args()
 
-    server = ThreadingHTTPServer((args.host, args.port), RequestHandler)
+    server = FixtureServer((args.host, args.port), RequestHandler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

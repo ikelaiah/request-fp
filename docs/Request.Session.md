@@ -107,9 +107,43 @@ Response := Session.Post('/submit', 'name=Ada',
   'application/x-www-form-urlencoded');
 ```
 
+## Per-request headers and parameters
+
+Session headers apply to every call. Add or override headers for one call
+with `Get(URL, Headers)` or the general `Send`:
+
+```pascal
+Response := Session.Get('/report', [KV('Accept', 'text/csv')]);
+Response := Session.GetWithParams('/search', [KV('q', 'pascal')]);
+
+// Method, URL, Body, ContentType, Headers, Params
+Response := Session.Send('PATCH', '/users/42', '{"active":false}',
+  'application/json', [KV('If-Match', ETag)], []);
+```
+
+## Forms and uploads
+
+```pascal
+Response := Session.PostForm('/login', [
+  KV('email', 'ada@example.com'),
+  KV('password', Password)
+]);
+
+Response := Session.PostMultipart('/upload',
+  [KV('description', 'avatar')],
+  [KV('file', 'avatar.png')]);
+```
+
 ## Cookies
 
-Cookies received in `Set-Cookie` headers are stored and sent by later calls.
+Cookies received in `Set-Cookie` headers are stored and sent by later calls:
+
+- Cookies set on redirect responses (common after a login POST) are kept.
+- A cookie with `Max-Age=0` or a past `Expires` is removed.
+- Session cookies are not sent when a redirect goes to a different host.
+- `Domain` and `Path` attributes are not checked: every stored cookie is sent
+  to the session's own requests.
+
 You can also manage them directly:
 
 ```pascal
@@ -126,7 +160,8 @@ The default timeout is 30 seconds. Values are milliseconds:
 Session.SetTimeout(10000);
 ```
 
-The new timeout applies to the current connection and later calls.
+The new timeout applies to the current connection and later calls. A request
+that exceeds it raises `ETimeoutError`.
 
 ## Reading a response
 
@@ -148,8 +183,20 @@ See the [Request API reference](Request.md#tresponse) for all response helpers.
 Session methods behave like the stateless API:
 
 - Any HTTP status, including 4xx and 5xx, is returned in the response.
-- Network, TLS, and request failures raise `ERequestError`.
+- Network, TLS, and request failures raise `ERequestError`
+  (`ENetworkError`/`ETimeoutError` for transport failures).
 - Call `Response.RaiseForStatus` to raise for non-2xx.
+- `Try*` methods never raise; check `Result.Success` or `Result.OK`.
+
+```pascal
+Result := Session.TryGet('/profile');
+if Result.OK then
+  WriteLn(Result.Response.Text)
+else if Result.Success then
+  WriteLn('HTTP ', Result.Response.StatusCode)
+else
+  WriteLn('Failed: ', Result.Error);
+```
 
 ```pascal
 try
@@ -173,13 +220,27 @@ THttpSession = record
 
   // Requests
   function Get(const URL: string): TResponse;
+  function Get(const URL: string; const Headers: array of TKeyValue): TResponse;
+  function GetWithParams(const URL: string; const Params: array of TKeyValue): TResponse;
   function Post(const URL: string; const Body: string = '';
     const ContentType: string = 'application/x-www-form-urlencoded'): TResponse;
   function PostJSON(const URL: string; const JSON: string): TResponse;
   function PostJSON(const URL: string; const JSON: TJSONData): TResponse;
+  function PostForm(const URL: string; const Fields: array of TKeyValue): TResponse;
+  function PostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TResponse;
   function Put(const URL: string; const Body: string = '';
     const ContentType: string = 'application/json'): TResponse;
+  function Patch(const URL: string; const Body: string = '';
+    const ContentType: string = 'application/json'): TResponse;
   function Delete(const URL: string): TResponse;
+  function Head(const URL: string): TResponse;
+  function Send(const Method, URL: string; const Body: string;
+    const ContentType: string; const Headers: array of TKeyValue;
+    const Params: array of TKeyValue): TResponse;
+
+  // Exception-free: TryGet, TryPost, TryPostJSON, TryPostForm,
+  // TryPostMultipart, TryPut, TryPatch, TryDelete, TryHead, TrySend
+  // (same parameters, return TRequestResult)
 
   // Configuration
   procedure SetHeader(const Name, Value: string);

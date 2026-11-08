@@ -9,7 +9,7 @@
 [![Lazarus](https://img.shields.io/badge/Lazarus-4.8+-60A5FA.svg)](https://www.lazarus-ide.org/)
 ![Supports Windows](https://img.shields.io/badge/support-Windows-F59E0B?logo=Windows)
 ![Supports Linux](https://img.shields.io/badge/support-Linux-F59E0B?logo=Linux)
-[![Version](https://img.shields.io/badge/version-1.3.1-8B5CF6.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.4.0-8B5CF6.svg)](CHANGELOG.md)
 
 An easy, memory-safe HTTP client for Free Pascal. Request-FP wraps FPC's HTTP
 stack with a small API, automatic cleanup, and no application-level
@@ -158,6 +158,16 @@ else
 `Response.OK` and `Response.IsSuccessStatus` are true for status codes 200
 through 299.
 
+Catch a narrower class when you need to react differently:
+
+- `ETimeoutError`: connect or I/O timeout.
+- `ENetworkError`: other connection, DNS, socket, or TLS failures (parent of
+  `ETimeoutError`).
+- `ERequestError`: base class for everything Request-FP raises.
+
+`Http.SetTimeout(Milliseconds)` sets the I/O timeout for stateless requests
+(default 30000; 0 waits forever).
+
 ### No exceptions
 
 Every `Try*` method catches request exceptions:
@@ -176,8 +186,8 @@ else
   returned 404 or 500.
 - `Result.OK` means the exchange completed and the status is 2xx.
 - `TryGet`, `TryGetWithParams`, `TryPost`, `TryPostForm`, `TryPostJSON`,
-  `TryPut`, `TryDelete`, and `TryPostMultipart` do not raise request
-  exceptions.
+  `TryPut`, `TryPatch`, `TryDelete`, `TryHead`, and `TryPostMultipart` do not
+  raise request exceptions.
 
 ## Sessions
 
@@ -246,17 +256,22 @@ Http.Post(URL, Body)
 Http.PostForm(URL, Fields)
 Http.PostJSON(URL, JSON)
 Http.Put(URL, Body)
+Http.Patch(URL, Body)
 Http.Delete(URL)
+Http.Head(URL)
 Http.PostMultipart(URL, Fields, Files)
+Http.SetTimeout(10000)
 
 // Response
 Response.StatusCode
 Response.Text
+Response.Bytes
 Response.JSON
 Response.OK
 Response.HeaderValue('Content-Type')
 Response.RaiseForStatus
 Response.SaveToFile('output.dat')
+Response.SaveToStream(Stream)
 ```
 
 Most methods also have header/query-parameter overloads and exception-free

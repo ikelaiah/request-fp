@@ -53,6 +53,13 @@ type
     procedure Test26_ConvenienceHelpers;
     procedure Test27_PostForm;
     procedure Test28_SaveToFileBinary;
+    procedure Test29_PatchAndHead;
+    procedure Test30_NetworkErrorIsTyped;
+    procedure Test31_TimeoutRaisesTimeoutError;
+    procedure Test32_ResponseBytesAndStream;
+    procedure Test33_MultipartEscapingAndContentType;
+    procedure Test34_MultipartMissingFileRaisesRequestError;
+    procedure Test35_PostJSONKeepsCustomContentType;
   end;
 
 implementation
@@ -566,6 +573,166 @@ begin
   finally
     if FileExists(TempFile) then DeleteFile(TempFile);
   end;
+end;
+
+procedure TRequestSimpleTests.Test29_PatchAndHead;
+var
+  R: TResponse;
+  Res: TRequestResult;
+begin
+  R := Http.Patch(TestURL('/patch'), 'name=Ada');
+  AssertEquals('PATCH status', 200, R.StatusCode);
+  AssertEquals('PATCH form echoed', 'Ada',
+    R.JSON.FindPath('form.name').AsString);
+
+  R := Http.Head(TestURL('/get'));
+  AssertEquals('HEAD status', 200, R.StatusCode);
+  AssertEquals('HEAD has no body', '', R.Text);
+  AssertTrue('HEAD returns headers', R.HeaderValue('Content-Type') <> '');
+
+  R := Http.Head(TestURL('/status/404'));
+  AssertEquals('HEAD 404 returned', 404, R.StatusCode);
+
+  Res := Http.TryPatch(TestURL('/status/409'), '{}');
+  AssertTrue('TryPatch transport succeeded', Res.Success);
+  AssertEquals('TryPatch status', 409, Res.Response.StatusCode);
+
+  Res := Http.TryHead(TestFailureURL);
+  AssertFalse('TryHead failure reported', Res.Success);
+end;
+
+procedure TRequestSimpleTests.Test30_NetworkErrorIsTyped;
+var
+  Raised: Boolean;
+begin
+  Raised := False;
+  try
+    Http.Get(TestFailureURL);
+  except
+    on E: ENetworkError do
+      Raised := True;
+  end;
+  AssertTrue('Connection failure should raise ENetworkError', Raised);
+end;
+
+procedure TRequestSimpleTests.Test31_TimeoutRaisesTimeoutError;
+var
+  OldTimeout: Integer;
+  Raised: Boolean;
+begin
+  OldTimeout := Http.GetTimeout;
+  AssertEquals('Default timeout', 30000, OldTimeout);
+  Http.SetTimeout(300);
+  try
+    Raised := False;
+    try
+      Http.Get(TestURL('/delay/2'));
+    except
+      on E: ETimeoutError do
+        Raised := True;
+    end;
+    AssertTrue('Slow response should raise ETimeoutError', Raised);
+  finally
+    Http.SetTimeout(OldTimeout);
+  end;
+end;
+
+procedure TRequestSimpleTests.Test32_ResponseBytesAndStream;
+const
+  ByteCount = 300;
+var
+  R: TResponse;
+  Data: TBytes;
+  Stream: TMemoryStream;
+  I: Integer;
+begin
+  R := Http.Get(TestURL('/bytes/' + IntToStr(ByteCount)));
+  Data := R.Bytes;
+  AssertEquals('Bytes length', ByteCount, Length(Data));
+  for I := 0 to ByteCount - 1 do
+    AssertEquals('Byte ' + IntToStr(I), I mod 256, Data[I]);
+
+  Stream := TMemoryStream.Create;
+  try
+    R.SaveToStream(Stream);
+    AssertEquals('Stream size', ByteCount, Stream.Size);
+    AssertTrue('Stream bytes match',
+      CompareMem(Stream.Memory, @Data[0], ByteCount));
+  finally
+    Stream.Free;
+  end;
+end;
+
+procedure TRequestSimpleTests.Test33_MultipartEscapingAndContentType;
+var
+  R: TResponse;
+  TempFile, TypeA, TypeB: string;
+  FS: TFileStream;
+  BodyA, BodyB: TStream;
+const
+  Content = 'hello';
+begin
+  TempFile := GetTempDir + 'request_fp_note.txt';
+  FS := TFileStream.Create(TempFile, fmCreate);
+  try
+    FS.WriteBuffer(Content[1], Length(Content));
+  finally
+    FS.Free;
+  end;
+  try
+    R := Http.PostMultipart(TestURL('/post'),
+      [KV('a"b', '1')], [KV('doc', TempFile)]);
+    AssertEquals('Status', 200, R.StatusCode);
+    AssertEquals('Quote in field name is escaped', '1',
+      TJSONObject(R.JSON.FindPath('form')).Get('a%22b', ''));
+    AssertEquals('File content uploaded', Content,
+      R.JSON.FindPath('files.doc').AsString);
+    AssertEquals('File content type from extension', 'text/plain',
+      R.JSON.FindPath('file_types.doc').AsString);
+  finally
+    DeleteFile(TempFile);
+  end;
+
+  BodyA := BuildMultipartBody([KV('x', '1')], [], TypeA);
+  BodyB := BuildMultipartBody([KV('x', '1')], [], TypeB);
+  try
+    AssertTrue('Each body gets a new boundary', TypeA <> TypeB);
+  finally
+    BodyA.Free;
+    BodyB.Free;
+  end;
+end;
+
+procedure TRequestSimpleTests.Test34_MultipartMissingFileRaisesRequestError;
+var
+  Raised: Boolean;
+  Res: TRequestResult;
+begin
+  Raised := False;
+  try
+    Http.PostMultipart(TestURL('/post'), [],
+      [KV('doc', GetTempDir + 'request_fp_missing_file.bin')]);
+  except
+    on E: ERequestError do
+      Raised := Pos('Cannot read upload file', E.Message) > 0;
+  end;
+  AssertTrue('Missing upload file should raise ERequestError', Raised);
+
+  Res := Http.TryPostMultipart(TestURL('/post'), [],
+    [KV('doc', GetTempDir + 'request_fp_missing_file.bin')]);
+  AssertFalse('TryPostMultipart reports missing file', Res.Success);
+end;
+
+procedure TRequestSimpleTests.Test35_PostJSONKeepsCustomContentType;
+var
+  R: TResponse;
+begin
+  R := Http.PostJSON(TestURL('/post'), '{"a":1}',
+    [KV('Content-Type', 'application/vnd.api+json')]);
+  AssertEquals('Status', 200, R.StatusCode);
+  AssertEquals('Custom Content-Type is sent unchanged',
+    'application/vnd.api+json',
+    R.JSON.FindPath('headers.Content-Type').AsString);
 end;
 
 procedure TRequestSimpleTests.Test25_SSLInitialization;
