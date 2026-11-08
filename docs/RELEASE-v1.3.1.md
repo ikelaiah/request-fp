@@ -1,5 +1,7 @@
 # Request-FP v1.3.1 release notes
 
+**Release date:** November 8, 2026
+
 Bug-fix release. No API removals.
 
 ## Behavior changes
