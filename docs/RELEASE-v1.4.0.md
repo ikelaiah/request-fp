@@ -1,5 +1,7 @@
 # Request-FP v1.4.0 release notes
 
+**Release date:** November 9, 2026
+
 Feature release. No API removals.
 
 ## New
