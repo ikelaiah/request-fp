@@ -61,6 +61,8 @@ type
     procedure Test33_Session_ServerCookiesAndExpiry;
     procedure Test34_Session_RedirectKeepsCookies;
     procedure Test35_Session_CrossHostRedirectDropsCookies;
+    procedure Test36_Session_DownloadUsesCookiesAndHeaders;
+    procedure Test37_Session_GetToStreamAndTryVariants;
   end;
 
 implementation
@@ -940,6 +942,73 @@ begin
   CT := Response.HeaderValue('Content-Type');
   AssertTrue('Content-Type header should be present', CT <> '');
   AssertTrue('Content-Type should indicate JSON', Pos('application/json', LowerCase(CT)) > 0);
+end;
+
+procedure TRequestSessionTests.Test36_Session_DownloadUsesCookiesAndHeaders;
+var
+  R: TResponse;
+  Path, Saved: string;
+  FS: TFileStream;
+  Data: TJSONData;
+begin
+  Path := GetTempDir + 'request_fp_session_download.json';
+  DeleteFile(Path);
+  FSession.SetCookie('token', 'abc');
+  try
+    R := FSession.Download('/cookies', Path);
+    AssertEquals('Status', 200, R.StatusCode);
+    AssertEquals('Body is not kept in memory', '', R.Text);
+    FS := TFileStream.Create(Path, fmOpenRead or fmShareDenyWrite);
+    try
+      SetLength(Saved, FS.Size);
+      if FS.Size > 0 then
+        FS.ReadBuffer(Saved[1], FS.Size);
+    finally
+      FS.Free;
+    end;
+    Data := GetJSON(Saved);
+    try
+      AssertEquals('Session cookie was sent', 'abc',
+        Data.FindPath('cookies.token').AsString);
+    finally
+      Data.Free;
+    end;
+
+    R := FSession.Download('/set-cookie?streamed=yes', Path);
+    AssertEquals('Set-Cookie applied after a download', 'yes',
+      FSession.GetCookie('streamed'));
+  finally
+    DeleteFile(Path);
+  end;
+end;
+
+procedure TRequestSessionTests.Test37_Session_GetToStreamAndTryVariants;
+var
+  R: TResponse;
+  Res: TRequestResult;
+  Stream: TMemoryStream;
+  Path: string;
+begin
+  Stream := TMemoryStream.Create;
+  try
+    R := FSession.GetToStream('/bytes/1024', Stream);
+    AssertEquals('Status', 200, R.StatusCode);
+    AssertEquals('Stream size', 1024, Stream.Size);
+
+    Res := FSession.TryGetToStream('/status/404', Stream);
+    AssertTrue('Transport succeeded', Res.Success);
+    AssertEquals('Status', 404, Res.Response.StatusCode);
+    AssertEquals('Error body not written to stream', 1024, Stream.Size);
+  finally
+    Stream.Free;
+  end;
+
+  Path := GetTempDir + 'request_fp_session_fail.bin';
+  FSession.SetBaseURL(TestFailureURL);
+  Res := FSession.TryDownload('/bytes/10', Path);
+  AssertFalse('Connection failure reported', Res.Success);
+  AssertFalse('No file created', FileExists(Path));
+  AssertFalse('No partial file left', FileExists(Path + '.part'));
 end;
 
 initialization

@@ -127,6 +127,16 @@ Response := Http.PostMultipart('https://api.example.com/upload',
 The key in the files array is the form field name; the value is the local file
 path.
 
+### Download a large file
+
+```pascal
+Response := Http.Download('https://example.com/big.zip', 'big.zip');
+```
+
+The body is streamed to disk, not held in memory. The file is replaced only
+when a 2xx download completes. Pass a progress procedure as a third argument
+to track it.
+
 ## Handling success and errors
 
 Choose the style that fits your program.
@@ -262,6 +272,8 @@ Http.Patch(URL, Body)
 Http.Delete(URL)
 Http.Head(URL)
 Http.PostMultipart(URL, Fields, Files)
+Http.Download(URL, FilePath)
+Http.GetToStream(URL, Stream)
 Http.SetTimeout(10000)
 
 // Response

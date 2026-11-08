@@ -81,6 +81,21 @@ Bytes := Response.Bytes;        // TBytes copy of the body
 WriteLn(Response.JSON.FindPath('user.name').AsString);
 ```
 
+## Downloads
+
+```pascal
+procedure ShowProgress(Received, Total: Int64);  // Total = -1 if unknown
+begin
+  WriteLn(Received, ' / ', Total);
+end;
+
+Response := Http.Download(URL, 'big.zip');                // streamed to disk
+Response := Http.Download(URL, 'big.zip', @ShowProgress);
+Response := Http.GetToStream(URL, MyStream);
+if not Response.OK then
+  WriteLn(Response.Text);  // error body; the file is left untouched
+```
+
 ## Exception-free requests
 
 Prefix the request name with `Try`:

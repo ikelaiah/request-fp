@@ -134,6 +134,22 @@ Response := Session.PostMultipart('/upload',
   [KV('file', 'avatar.png')]);
 ```
 
+## Downloads
+
+`Download` and `GetToStream` stream the body to a file or stream, with session
+headers and cookies applied:
+
+```pascal
+Response := Session.Download('/reports/2026.pdf', 'report.pdf');
+Response := Session.Download('/backup.zip', 'backup.zip', @ShowProgress);
+Response := Session.GetToStream('/export.csv', MyStream);
+```
+
+The rules match [Http.Download](Request.md#downloads-and-streaming): only a
+2xx body is saved, the file is replaced only when complete, and the error
+body is in `Response.Text`. `TryDownload` and `TryGetToStream` return
+`TRequestResult`.
+
 ## Cookies
 
 Cookies received in `Set-Cookie` headers are stored and sent by later calls:
@@ -238,9 +254,13 @@ THttpSession = record
     const ContentType: string; const Headers: array of TKeyValue;
     const Params: array of TKeyValue): TResponse;
 
+  // Streaming (OnProgress is optional: TProgressProc or TProgressEvent)
+  function Download(const URL, FilePath: string; OnProgress): TResponse;
+  function GetToStream(const URL: string; Stream: TStream; OnProgress): TResponse;
+
   // Exception-free: TryGet, TryPost, TryPostJSON, TryPostForm,
-  // TryPostMultipart, TryPut, TryPatch, TryDelete, TryHead, TrySend
-  // (same parameters, return TRequestResult)
+  // TryPostMultipart, TryPut, TryPatch, TryDelete, TryHead, TrySend,
+  // TryDownload, TryGetToStream (same parameters, return TRequestResult)
 
   // Configuration
   procedure SetHeader(const Name, Value: string);
@@ -258,17 +278,6 @@ end;
 
 `TSimpleMap` is public for compatibility but is an implementation detail for
 most users.
-
-## Multipart requests
-
-The session API does not yet provide a multipart helper. Prefer the stateless
-helper:
-
-```pascal
-Result := Http.TryPostMultipart('https://api.example.com/upload',
-  [KV('description', 'avatar')],
-  [KV('file', 'avatar.png')]);
-```
 
 ## HTTPS
 

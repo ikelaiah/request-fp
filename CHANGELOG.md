@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Streaming downloads: `Http.Download(URL, FilePath)` and
+  `Http.GetToStream(URL, Stream)`, with `Try*`, header/parameter, and progress
+  overloads, plus session `Download`/`GetToStream`. Only a 2xx body is saved;
+  files are written to `.part` and replaced when complete; a body shorter
+  than `Content-Length` raises `ENetworkError`.
+- `TProgressProc` / `TProgressEvent` progress callbacks; raise to cancel.
 - macOS support: Request-FP finds Homebrew or MacPorts OpenSSL 3, and CI
   builds and tests on macOS with FPC 3.2.2.
 - `run-tests.sh` and `run-tests.ps1`: build the suite, start the local test
