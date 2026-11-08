@@ -88,6 +88,11 @@ type
     FTimeout: Integer;
     FRetryCount: Integer;
     FRetryDelay: Integer;
+    FConnectTimeout: Integer;
+    FProxyHost: string;
+    FProxyPort: Integer;
+    FProxyUser: string;
+    FProxyPassword: string;
 
     function GetClient: TFPHTTPClient;
     function GetFullURL(const URL: string): string;
@@ -128,6 +133,11 @@ type
     { Posts a JSON string or TJSONData value with the correct content type. }
     function PostJSON(const URL: string; const JSON: string): TResponse; overload;
     function PostJSON(const URL: string; const JSON: TJSONData): TResponse; overload;
+    { PUT and PATCH JSON with Content-Type: application/json. }
+    function PutJSON(const URL: string; const JSON: string): TResponse; overload;
+    function PutJSON(const URL: string; const JSON: TJSONData): TResponse; overload;
+    function PatchJSON(const URL: string; const JSON: string): TResponse; overload;
+    function PatchJSON(const URL: string; const JSON: TJSONData): TResponse; overload;
     { Posts Fields as application/x-www-form-urlencoded. }
     function PostForm(const URL: string; const Fields: array of TKeyValue): TResponse;
     { Posts multipart/form-data. Files values are file paths. }
@@ -153,6 +163,8 @@ type
     function TryPost(const URL: string; const Body: string = '';
       const ContentType: string = 'application/x-www-form-urlencoded'): TRequestResult;
     function TryPostJSON(const URL: string; const JSON: string): TRequestResult;
+    function TryPutJSON(const URL: string; const JSON: string): TRequestResult;
+    function TryPatchJSON(const URL: string; const JSON: string): TRequestResult;
     function TryPostForm(const URL: string; const Fields: array of TKeyValue): TRequestResult;
     function TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TRequestResult;
     function TryPut(const URL: string; const Body: string = '';
@@ -194,6 +206,16 @@ type
     { Retries for this session; same rules as THttp.SetRetry (default 2
       retries, 250 ms first delay). SetRetry(0, 0) disables. }
     procedure SetRetry(MaxRetries, BaseDelayMS: Integer);
+    { Connect timeout in milliseconds (default 3000; 0 = system default). }
+    procedure SetConnectTimeout(Timeout: Integer);
+    { HTTP proxy for http:// requests; see THttp.SetProxy. SetProxy('', 0)
+      removes it. }
+    procedure SetProxy(const Host: string; Port: Integer;
+      const UserName: string = ''; const Password: string = '');
+    { Sends Authorization: Basic for every request. }
+    procedure SetBasicAuth(const UserName, Password: string);
+    { Sends Authorization: Bearer for every request. }
+    procedure SetBearerToken(const Token: string);
 
     { Clears all cookies }
     procedure ClearCookies;
@@ -253,6 +275,7 @@ var
 begin
   Client := TFPHTTPClient(Sender);
   ApplySetCookieHeaders(Cookies^, Client.ResponseHeaders);
+  DropAuthOnHostChange(Client, ASrc, ADest);
   // FPC would resend only the redirect response's cookies; send ours instead.
   Client.Cookies.Clear;
 
@@ -388,6 +411,11 @@ begin
   Session.FTimeout := 30000; // 30 seconds default timeout
   Session.FRetryCount := DEFAULT_RETRY_COUNT;
   Session.FRetryDelay := DEFAULT_RETRY_DELAY_MS;
+  Session.FConnectTimeout := 3000;
+  Session.FProxyHost := '';
+  Session.FProxyPort := 0;
+  Session.FProxyUser := '';
+  Session.FProxyPassword := '';
 
   // Set default headers - TSimpleMap doesn't need explicit initialization
   Session.FHeaders.SetItem('Accept', 'application/json');
@@ -415,6 +443,11 @@ begin
   Dest.FTimeout := Source.FTimeout;
   Dest.FRetryCount := Source.FRetryCount;
   Dest.FRetryDelay := Source.FRetryDelay;
+  Dest.FConnectTimeout := Source.FConnectTimeout;
+  Dest.FProxyHost := Source.FProxyHost;
+  Dest.FProxyPort := Source.FProxyPort;
+  Dest.FProxyUser := Source.FProxyUser;
+  Dest.FProxyPassword := Source.FProxyPassword;
 
   // Copy headers
   Dest.FHeaders.Clear;
@@ -491,6 +524,11 @@ begin
 
   // Set timeout
   Client.IOTimeout := FTimeout;
+  Client.ConnectTimeout := FConnectTimeout;
+  Client.Proxy.Host := FProxyHost;
+  Client.Proxy.Port := FProxyPort;
+  Client.Proxy.UserName := FProxyUser;
+  Client.Proxy.Password := FProxyPassword;
 
   // Ensure User-Agent is present (session default unless overridden)
   if Client.RequestHeaders.IndexOfName('User-Agent') = -1 then
@@ -683,6 +721,33 @@ begin
   Result := PostJSON(URL, JSON.AsJSON);
 end;
 
+function THttpSession.PutJSON(const URL: string; const JSON: string): TResponse;
+begin
+  Result := Put(URL, JSON, 'application/json');
+end;
+
+function THttpSession.PutJSON(const URL: string;
+  const JSON: TJSONData): TResponse;
+begin
+  if JSON = nil then
+    raise ERequestError.Create('JSON data cannot be nil');
+  Result := PutJSON(URL, JSON.AsJSON);
+end;
+
+function THttpSession.PatchJSON(const URL: string;
+  const JSON: string): TResponse;
+begin
+  Result := Patch(URL, JSON, 'application/json');
+end;
+
+function THttpSession.PatchJSON(const URL: string;
+  const JSON: TJSONData): TResponse;
+begin
+  if JSON = nil then
+    raise ERequestError.Create('JSON data cannot be nil');
+  Result := PatchJSON(URL, JSON.AsJSON);
+end;
+
 function THttpSession.PostForm(const URL: string;
   const Fields: array of TKeyValue): TResponse;
 begin
@@ -753,6 +818,32 @@ function THttpSession.TryPost(const URL: string; const Body: string;
 begin
   try
     Result.Response := Post(URL, Body, ContentType);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+      SetTryFailure(Result, E);
+  end;
+end;
+
+function THttpSession.TryPutJSON(const URL: string;
+  const JSON: string): TRequestResult;
+begin
+  try
+    Result.Response := PutJSON(URL, JSON);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+      SetTryFailure(Result, E);
+  end;
+end;
+
+function THttpSession.TryPatchJSON(const URL: string;
+  const JSON: string): TRequestResult;
+begin
+  try
+    Result.Response := PatchJSON(URL, JSON);
     Result.Success := True;
     Result.Error := '';
   except
@@ -994,6 +1085,32 @@ end;
 
 // Cookie Management
 
+procedure THttpSession.SetConnectTimeout(Timeout: Integer);
+begin
+  if Timeout < 0 then
+    Timeout := 0;
+  FConnectTimeout := Timeout;
+end;
+
+procedure THttpSession.SetProxy(const Host: string; Port: Integer;
+  const UserName: string; const Password: string);
+begin
+  FProxyHost := Host;
+  FProxyPort := Port;
+  FProxyUser := UserName;
+  FProxyPassword := Password;
+end;
+
+procedure THttpSession.SetBasicAuth(const UserName, Password: string);
+begin
+  SetHeader('Authorization', KVBasic(UserName, Password).Value);
+end;
+
+procedure THttpSession.SetBearerToken(const Token: string);
+begin
+  SetHeader('Authorization', KVBearer(Token).Value);
+end;
+
 procedure THttpSession.SetRetry(MaxRetries, BaseDelayMS: Integer);
 begin
   if MaxRetries < 0 then
@@ -1051,6 +1168,11 @@ begin
   Self.FTimeout := 30000; // 30 seconds default timeout
   Self.FRetryCount := DEFAULT_RETRY_COUNT;
   Self.FRetryDelay := DEFAULT_RETRY_DELAY_MS;
+  Self.FConnectTimeout := 3000;
+  Self.FProxyHost := '';
+  Self.FProxyPort := 0;
+  Self.FProxyUser := '';
+  Self.FProxyPassword := '';
 
   // Set default headers
   Self.FHeaders.SetItem('Accept', 'application/json');

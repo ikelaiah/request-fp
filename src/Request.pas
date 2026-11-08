@@ -83,6 +83,10 @@ type
 
     // Returns the value of a response header (case-insensitive), or empty string if not found
     function HeaderValue(const Name: string): string;
+    // Returns every value of a header in order (for example several Set-Cookie)
+    function HeaderValues(const Name: string): TStringArray;
+    // Returns the response header names in order, without duplicates
+    function HeaderNames: TStringArray;
     // Sets raw header text captured from the HTTP client (for use by session API)
     procedure SetHeadersText(const AHeaders: string);
     // True if status is within 200..299
@@ -447,6 +451,21 @@ type
     class function TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TRequestResult; static; overload;
     class function TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue): TRequestResult; static; overload;
 
+    { PUT and PATCH a JSON string or TJSONData value with
+      Content-Type: application/json (a Content-Type in Headers wins). }
+    class function PutJSON(const URL: string; const JSON: string): TResponse; static; overload;
+    class function PutJSON(const URL: string; const JSON: TJSONData): TResponse; static; overload;
+    class function PutJSON(const URL: string; const JSON: string; const Headers: array of TKeyValue): TResponse; static; overload;
+    class function PutJSON(const URL: string; const JSON: TJSONData; const Headers: array of TKeyValue): TResponse; static; overload;
+    class function PatchJSON(const URL: string; const JSON: string): TResponse; static; overload;
+    class function PatchJSON(const URL: string; const JSON: TJSONData): TResponse; static; overload;
+    class function PatchJSON(const URL: string; const JSON: string; const Headers: array of TKeyValue): TResponse; static; overload;
+    class function PatchJSON(const URL: string; const JSON: TJSONData; const Headers: array of TKeyValue): TResponse; static; overload;
+    class function TryPutJSON(const URL: string; const JSON: string): TRequestResult; static; overload;
+    class function TryPutJSON(const URL: string; const JSON: TJSONData): TRequestResult; static; overload;
+    class function TryPatchJSON(const URL: string; const JSON: string): TRequestResult; static; overload;
+    class function TryPatchJSON(const URL: string; const JSON: TJSONData): TRequestResult; static; overload;
+
     { PATCH sends Data like Put. }
     class function Patch(const URL: string; const Data: string; const Headers: array of TKeyValue; const Params: array of TKeyValue): TResponse; static; overload;
     class function Patch(const URL: string; const Data: string): TResponse; static; overload;
@@ -510,10 +529,26 @@ type
     class procedure SetRetry(MaxRetries, BaseDelayMS: Integer); static;
     class function GetRetryCount: Integer; static;
     class function GetRetryDelay: Integer; static;
+
+    { Connect timeout in milliseconds for all Http requests (default 3000).
+      0 uses the operating system's default. Exceeding it raises
+      ETimeoutError. Sessions have their own SetConnectTimeout. }
+    class procedure SetConnectTimeout(Milliseconds: Integer); static;
+    class function GetConnectTimeout: Integer; static;
+
+    { Sends http:// requests through an HTTP proxy. FPC 3.2.2 cannot tunnel
+      HTTPS through a proxy, so an https:// request raises ERequestError
+      while a proxy is set. SetProxy('', 0) removes it. }
+    class procedure SetProxy(const Host: string; Port: Integer;
+      const UserName: string = ''; const Password: string = ''); static;
   end;
 
 { Short key/value helper for headers, query parameters, forms, and multipart data. }
 function KV(const Key, Value: string): TKeyValue;
+{ Authorization header for HTTP Basic auth. }
+function KVBasic(const UserName, Password: string): TKeyValue;
+{ Authorization header for a bearer token. }
+function KVBearer(const Token: string): TKeyValue;
 
 { Loads OpenSSL if it is not loaded yet. HTTPS requests call this
   automatically; call it at startup to fail fast on a missing OpenSSL.
@@ -539,6 +574,13 @@ function ExecuteRequest(Client: TFPHTTPClient; const Method, URL: string;
 { Parses an HTTP or cookie date such as "Wed, 21 Oct 2015 07:28:00 GMT" or
   "Wednesday, 21-Oct-15 07:28:00 GMT" into a UTC TDateTime. }
 function TryParseHTTPDate(const S: string; out Value: TDateTime): Boolean;
+{ For an OnRedirect handler: removes the Authorization header when a redirect
+  leaves the original host, so credentials are not sent to another server. }
+procedure DropAuthOnHostChange(Client: TFPHTTPClient; const Source,
+  Dest: string);
+{ Raises ERequestError for an https:// URL while Client has a proxy set,
+  because FPC 3.2.2 cannot tunnel HTTPS through a proxy. }
+procedure CheckProxySupport(Client: TFPHTTPClient; const URL: string);
 { Appends URL-encoded Params to URL. }
 function AppendQueryParams(const URL: string;
   const Params: array of TKeyValue): string;
@@ -559,7 +601,7 @@ const
 implementation
 
 uses
-  ssockets, DateUtils;
+  ssockets, DateUtils, base64, URIParser;
 
 const
   FORM_CONTENT_TYPE = 'application/x-www-form-urlencoded';
@@ -572,6 +614,11 @@ var
   GDefaultTimeout: Integer = 30000;
   GRetryCount: Integer = DEFAULT_RETRY_COUNT;
   GRetryDelay: Integer = DEFAULT_RETRY_DELAY_MS;
+  GConnectTimeout: Integer = 3000;
+  GProxyHost: string = '';
+  GProxyPort: Integer = 0;
+  GProxyUser: string = '';
+  GProxyPassword: string = '';
  
 function ReadStreamAsUTF8String(AStream: TStream): string;
 var
@@ -818,6 +865,17 @@ begin
   Result := TKeyValue.Create(Key, Value);
 end;
 
+function KVBasic(const UserName, Password: string): TKeyValue;
+begin
+  Result := KV('Authorization', 'Basic ' +
+    EncodeStringBase64(UserName + ':' + Password));
+end;
+
+function KVBearer(const Token: string): TKeyValue;
+begin
+  Result := KV('Authorization', 'Bearer ' + Token);
+end;
+
 { TResponse }
 
 // Advanced record management: TResponse uses Initialize, Finalize, and Copy operators
@@ -929,6 +987,62 @@ begin
   end;
 end;
 
+function TResponse.HeaderValues(const Name: string): TStringArray;
+var
+  Lines: TStringList;
+  I, P, N: Integer;
+begin
+  Result := nil;
+  N := 0;
+  Lines := TStringList.Create;
+  try
+    Lines.Text := FHeaders;
+    for I := 0 to Lines.Count - 1 do
+    begin
+      P := Pos(':', Lines[I]);
+      if (P > 0) and SameText(Trim(Copy(Lines[I], 1, P - 1)), Name) then
+      begin
+        SetLength(Result, N + 1);
+        Result[N] := Trim(Copy(Lines[I], P + 1, MaxInt));
+        Inc(N);
+      end;
+    end;
+  finally
+    Lines.Free;
+  end;
+end;
+
+function TResponse.HeaderNames: TStringArray;
+var
+  Lines, Seen: TStringList;
+  I, P: Integer;
+  Key: string;
+begin
+  Result := nil;
+  Lines := TStringList.Create;
+  Seen := TStringList.Create;
+  try
+    Seen.CaseSensitive := False;
+    Lines.Text := FHeaders;
+    for I := 0 to Lines.Count - 1 do
+    begin
+      P := Pos(':', Lines[I]);
+      if P <= 0 then
+        Continue;
+      Key := Trim(Copy(Lines[I], 1, P - 1));
+      if (Key <> '') and (Seen.IndexOf(Key) < 0) then
+      begin
+        Seen.Add(Key);
+        SetLength(Result, Length(Result) + 1);
+        Result[High(Result)] := Key;
+      end;
+    end;
+  finally
+    Seen.Free;
+    Lines.Free;
+  end;
+end;
+
 procedure TResponse.SetHeadersText(const AHeaders: string);
 begin
   FHeaders := AHeaders;
@@ -979,6 +1093,45 @@ begin
 end;
 
 { Shared request pipeline }
+
+procedure DropAuthOnHostChange(Client: TFPHTTPClient; const Source,
+  Dest: string);
+var
+  DestHost: string;
+  Idx: Integer;
+begin
+  DestHost := ParseURI(Dest).Host;
+  if (DestHost = '') or SameText(DestHost, ParseURI(Source).Host) then
+    Exit;
+  Idx := Client.RequestHeaders.IndexOfName('Authorization');
+  if Idx >= 0 then
+    Client.RequestHeaders.Delete(Idx);
+end;
+
+procedure CheckProxySupport(Client: TFPHTTPClient; const URL: string);
+begin
+  if (Pos('https://', LowerCase(URL)) = 1) and (Client.Proxy.Host <> '') and
+     (Client.Proxy.Port > 0) then
+    raise ERequestError.Create('HTTPS through a proxy is not supported ' +
+      '(FPC 3.2.2 has no CONNECT tunnel); remove the proxy for https:// URLs');
+end;
+
+type
+  { OnRedirect handler for stateless clients. }
+  TRedirectGuard = class
+  public
+    procedure HandleRedirect(Sender: TObject; const ASrc: string;
+      var ADest: string);
+  end;
+
+procedure TRedirectGuard.HandleRedirect(Sender: TObject; const ASrc: string;
+  var ADest: string);
+begin
+  DropAuthOnHostChange(TFPHTTPClient(Sender), ASrc, ADest);
+end;
+
+var
+  GRedirectGuard: TRedirectGuard = nil;
 
 function TryParseHTTPDate(const S: string; out Value: TDateTime): Boolean;
 const
@@ -1223,6 +1376,7 @@ begin
   try
     StartTick := GetTickCount64;
     try
+      CheckProxySupport(Client, URL);
       if Pos('https://', LowerCase(URL)) = 1 then
         EnsureSSL;
       if Assigned(Body) then
@@ -1382,7 +1536,16 @@ var
 begin
   Result := TFPHTTPClient.Create(nil);
   Result.AllowRedirect := True;
+  Result.OnRedirect := @GRedirectGuard.HandleRedirect;
   Result.IOTimeout := GDefaultTimeout;
+  Result.ConnectTimeout := GConnectTimeout;
+  if GProxyHost <> '' then
+  begin
+    Result.Proxy.Host := GProxyHost;
+    Result.Proxy.Port := GProxyPort;
+    Result.Proxy.UserName := GProxyUser;
+    Result.Proxy.Password := GProxyPassword;
+  end;
   for I := 0 to High(Headers) do
     Result.RequestHeaders.Add(Headers[I].Key + ': ' + Headers[I].Value);
   if (DefaultContentType <> '') and not HasHeader(Headers, 'Content-Type') then
@@ -1712,6 +1875,27 @@ end;
 class function THttp.GetRetryDelay: Integer;
 begin
   Result := GRetryDelay;
+end;
+
+class procedure THttp.SetConnectTimeout(Milliseconds: Integer);
+begin
+  if Milliseconds < 0 then
+    Milliseconds := 0;
+  GConnectTimeout := Milliseconds;
+end;
+
+class function THttp.GetConnectTimeout: Integer;
+begin
+  Result := GConnectTimeout;
+end;
+
+class procedure THttp.SetProxy(const Host: string; Port: Integer;
+  const UserName: string; const Password: string);
+begin
+  GProxyHost := Host;
+  GProxyPort := Port;
+  GProxyUser := UserName;
+  GProxyPassword := Password;
 end;
 
 class function THttp.GetTimeout: Integer;
@@ -2274,7 +2458,100 @@ begin
   Result := TryStreamGet(URL, Stream, Headers, Params, nil, OnProgress);
 end;
 
+{ PUT/PATCH JSON }
+
+function SendJSON(const Method, URL: string; const JSON: string;
+  const Headers: array of TKeyValue): TResponse;
+begin
+  Result := SendText(Method, URL, JSON, True, 'application/json', Headers, []);
+end;
+
+function SendJSONData(const Method, URL: string; JSON: TJSONData;
+  const Headers: array of TKeyValue): TResponse;
+begin
+  if JSON = nil then
+    raise ERequestError.Create('JSON data cannot be nil');
+  Result := SendJSON(Method, URL, JSON.AsJSON, Headers);
+end;
+
+function TrySendJSON(const Method, URL: string; const JSON: string;
+  JSONData: TJSONData; UseData: Boolean): TRequestResult;
+begin
+  try
+    if UseData then
+      Result.Response := SendJSONData(Method, URL, JSONData, [])
+    else
+      Result.Response := SendJSON(Method, URL, JSON, []);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+      SetTryFailure(Result, E);
+  end;
+end;
+
+class function THttp.PutJSON(const URL: string; const JSON: string): TResponse;
+begin
+  Result := SendJSON('PUT', URL, JSON, []);
+end;
+
+class function THttp.PutJSON(const URL: string; const JSON: TJSONData): TResponse;
+begin
+  Result := SendJSONData('PUT', URL, JSON, []);
+end;
+
+class function THttp.PutJSON(const URL: string; const JSON: string; const Headers: array of TKeyValue): TResponse;
+begin
+  Result := SendJSON('PUT', URL, JSON, Headers);
+end;
+
+class function THttp.PutJSON(const URL: string; const JSON: TJSONData; const Headers: array of TKeyValue): TResponse;
+begin
+  Result := SendJSONData('PUT', URL, JSON, Headers);
+end;
+
+class function THttp.PatchJSON(const URL: string; const JSON: string): TResponse;
+begin
+  Result := SendJSON('PATCH', URL, JSON, []);
+end;
+
+class function THttp.PatchJSON(const URL: string; const JSON: TJSONData): TResponse;
+begin
+  Result := SendJSONData('PATCH', URL, JSON, []);
+end;
+
+class function THttp.PatchJSON(const URL: string; const JSON: string; const Headers: array of TKeyValue): TResponse;
+begin
+  Result := SendJSON('PATCH', URL, JSON, Headers);
+end;
+
+class function THttp.PatchJSON(const URL: string; const JSON: TJSONData; const Headers: array of TKeyValue): TResponse;
+begin
+  Result := SendJSONData('PATCH', URL, JSON, Headers);
+end;
+
+class function THttp.TryPutJSON(const URL: string; const JSON: string): TRequestResult;
+begin
+  Result := TrySendJSON('PUT', URL, JSON, nil, False);
+end;
+
+class function THttp.TryPutJSON(const URL: string; const JSON: TJSONData): TRequestResult;
+begin
+  Result := TrySendJSON('PUT', URL, '', JSON, True);
+end;
+
+class function THttp.TryPatchJSON(const URL: string; const JSON: string): TRequestResult;
+begin
+  Result := TrySendJSON('PATCH', URL, JSON, nil, False);
+end;
+
+class function THttp.TryPatchJSON(const URL: string; const JSON: TJSONData): TRequestResult;
+begin
+  Result := TrySendJSON('PATCH', URL, '', JSON, True);
+end;
+
 initialization
+  GRedirectGuard := TRedirectGuard.Create;
   { OpenSSL loads lazily on the first HTTPS request. Only pick the
     library names here so FPC's own loader finds OpenSSL 3 as well. }
   {$IFDEF WINDOWS}
@@ -2289,5 +2566,6 @@ initialization
 
 finalization
   // OpenSSL cleanup is handled by opensslsockets unit
+  FreeAndNil(GRedirectGuard);
 
 end.

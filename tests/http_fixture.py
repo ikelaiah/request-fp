@@ -246,6 +246,17 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             self.close_connection = True
+        elif path == "/proxy-echo":
+            # When used as an HTTP proxy, the request target is the full URL.
+            self.send_json(
+                {
+                    "target": self.path,
+                    "host": self.headers.get("Host", ""),
+                    "proxy_authorization": self.headers.get(
+                        "Proxy-Authorization", ""
+                    ),
+                }
+            )
         elif path == "/health":
             self.send_bytes(200, b"ok", "text/plain; charset=utf-8")
         elif path == "/html":

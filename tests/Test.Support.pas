@@ -7,6 +7,8 @@ interface
 function TestBaseURL: string;
 function TestURL(const Path: string): string;
 function TestFailureURL: string;
+{ Host and port of the local test server; False when tests use another server. }
+function LocalFixtureHostPort(out Host: string; out Port: Integer): Boolean;
 
 implementation
 
@@ -37,6 +39,22 @@ begin
   Result := GetEnvironmentVariable('REQUEST_FP_TEST_FAILURE_URL');
   if Result = '' then
     Result := 'http://127.0.0.1:1';
+end;
+
+function LocalFixtureHostPort(out Host: string; out Port: Integer): Boolean;
+var
+  Base: string;
+  P: Integer;
+begin
+  Base := TestBaseURL;
+  Host := '';
+  Port := 0;
+  Result := Pos('http://127.0.0.1:', Base) = 1;
+  if not Result then
+    Exit;
+  Host := '127.0.0.1';
+  P := Length('http://127.0.0.1:') + 1;
+  Result := TryStrToInt(Copy(Base, P, MaxInt), Port);
 end;
 
 end.

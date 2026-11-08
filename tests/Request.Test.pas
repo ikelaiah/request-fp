@@ -89,6 +89,13 @@ type
     procedure Test48_RetryOnDroppedConnection;
     procedure Test49_TimeoutIsNotRetried;
     procedure Test50_RetryDefaultsAndDownload;
+    // Helpers
+    procedure Test51_AuthHeaderHelpers;
+    procedure Test52_PutAndPatchJSON;
+    procedure Test53_HeaderValuesAndNames;
+    procedure Test54_ConnectTimeoutSetting;
+    procedure Test55_ProxyForHTTP;
+    procedure Test56_CrossHostRedirectDropsAuth;
   end;
 
 implementation
@@ -1299,6 +1306,161 @@ begin
   finally
     DeleteFile(Path);
   end;
+end;
+
+{ Helpers }
+
+procedure TRequestSimpleTests.Test51_AuthHeaderHelpers;
+var
+  R: TResponse;
+begin
+  AssertEquals('Basic header name', 'Authorization', KVBasic('user', 'pass').Key);
+  AssertEquals('Basic value', 'Basic dXNlcjpwYXNz', KVBasic('user', 'pass').Value);
+  AssertEquals('Bearer value', 'Bearer abc', KVBearer('abc').Value);
+  R := Http.Get(TestURL('/headers'), [KVBearer('abc')]);
+  AssertEquals('Bearer sent', 'Bearer abc',
+    R.JSON.FindPath('headers.Authorization').AsString);
+end;
+
+procedure TRequestSimpleTests.Test52_PutAndPatchJSON;
+var
+  R: TResponse;
+  Obj: TJSONObject;
+  Res: TRequestResult;
+begin
+  R := Http.PutJSON(TestURL('/put'), '{"a":1}');
+  AssertEquals('PUT status', 200, R.StatusCode);
+  AssertEquals('PUT JSON body', 1, R.JSON.FindPath('json.a').AsInteger);
+  AssertEquals('PUT content type', 'application/json',
+    R.JSON.FindPath('headers.Content-Type').AsString);
+
+  Obj := TJSONObject.Create(['b', 2]);
+  try
+    R := Http.PatchJSON(TestURL('/patch'), Obj);
+  finally
+    Obj.Free;
+  end;
+  AssertEquals('PATCH JSON body', 2, R.JSON.FindPath('json.b').AsInteger);
+
+  R := Http.PutJSON(TestURL('/put'), '{}',
+    [KV('Content-Type', 'application/merge-patch+json')]);
+  AssertEquals('Custom content type wins', 'application/merge-patch+json',
+    R.JSON.FindPath('headers.Content-Type').AsString);
+
+  Res := Http.TryPatchJSON(TestURL('/patch'), TJSONData(nil));
+  AssertFalse('nil JSON is reported', Res.Success);
+  AssertTrue('nil JSON message', Pos('cannot be nil', Res.Error) > 0);
+
+  Res := Http.TryPutJSON(TestFailureURL + '/put', '{}');
+  AssertFalse('Transport failure reported', Res.Success);
+end;
+
+procedure TRequestSimpleTests.Test53_HeaderValuesAndNames;
+var
+  R: TResponse;
+  Values, Names: TStringArray;
+  I, SetCookieCount: Integer;
+begin
+  R := Http.Get(TestURL('/set-cookie?a=1&b=2'));
+  Values := R.HeaderValues('set-cookie');
+  AssertEquals('Both Set-Cookie values', 2, Length(Values));
+  AssertEquals('First value in order', 'a=1; Path=/', Values[0]);
+  AssertEquals('Second value in order', 'b=2; Path=/', Values[1]);
+  AssertEquals('Missing header gives no values', 0,
+    Length(R.HeaderValues('X-Missing')));
+
+  Names := R.HeaderNames;
+  SetCookieCount := 0;
+  for I := 0 to High(Names) do
+    if SameText(Names[I], 'Set-Cookie') then
+      Inc(SetCookieCount);
+  AssertEquals('Names have no duplicates', 1, SetCookieCount);
+  AssertTrue('Content-Type listed',
+    (Length(Names) > 1) and (R.HeaderValue('Content-Type') <> ''));
+end;
+
+procedure TRequestSimpleTests.Test54_ConnectTimeoutSetting;
+var
+  Raised: Boolean;
+begin
+  AssertEquals('Default connect timeout', 3000, Http.GetConnectTimeout);
+  Http.SetConnectTimeout(-5);
+  AssertEquals('Negative becomes 0', 0, Http.GetConnectTimeout);
+  Http.SetConnectTimeout(1500);
+  try
+    AssertEquals('Value kept', 1500, Http.GetConnectTimeout);
+    Raised := False;
+    try
+      Http.Get(TestFailureURL);
+    except
+      on E: ENetworkError do
+        Raised := True;
+    end;
+    AssertTrue('Failure still raises ENetworkError', Raised);
+  finally
+    Http.SetConnectTimeout(3000);
+  end;
+end;
+
+procedure TRequestSimpleTests.Test55_ProxyForHTTP;
+var
+  R: TResponse;
+  Res: TRequestResult;
+  Host: string;
+  Port: Integer;
+  Msg: string;
+begin
+  if not LocalFixtureHostPort(Host, Port) then
+    Exit; // The local test server doubles as the proxy.
+  Http.SetProxy(Host, Port, 'proxyuser', 'proxypass');
+  try
+    R := Http.Get('http://example.invalid/proxy-echo');
+    AssertEquals('Status via proxy', 200, R.StatusCode);
+    AssertEquals('Absolute URL sent to the proxy',
+      'http://example.invalid/proxy-echo', R.JSON.FindPath('target').AsString);
+    AssertEquals('Host header is the target', 'example.invalid',
+      R.JSON.FindPath('host').AsString);
+    AssertEquals('Proxy credentials', KVBasic('proxyuser', 'proxypass').Value,
+      R.JSON.FindPath('proxy_authorization').AsString);
+
+    Msg := '';
+    try
+      Http.Get('https://example.invalid/');
+    except
+      on E: ERequestError do
+        Msg := E.Message;
+    end;
+    AssertTrue('HTTPS through a proxy is refused clearly: ' + Msg,
+      Pos('HTTPS through a proxy is not supported', Msg) > 0);
+
+    Res := Http.TryGet('https://example.invalid/');
+    AssertFalse('TryGet reports it', Res.Success);
+  finally
+    Http.SetProxy('', 0);
+  end;
+  R := Http.Get(TestURL('/get'));
+  AssertEquals('Proxy removed', 200, R.StatusCode);
+end;
+
+procedure TRequestSimpleTests.Test56_CrossHostRedirectDropsAuth;
+var
+  R: TResponse;
+  OtherHost: string;
+begin
+  R := Http.Get(TestURL('/redirect-to'), [KVBearer('secret')],
+    [KV('url', '/headers')]);
+  AssertEquals('Same-host redirect keeps Authorization', 'Bearer secret',
+    R.JSON.FindPath('headers.Authorization').AsString);
+
+  if Pos('127.0.0.1', TestBaseURL) = 0 then
+    Exit; // Needs the local server, reachable as both 127.0.0.1 and localhost.
+  OtherHost := StringReplace(TestBaseURL, '127.0.0.1', 'localhost', []) +
+    '/headers';
+  R := Http.Get(TestURL('/redirect-to'), [KVBearer('secret')],
+    [KV('url', OtherHost)]);
+  AssertEquals('Final status', 200, R.StatusCode);
+  AssertTrue('Authorization not sent to another host',
+    R.JSON.FindPath('headers.Authorization') = nil);
 end;
 
 procedure TRequestSimpleTests.Test25_SSLInitialization;

@@ -57,10 +57,13 @@ An absolute URL passed to a request method bypasses the base URL.
 Headers set on a session are sent on every request:
 
 ```pascal
-Session.SetHeader('Authorization', 'Bearer ' + Token);
+Session.SetBearerToken(Token);           // Authorization: Bearer ...
+Session.SetBasicAuth('user', 'secret');  // or Authorization: Basic ...
 Session.SetHeader('Accept-Language', 'en-AU');
 Response := Session.Get('/profile');
 ```
+
+`Authorization` is not sent when a redirect goes to a different host.
 
 `ClearHeaders` removes custom headers and restores the default
 `Accept: application/json` header.
@@ -99,6 +102,8 @@ end;
 ```
 
 The caller retains ownership of a JSON value passed to `PostJSON`.
+`PutJSON` and `PatchJSON` (and `TryPutJSON` / `TryPatchJSON`) work the same
+way.
 
 For other content types, use `Post` or `Put` directly:
 
@@ -177,7 +182,21 @@ Session.SetTimeout(10000);
 ```
 
 The new timeout applies to the current connection and later calls. A request
-that exceeds it raises `ETimeoutError`.
+that exceeds it raises `ETimeoutError`. The connect timeout is separate:
+
+```pascal
+Session.SetConnectTimeout(5000);  // default 3000
+```
+
+## Proxy
+
+```pascal
+Session.SetProxy('proxy.local', 3128, 'user', 'secret');
+Session.SetProxy('', 0);  // remove
+```
+
+Like `Http.SetProxy`, this covers `http://` URLs only; `https://` requests
+raise `ERequestError` while a proxy is set.
 
 ## Retries
 
@@ -253,6 +272,8 @@ THttpSession = record
     const ContentType: string = 'application/x-www-form-urlencoded'): TResponse;
   function PostJSON(const URL: string; const JSON: string): TResponse;
   function PostJSON(const URL: string; const JSON: TJSONData): TResponse;
+  function PutJSON(const URL: string; const JSON: string): TResponse;  // also TJSONData
+  function PatchJSON(const URL: string; const JSON: string): TResponse; // also TJSONData
   function PostForm(const URL: string; const Fields: array of TKeyValue): TResponse;
   function PostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TResponse;
   function Put(const URL: string; const Body: string = '';
@@ -280,6 +301,11 @@ THttpSession = record
   procedure SetUserAgent(const UserAgent: string);
   procedure SetTimeout(Timeout: Integer);
   procedure SetRetry(MaxRetries, BaseDelayMS: Integer);
+  procedure SetConnectTimeout(Timeout: Integer);
+  procedure SetProxy(const Host: string; Port: Integer;
+    const UserName: string = ''; const Password: string = '');
+  procedure SetBasicAuth(const UserName, Password: string);
+  procedure SetBearerToken(const Token: string);
 
   // State
   procedure ClearCookies;
