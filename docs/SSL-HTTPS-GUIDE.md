@@ -44,13 +44,27 @@ loading behavior and troubleshooting steps.
 
 ## Linux setup
 
-Install the OpenSSL package supplied by the distribution. For example:
+Install the distribution's OpenSSL 3 runtime. For example:
 
 ```bash
-sudo apt-get install libssl-dev
+sudo apt-get install libssl3      # Debian/Ubuntu
+sudo dnf install openssl-libs     # Fedora/RHEL
 ```
 
-Request-FP uses FPC's normal Unix library discovery on Linux.
+FPC 3.2.2 only finds OpenSSL 3 through the unversioned `libssl.so` link that
+the `-dev` package installs. Since v1.5.0, Request-FP also adds `.3` to FPC's
+version search, so the runtime package is enough.
+
+## macOS setup
+
+```bash
+brew install openssl@3
+```
+
+macOS does not let applications load its own `libcrypto`, and FPC does not
+search Homebrew's directory. Request-FP looks for OpenSSL 3 in
+`/opt/homebrew/opt/openssl@3/lib` (Apple silicon),
+`/usr/local/opt/openssl@3/lib` (Intel), and `/opt/local/lib` (MacPorts).
 
 ## Enforcing HTTPS in an application
 

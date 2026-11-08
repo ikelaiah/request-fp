@@ -9,6 +9,7 @@
 [![Lazarus](https://img.shields.io/badge/Lazarus-4.8+-60A5FA.svg)](https://www.lazarus-ide.org/)
 ![Supports Windows](https://img.shields.io/badge/support-Windows-F59E0B?logo=Windows)
 ![Supports Linux](https://img.shields.io/badge/support-Linux-F59E0B?logo=Linux)
+![Supports macOS](https://img.shields.io/badge/support-macOS-F59E0B?logo=Apple)
 [![Version](https://img.shields.io/badge/version-1.4.0-8B5CF6.svg)](CHANGELOG.md)
 
 An easy, memory-safe HTTP client for Free Pascal. Request-FP wraps FPC's HTTP
@@ -235,10 +236,11 @@ complete API.
 Requirements:
 
 - Free Pascal 3.2.2+ or Lazarus 4.8+
-- Windows or Linux
+- Windows, Linux, or macOS
 - OpenSSL libraries for HTTPS
 
-On Linux, install the distribution's OpenSSL development package. On Windows,
+On Linux, the OpenSSL 3 runtime (`libssl3`) is enough. On macOS, install
+OpenSSL 3 with Homebrew (`brew install openssl@3`) or MacPorts. On Windows,
 the OpenSSL DLL architecture must match the executable architecture.
 Request-FP automatically handles FPC 3.2.2's OpenSSL 3 DLL-name issue
 and retains its OpenSSL 1.1 fallback; applications do not need to patch FPC.
@@ -311,9 +313,11 @@ Linux or Git Bash:
 bash ./build-examples.sh
 ```
 
-Both scripts require `lazbuild` on `PATH`. They discover all `.lpi` projects
-under `examples/`, skip Lazarus backup directories, and clean `example-bin/`
-before compiling. The generated directory is ignored by Git.
+The scripts use `lazbuild` when it is on `PATH`. Without Lazarus,
+`build-examples.sh` compiles each example with `fpc` directly (force this with
+`--fpc`). They discover all `.lpi` projects under `examples/`, skip Lazarus
+backup directories, and clean `example-bin/` before compiling. The generated
+directory is ignored by Git.
 
 Run an example after building:
 
@@ -327,17 +331,21 @@ Run an example after building:
 
 ## Testing
 
-Build the suite with Lazarus or:
+The run scripts build the suite, start the local test server
+(`tests/http_fixture.py`, needs Python 3), and run every test:
 
 ```bash
-lazbuild --build-mode=Release tests/TestRunner.lpi
-tests/TestRunner.exe -a --format=plain
+./run-tests.sh                # Linux, macOS, Git Bash
+./run-tests.sh --leak-check   # Debug build; fails on unfreed memory
 ```
 
-On Linux, run `tests/TestRunner`. CI starts `tests/http_fixture.py` and points
-the suite at that local service, so CI does not depend on a public HTTP test
-service. A direct local run without `REQUEST_FP_TEST_BASE_URL` falls back to
-`https://httpbin.org` and therefore requires network access.
+```powershell
+.\run-tests.ps1
+.\run-tests.ps1 -LeakCheck
+```
+
+They use `lazbuild` when available and `fpc` otherwise. No network access is
+needed. CI runs both modes on Linux, Windows, and macOS.
 
 ## Contributing
 

@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
 
+env:
+  EXPECTED_EXAMPLES: 13
+
 jobs:
   linux:
     name: Linux (Lazarus 4.8)
@@ -63,54 +66,28 @@ jobs:
         run: |
           set -euo pipefail
           output_count="$(find example-bin -maxdepth 1 -type f | wc -l)"
-          if [[ "$output_count" -ne 13 ]]; then
-            echo "Expected 13 example executables, found $output_count." >&2
+          if [[ "$output_count" -ne "$EXPECTED_EXAMPLES" ]]; then
+            echo "Expected $EXPECTED_EXAMPLES example executables, found $output_count." >&2
             exit 1
           fi
-
-      - name: Build test runner
-        shell: bash
-        run: >-
-          lazbuild
-          --quiet
-          --quiet
-          --build-all
-          --build-mode=Release
-          --no-write-project
-          tests/TestRunner.lpi
 
       - name: Run tests
         shell: bash
+        run: ./run-tests.sh
+
+      - name: Run tests with leak check
+        shell: bash
+        run: ./run-tests.sh --leak-check
+
+      - name: Load OpenSSL 3 without the -dev package
+        shell: bash
         run: |
           set -euo pipefail
-
-          python3 tests/http_fixture.py --port 18080 &
-          fixture_pid="$!"
-          cleanup() {
-            kill "$fixture_pid" 2>/dev/null || true
-            wait "$fixture_pid" 2>/dev/null || true
-          }
-          trap cleanup EXIT
-
-          fixture_ready=false
-          for _ in {1..50}; do
-            if curl --fail --silent http://127.0.0.1:18080/health \
-              > /dev/null; then
-              fixture_ready=true
-              break
-            fi
-            if ! kill -0 "$fixture_pid" 2>/dev/null; then
-              break
-            fi
-            sleep 0.1
-          done
-          if [[ "$fixture_ready" != true ]]; then
-            echo "Local HTTP fixture failed to start." >&2
-            exit 1
-          fi
-
-          export REQUEST_FP_TEST_BASE_URL=http://127.0.0.1:18080
-          ./tests/TestRunner -a --format=plain
+          # Remove the unversioned symlinks that libssl-dev provides, so the
+          # loader must find libssl.so.3 / libcrypto.so.3 by version.
+          lib_dir="/usr/lib/$(gcc -dumpmachine)"
+          sudo rm -f "$lib_dir/libssl.so" "$lib_dir/libcrypto.so"
+          ./tests/TestRunner --suite=Test25_SSLInitialization --format=plain
 
   windows:
     name: Windows (Lazarus 4.8)
@@ -231,73 +208,58 @@ jobs:
           $outputCount = @(
             Get-ChildItem -LiteralPath .\example-bin -File
           ).Count
-          if ($outputCount -ne 13) {
-            throw "Expected 13 example executables, found $outputCount."
-          }
-
-      - name: Build test runner
-        shell: pwsh
-        run: |
-          & lazbuild `
-            '--quiet' `
-            '--quiet' `
-            '--build-all' `
-            '--build-mode=Release' `
-            '--no-write-project' `
-            'tests\TestRunner.lpi'
-          if ($LASTEXITCODE -ne 0) {
-            throw "Test runner build failed with exit code $LASTEXITCODE."
+          if ($outputCount -ne [int]$env:EXPECTED_EXAMPLES) {
+            throw "Expected $env:EXPECTED_EXAMPLES example executables, found $outputCount."
           }
 
       - name: Run tests
         shell: pwsh
+        run: .\run-tests.ps1
+
+      - name: Run tests with leak check
+        shell: pwsh
+        run: .\run-tests.ps1 -LeakCheck
+
+  macos:
+    name: macOS (FPC 3.2.2, Homebrew)
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install FPC and OpenSSL 3
+        shell: bash
         run: |
-          $ErrorActionPreference = 'Stop'
-          $fixture = Start-Process `
-            -FilePath python.exe `
-            -ArgumentList @(
-              'tests\http_fixture.py'
-              '--port'
-              '18080'
-            ) `
-            -PassThru `
-            -WindowStyle Hidden
+          set -euo pipefail
+          brew install fpc openssl@3
 
-          try {
-            $fixtureReady = $false
-            for ($attempt = 0; $attempt -lt 50; $attempt++) {
-              try {
-                $response = Invoke-WebRequest `
-                  -Uri 'http://127.0.0.1:18080/health' `
-                  -UseBasicParsing
-                if ($response.StatusCode -eq 200) {
-                  $fixtureReady = $true
-                  break
-                }
-              }
-              catch {
-                if ($fixture.HasExited) {
-                  break
-                }
-                Start-Sleep -Milliseconds 100
-              }
-            }
+      - name: Verify compiler version
+        shell: bash
+        run: |
+          set -euo pipefail
+          fpc -iV
+          test "$(fpc -iV)" = "3.2.2"
 
-            if (-not $fixtureReady) {
-              throw 'Local HTTP fixture failed to start.'
-            }
+      - name: Build all examples
+        shell: bash
+        run: bash ./build-examples.sh --fpc
 
-            $env:REQUEST_FP_TEST_BASE_URL = 'http://127.0.0.1:18080'
-            & .\tests\TestRunner.exe -a --format=plain
-            if ($LASTEXITCODE -ne 0) {
-              throw "Test suite failed with exit code $LASTEXITCODE."
-            }
-          }
-          finally {
-            if (-not $fixture.HasExited) {
-              Stop-Process `
-                -Id $fixture.Id `
-                -Force `
-                -ErrorAction SilentlyContinue
-            }
-          }
+      - name: Verify example outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          output_count="$(find example-bin -maxdepth 1 -type f | wc -l | tr -d ' ')"
+          if [[ "$output_count" -ne "$EXPECTED_EXAMPLES" ]]; then
+            echo "Expected $EXPECTED_EXAMPLES example executables, found $output_count." >&2
+            exit 1
+          fi
+
+      - name: Run tests
+        shell: bash
+        run: ./run-tests.sh --fpc
+
+      - name: Run tests with leak check
+        shell: bash
+        run: ./run-tests.sh --fpc --leak-check
