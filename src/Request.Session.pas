@@ -88,6 +88,8 @@ type
     function GetFullURL(const URL: string): string;
     procedure SetupRequest(Client: TFPHTTPClient);
     procedure UpdateCookies(Headers: TStrings);
+    function DoRequest(const Method, URL: string; const Body: string;
+      const ContentType: string; HasBody: Boolean): TResponse;
     
   public
     { Advanced record management: see Initialize, Finalize, and Copy operators below. }
@@ -399,71 +401,63 @@ begin
   end;
 end;
 
-function THttpSession.Get(const URL: string): TResponse;
-var
-  Client: TFPHTTPClient;
-  ResponseStream: TMemoryStream;
-  Headers: TStringList;
-begin
-  Client := GetClient;
-  SetupRequest(Client);
-  
-  ResponseStream := TMemoryStream.Create;
-  Headers := TStringList.Create;
-  try
-    try
-      // Make the request using our configured client
-      Client.Get(GetFullURL(URL), ResponseStream);
-      
-      // Set the response status code
-      Result.StatusCode := Client.ResponseStatusCode;
-      // Always set content, regardless of Content-Type
-      Result.SetContent(ReadStreamAsUTF8String(ResponseStream));
-      // Capture response headers for downstream access
-      Result.SetHeadersText(Client.ResponseHeaders.Text);
-      // Update cookies from response
-      UpdateCookies(Client.ResponseHeaders);
-    except
-      on E: Exception do
-        raise ERequestError.Create('GET request failed: ' + E.Message);
-    end;
-  finally
-    ResponseStream.Free;
-    Headers.Free;
-  end;
-end;
-
-function THttpSession.Post(const URL: string; const Body: string; const ContentType: string): TResponse;
+function THttpSession.DoRequest(const Method, URL: string; const Body: string;
+  const ContentType: string; HasBody: Boolean): TResponse;
 var
   Client: TFPHTTPClient;
   RequestBody: TStringStream;
   ResponseStream: TMemoryStream;
+  FullURL: string;
 begin
-  Client := GetClient;
-  SetupRequest(Client);
-
-  // Set Content-Type header
-  if ContentType <> '' then
-    Client.AddHeader('Content-Type', ContentType);
-
-  RequestBody := TStringStream.Create(Body);
+  FullURL := GetFullURL(URL);
+  RequestBody := nil;
   ResponseStream := TMemoryStream.Create;
   try
     try
-      Client.RequestBody := RequestBody;
-      Client.HTTPMethod('POST', GetFullURL(URL), ResponseStream, [200, 201, 204]);
+      if Pos('https://', LowerCase(FullURL)) = 1 then
+        EnsureSSL;
+
+      Client := GetClient;
+      SetupRequest(Client);
+      if HasBody then
+      begin
+        if ContentType <> '' then
+          Client.AddHeader('Content-Type', ContentType);
+        RequestBody := TStringStream.Create(Body);
+        Client.RequestBody := RequestBody;
+      end;
+
+      try
+        // Accept any status; callers inspect StatusCode, OK, or RaiseForStatus.
+        Client.HTTPMethod(Method, FullURL, ResponseStream, []);
+      finally
+        Client.RequestBody := nil;
+      end;
+
       Result.StatusCode := Client.ResponseStatusCode;
       Result.SetContent(ReadStreamAsUTF8String(ResponseStream));
-      // Capture response headers for downstream access
       Result.SetHeadersText(Client.ResponseHeaders.Text);
       UpdateCookies(Client.ResponseHeaders);
-    finally
-      Client.RequestBody := nil;
+    except
+      on E: ERequestError do
+        raise;
+      on E: Exception do
+        raise ERequestError.Create(Method + ' request failed: ' + E.Message);
     end;
   finally
     RequestBody.Free;
     ResponseStream.Free;
   end;
+end;
+
+function THttpSession.Get(const URL: string): TResponse;
+begin
+  Result := DoRequest('GET', URL, '', '', False);
+end;
+
+function THttpSession.Post(const URL: string; const Body: string; const ContentType: string): TResponse;
+begin
+  Result := DoRequest('POST', URL, Body, ContentType, True);
 end;
 
 function THttpSession.PostJSON(const URL: string; const JSON: string): TResponse;
@@ -481,77 +475,13 @@ end;
 
 function THttpSession.Put(const URL: string; const Body: string; 
                         const ContentType: string): TResponse;
-var
-  Client: TFPHTTPClient;
-  RequestBody: TStringStream;
-  ResponseStream: TMemoryStream;
 begin
-  Client := GetClient;
-  SetupRequest(Client);
-  
-  // Set content type
-  if ContentType <> '' then
-    Client.AddHeader('Content-Type', ContentType);
-  
-  RequestBody := TStringStream.Create(Body);
-  ResponseStream := TMemoryStream.Create;
-  try
-    try
-      // Make the request
-      Client.RequestBody := RequestBody;
-      try
-        Client.HTTPMethod('PUT', GetFullURL(URL), ResponseStream, [200, 201, 204]);
-      finally
-        Client.RequestBody := nil;
-      end;
-      
-      // Set the response status code
-      Result.StatusCode := Client.ResponseStatusCode;
-      // Always set content, regardless of Content-Type
-      Result.SetContent(ReadStreamAsUTF8String(ResponseStream));
-      // Capture response headers for downstream access
-      Result.SetHeadersText(Client.ResponseHeaders.Text);
-      // Update cookies from response
-      UpdateCookies(Client.ResponseHeaders);
-    except
-      on E: Exception do
-        raise ERequestError.Create('PUT request failed: ' + E.Message);
-    end;
-  finally
-    RequestBody.Free;
-    ResponseStream.Free;
-  end;
+  Result := DoRequest('PUT', URL, Body, ContentType, True);
 end;
 
 function THttpSession.Delete(const URL: string): TResponse;
-var
-  Client: TFPHTTPClient;
-  ResponseStream: TMemoryStream;
 begin
-  Client := GetClient;
-  SetupRequest(Client);
-  
-  ResponseStream := TMemoryStream.Create;
-  try
-    try
-      // Make the request
-      Client.HTTPMethod('DELETE', GetFullURL(URL), ResponseStream, [200, 204]);
-      
-      // Set the response status code
-      Result.StatusCode := Client.ResponseStatusCode;
-      // Always set content, regardless of Content-Type
-      Result.SetContent(ReadStreamAsUTF8String(ResponseStream));
-      // Capture response headers for downstream access
-      Result.SetHeadersText(Client.ResponseHeaders.Text);
-      // Update cookies from response
-      UpdateCookies(Client.ResponseHeaders);
-    except
-      on E: Exception do
-        raise ERequestError.Create('DELETE request failed: ' + E.Message);
-    end;
-  finally
-    ResponseStream.Free;
-  end;
+  Result := DoRequest('DELETE', URL, '', '', False);
 end;
 
 // Session Configuration

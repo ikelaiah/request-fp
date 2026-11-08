@@ -13,7 +13,7 @@ uses
   {$IFDEF WINDOWS}, Windows{$ENDIF};
 
 const
-  REQUEST_FP_VERSION = '1.3.0';
+  REQUEST_FP_VERSION = '1.3.1';
   DEFAULT_USER_AGENT = 'Request-FP/' + REQUEST_FP_VERSION;
   {$IFDEF DEBUG}
     DEBUG_MODE = True;
@@ -77,7 +77,7 @@ type
     function IsSuccessStatus: Boolean;
     // Raises ERequestError when status is outside 200..299
     procedure RaiseForStatus;
-    // Saves response body to a file (UTF-8 as stored in Text)
+    // Saves the response body bytes to a file unchanged (safe for binary data)
     procedure SaveToFile(const FilePath: string);
     
     { Helper method to set the response content and JSON data }
@@ -417,6 +417,11 @@ type
 { Short key/value helper for headers, query parameters, forms, and multipart data. }
 function KV(const Key, Value: string): TKeyValue;
 
+{ Loads OpenSSL if it is not loaded yet. HTTPS requests call this
+  automatically; call it at startup to fail fast on a missing OpenSSL.
+  Raises ERequestError with setup hints on failure. }
+procedure EnsureSSL;
+
 
 const
   Http: THttp = ();
@@ -425,7 +430,6 @@ implementation
 
 var
   SSLInitialized: Boolean = False;
-  FallbackToHttp: Boolean = False;  // For testing environments without OpenSSL
  
 function ReadStreamAsUTF8String(AStream: TStream): string;
 var
@@ -483,49 +487,7 @@ begin
   end;
 end;
 
-{
-  @description Initializes the OpenSSL library for HTTPS requests
-  
-  @usage Called internally before making HTTPS requests
-  
-  @warning Raises ERequestError if SSL libraries cannot be initialized
-           On Unix systems, provides specific installation instructions
-}
-{$IFDEF UNIX}
-procedure InitSSL;
-var
-  ErrorMsg: string;
-begin
-  if not SSLInitialized then
-  begin
-    try
-      if DEBUG_MODE then
-        WriteLn('[DEBUG] Initializing OpenSSL...');
-
-      // Try to dynamically load the SSL libraries
-      InitSSLInterface;
-      SSLInitialized := True;
-
-      if DEBUG_MODE then
-        WriteLn('[DEBUG] OpenSSL initialized successfully (Unix)');
-    except
-      on E: Exception do
-      begin
-        ErrorMsg := 'OpenSSL initialization failed: ' + E.Message + LineEnding +
-                    'You need to install the OpenSSL development libraries:' + LineEnding +
-                    'On Ubuntu/Debian: sudo apt-get install libssl-dev' + LineEnding +
-                    'On Fedora/RHEL: sudo dnf install openssl-devel';
-        WriteLn(ErrorMsg);
-        raise ERequestError.Create(ErrorMsg);
-      end;
-    end;
-  end;
-end;
-{$ELSE}
 {$IFDEF WINDOWS}
-type
-  TEnumModulesCallback = function(hModule: HMODULE; lParam: LPARAM): BOOL; stdcall;
-
 function EnumProcessModules(hProcess: THandle; lphModule: LPDWORD; cb: DWORD; var lpcbNeeded: DWORD): BOOL; stdcall; external 'psapi.dll';
 
 function FindSSLDLLPath(const SearchTerm: string): string;
@@ -574,74 +536,86 @@ begin
 end;
 {$ENDIF}
 
-procedure InitSSL;
+function SSLSetupHint: string;
+begin
+  {$IFDEF WINDOWS}
+  Result :=
+    'Install OpenSSL and copy the required DLLs to your executable folder or add to PATH:' + LineEnding +
+    {$IFDEF CPU64}
+    '  This is a 64-bit executable. You need 64-bit DLLs:' + LineEnding +
+    '  OpenSSL 1.1.x: libssl-1_1-x64.dll and libcrypto-1_1-x64.dll' + LineEnding +
+    '  OpenSSL 3.x: libssl-3-x64.dll and libcrypto-3-x64.dll' + LineEnding +
+    {$ELSE}
+    '  This is a 32-bit executable. You need 32-bit DLLs:' + LineEnding +
+    '  OpenSSL 1.1.x: libssl-1_1.dll and libcrypto-1_1.dll' + LineEnding +
+    '  OpenSSL 3.x: libssl-3.dll and libcrypto-3.dll' + LineEnding +
+    {$ENDIF}
+    'Install via: choco install openssl OR scoop install openssl' + LineEnding +
+    'Or download from: https://slproweb.com/products/Win32OpenSSL.html' + LineEnding +
+    'IMPORTANT: Ensure DLL architecture (32-bit vs 64-bit) matches your executable!';
+  {$ELSE}
+  Result :=
+    'You need to install the OpenSSL development libraries:' + LineEnding +
+    'On Ubuntu/Debian: sudo apt-get install libssl-dev' + LineEnding +
+    'On Fedora/RHEL: sudo dnf install openssl-devel';
+  {$ENDIF}
+end;
+
+procedure EnsureSSL;
 var
   ErrorMsg: string;
   {$IFDEF WINDOWS}
   SSLPath, CryptoPath: string;
   {$ENDIF}
 begin
-  if not SSLInitialized then
-  begin
-    try
-      if DEBUG_MODE then
-        WriteLn('[DEBUG] Initializing OpenSSL...');
+  if SSLInitialized then
+    Exit;
 
-      ConfigureOpenSSL3LibraryNames;
-      if not InitSSLInterface then
-        raise ERequestError.Create('Could not initialize OpenSSL library');
-      SSLInitialized := True;
+  try
+    if DEBUG_MODE then
+      WriteLn('[DEBUG] Initializing OpenSSL...');
 
-      if DEBUG_MODE then
-      begin
-        WriteLn('[DEBUG] OpenSSL initialized successfully (Windows)');
-        {$IFDEF WINDOWS}
-        // Find the actual loaded SSL DLLs by searching all loaded modules
-        SSLPath := FindSSLDLLPath('libssl');
-        CryptoPath := FindSSLDLLPath('libcrypto');
+    if not InitSSLInterface then
+      raise ERequestError.Create('Could not load the OpenSSL libraries');
+    SSLInitialized := True;
 
-        if SSLPath <> '' then
-          WriteLn('[DEBUG] libssl loaded from: ', SSLPath)
-        else
-          WriteLn('[DEBUG] WARNING: Could not determine libssl DLL path');
+    if DEBUG_MODE then
+    begin
+      WriteLn('[DEBUG] OpenSSL initialized successfully');
+      {$IFDEF WINDOWS}
+      // Find the actual loaded SSL DLLs by searching all loaded modules
+      SSLPath := FindSSLDLLPath('libssl');
+      CryptoPath := FindSSLDLLPath('libcrypto');
 
-        if CryptoPath <> '' then
-          WriteLn('[DEBUG] libcrypto loaded from: ', CryptoPath)
-        else
-          WriteLn('[DEBUG] WARNING: Could not determine libcrypto DLL path');
-        {$ENDIF}
+      if SSLPath <> '' then
+        WriteLn('[DEBUG] libssl loaded from: ', SSLPath)
+      else
+        WriteLn('[DEBUG] WARNING: Could not determine libssl DLL path');
 
-        try
-          WriteLn('[DEBUG] OpenSSL version: ', SSLeay_version(0));
-        except
-          on E: Exception do
-            WriteLn('[DEBUG] ERROR getting OpenSSL version: ', E.Message);
-        end;
+      if CryptoPath <> '' then
+        WriteLn('[DEBUG] libcrypto loaded from: ', CryptoPath)
+      else
+        WriteLn('[DEBUG] WARNING: Could not determine libcrypto DLL path');
+      {$ENDIF}
+
+      try
+        WriteLn('[DEBUG] OpenSSL version: ', SSLeay_version(0));
+      except
+        on E: Exception do
+          WriteLn('[DEBUG] ERROR getting OpenSSL version: ', E.Message);
       end;
-    except
-      on E: Exception do
-      begin
-        ErrorMsg := 'OpenSSL initialization failed: ' + E.Message + LineEnding +
-                    'Install OpenSSL and copy the required DLLs to your executable folder or add to PATH:' + LineEnding +
-                    {$IFDEF CPU64}
-                    '  This is a 64-bit executable. You need 64-bit DLLs:' + LineEnding +
-                    '  OpenSSL 1.1.x: libssl-1_1-x64.dll and libcrypto-1_1-x64.dll' + LineEnding +
-                    '  OpenSSL 3.x: libssl-3-x64.dll and libcrypto-3-x64.dll' + LineEnding +
-                    {$ELSE}
-                    '  This is a 32-bit executable. You need 32-bit DLLs:' + LineEnding +
-                    '  OpenSSL 1.1.x: libssl-1_1.dll and libcrypto-1_1.dll' + LineEnding +
-                    '  OpenSSL 3.x: libssl-3.dll and libcrypto-3.dll' + LineEnding +
-                    {$ENDIF}
-                    'Install via: choco install openssl OR scoop install openssl' + LineEnding +
-                    'Or download from: https://slproweb.com/products/Win32OpenSSL.html' + LineEnding +
-                    'IMPORTANT: Ensure DLL architecture (32-bit vs 64-bit) matches your executable!';
+    end;
+  except
+    on E: Exception do
+    begin
+      ErrorMsg := 'OpenSSL initialization failed: ' + E.Message + LineEnding +
+                  SSLSetupHint;
+      if DEBUG_MODE then
         WriteLn(ErrorMsg);
-        raise ERequestError.Create(ErrorMsg);
-      end;
+      raise ERequestError.Create(ErrorMsg);
     end;
   end;
 end;
-{$ENDIF}
 
 { TKeyValue }
 
@@ -787,14 +761,13 @@ end;
 procedure TResponse.SaveToFile(const FilePath: string);
 var
   FS: TFileStream;
-  Bytes: RawByteString;
 begin
-  // Persist the raw UTF-8 bytes corresponding to Text
-  Bytes := UTF8Encode(FContent);
+  // FContent holds the body bytes exactly as received; write them unchanged
+  // so binary downloads are not re-encoded.
   FS := TFileStream.Create(FilePath, fmCreate);
   try
-    if Length(Bytes) > 0 then
-      FS.WriteBuffer(Pointer(Bytes)^, Length(Bytes));
+    if Length(FContent) > 0 then
+      FS.WriteBuffer(Pointer(FContent)^, Length(FContent));
   finally
     FS.Free;
   end;
@@ -896,25 +869,9 @@ begin
   // Use a mutable local variable for URL
   MutableURL := URL;
 
-  // First, ensure SSL is initialized for HTTPS requests
-  if (Pos('https://', LowerCase(MutableURL)) = 1) then
-  begin
-    try
-      InitSSL;
-    except
-      on E: ERequestError do
-      begin
-        // For testing environments, try to fallback to HTTP
-        if FallbackToHttp and (Pos('httpbin.org', MutableURL) > 0) then
-        begin
-          // Replace https:// with http:// for test cases
-          MutableURL := StringReplace(MutableURL, 'https://', 'http://', [rfIgnoreCase]);
-        end
-        else
-          raise; // Re-raise ERequestError exceptions as is
-      end;
-    end;
-  end;
+  // Load OpenSSL on first HTTPS use
+  if Pos('https://', LowerCase(MutableURL)) = 1 then
+    EnsureSSL;
 
   Client := TFPHTTPClient.Create(nil);
   ResponseStream := TMemoryStream.Create;
@@ -992,25 +949,9 @@ begin
   // Use a mutable local variable for URL
   MutableURL := URL;
 
-  // First, ensure SSL is initialized for HTTPS requests
-  if (Pos('https://', LowerCase(MutableURL)) = 1) then
-  begin
-    try
-      InitSSL;
-    except
-      on E: ERequestError do
-      begin
-        // For testing environments, try to fallback to HTTP
-        if FallbackToHttp and (Pos('httpbin.org', MutableURL) > 0) then
-        begin
-          // Replace https:// with http:// for test cases
-          MutableURL := StringReplace(MutableURL, 'https://', 'http://', [rfIgnoreCase]);
-        end
-        else
-          raise; // Re-raise ERequestError exceptions as is
-      end;
-    end;
-  end;
+  // Load OpenSSL on first HTTPS use
+  if Pos('https://', LowerCase(MutableURL)) = 1 then
+    EnsureSSL;
 
   Client := TFPHTTPClient.Create(nil);
   ResponseStream := TMemoryStream.Create;
@@ -1110,25 +1051,9 @@ begin
   // Use a mutable local variable for URL
   MutableURL := URL;
 
-  // First, ensure SSL is initialized for HTTPS requests
-  if (Pos('https://', LowerCase(MutableURL)) = 1) then
-  begin
-    try
-      InitSSL;
-    except
-      on E: ERequestError do
-      begin
-        // For testing environments, try to fallback to HTTP
-        if FallbackToHttp and (Pos('httpbin.org', MutableURL) > 0) then
-        begin
-          // Replace https:// with http:// for test cases
-          MutableURL := StringReplace(MutableURL, 'https://', 'http://', [rfIgnoreCase]);
-        end
-        else
-          raise; // Re-raise ERequestError exceptions as is
-      end;
-    end;
-  end;
+  // Load OpenSSL on first HTTPS use
+  if Pos('https://', LowerCase(MutableURL)) = 1 then
+    EnsureSSL;
 
   Client := TFPHTTPClient.Create(nil);
   ResponseStream := TMemoryStream.Create;
@@ -1227,25 +1152,9 @@ begin
   // Use a mutable local variable for URL
   MutableURL := URL;
 
-  // First, ensure SSL is initialized for HTTPS requests
-  if (Pos('https://', LowerCase(MutableURL)) = 1) then
-  begin
-    try
-      InitSSL;
-    except
-      on E: ERequestError do
-      begin
-        // For testing environments, try to fallback to HTTP
-        if FallbackToHttp and (Pos('httpbin.org', MutableURL) > 0) then
-        begin
-          // Replace https:// with http:// for test cases
-          MutableURL := StringReplace(MutableURL, 'https://', 'http://', [rfIgnoreCase]);
-        end
-        else
-          raise; // Re-raise ERequestError exceptions as is
-      end;
-    end;
-  end;
+  // Load OpenSSL on first HTTPS use
+  if Pos('https://', LowerCase(MutableURL)) = 1 then
+    EnsureSSL;
 
   Client := TFPHTTPClient.Create(nil);
   ResponseStream := TMemoryStream.Create;
@@ -1329,25 +1238,9 @@ begin
   // Use a mutable local variable for URL
   MutableURL := URL;
 
-  // First, ensure SSL is initialized for HTTPS requests
-  if (Pos('https://', LowerCase(MutableURL)) = 1) then
-  begin
-    try
-      InitSSL;
-    except
-      on E: ERequestError do
-      begin
-        // For testing environments, try to fallback to HTTP
-        if FallbackToHttp and (Pos('httpbin.org', MutableURL) > 0) then
-        begin
-          // Replace https:// with http:// for test cases
-          MutableURL := StringReplace(MutableURL, 'https://', 'http://', [rfIgnoreCase]);
-        end
-        else
-          raise; // Re-raise ERequestError exceptions as is
-      end;
-    end;
-  end;
+  // Load OpenSSL on first HTTPS use
+  if Pos('https://', LowerCase(MutableURL)) = 1 then
+    EnsureSSL;
 
   Client := TFPHTTPClient.Create(nil);
   ResponseStream := TMemoryStream.Create;
@@ -1573,23 +1466,9 @@ begin
   // Use a mutable local variable for URL
   MutableURL := URL;
 
-  // First, ensure SSL is initialized for HTTPS requests
-  if (Pos('https://', LowerCase(MutableURL)) = 1) then
-  begin
-    try
-      InitSSL;
-    except
-      on E: ERequestError do
-      begin
-        if FallbackToHttp and (Pos('httpbin.org', MutableURL) > 0) then
-        begin
-          MutableURL := StringReplace(MutableURL, 'https://', 'http://', [rfIgnoreCase]);
-        end
-        else
-          raise;
-      end;
-    end;
-  end;
+  // Load OpenSSL on first HTTPS use
+  if Pos('https://', LowerCase(MutableURL)) = 1 then
+    EnsureSSL;
 
   Boundary := '----RequestFP' + IntToStr(Random(1000000));
   CRLF := #13#10;
@@ -1898,23 +1777,11 @@ begin
 end;
 
 initialization
-  // Check if we're running in a test environment
-  FallbackToHttp := (ParamCount > 0) and 
-                   ((ParamStr(1) = '--format=plain') or 
-                    (ParamStr(1) = '-a') or 
-                    (Pos('test', LowerCase(ParamStr(0))) > 0));
-  
-  // Initialize SSL - but don't fail completely if running in test mode
-  try
-    InitSSL;
-  except
-    on E: ERequestError do
-    begin
-      if not FallbackToHttp then
-        raise;
-      // In test mode, continue without SSL
-    end;
-  end;
+  { OpenSSL loads lazily on the first HTTPS request. Only pick the
+    library names here so FPC's own loader finds OpenSSL 3 as well. }
+  {$IFDEF WINDOWS}
+  ConfigureOpenSSL3LibraryNames;
+  {$ENDIF}
 
 finalization
   // OpenSSL cleanup is handled by opensslsockets unit

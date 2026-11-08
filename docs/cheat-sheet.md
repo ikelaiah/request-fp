@@ -143,6 +143,6 @@ except
 end;
 ```
 
-Normal stateless methods raise for request/transport failures and return HTTP
-responses of any status. `RaiseForStatus` opts in to raising for non-2xx.
-`Try*` methods capture request exceptions in `TRequestResult`.
+Normal stateless and session methods raise for request/transport failures and
+return HTTP responses of any status. `RaiseForStatus` opts in to raising for
+non-2xx. `Try*` methods capture request exceptions in `TRequestResult`.

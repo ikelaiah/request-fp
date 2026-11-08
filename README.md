@@ -9,7 +9,7 @@
 [![Lazarus](https://img.shields.io/badge/Lazarus-4.8+-60A5FA.svg)](https://www.lazarus-ide.org/)
 ![Supports Windows](https://img.shields.io/badge/support-Windows-F59E0B?logo=Windows)
 ![Supports Linux](https://img.shields.io/badge/support-Linux-F59E0B?logo=Linux)
-[![Version](https://img.shields.io/badge/version-1.3.0-8B5CF6.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.3.1-8B5CF6.svg)](CHANGELOG.md)
 
 An easy, memory-safe HTTP client for Free Pascal. Request-FP wraps FPC's HTTP
 stack with a small API, automatic cleanup, and no application-level
@@ -230,8 +230,9 @@ Requirements:
 
 On Linux, install the distribution's OpenSSL development package. On Windows,
 the OpenSSL DLL architecture must match the executable architecture.
-Request-FP v1.3.0 automatically handles FPC 3.2.2's OpenSSL 3 DLL-name issue
+Request-FP automatically handles FPC 3.2.2's OpenSSL 3 DLL-name issue
 and retains its OpenSSL 1.1 fallback; applications do not need to patch FPC.
+OpenSSL loads on the first HTTPS request, so HTTP-only programs do not need it.
 If HTTPS setup fails, run `examples/ssl_debug` and follow the
 [SSL/HTTPS guide](docs/SSL-HTTPS-GUIDE.md).
 

@@ -52,6 +52,7 @@ type
     procedure Test25_SSLInitialization;
     procedure Test26_ConvenienceHelpers;
     procedure Test27_PostForm;
+    procedure Test28_SaveToFileBinary;
   end;
 
 implementation
@@ -529,6 +530,40 @@ begin
     end;
   finally
     // Cleanup regardless of assertions
+    if FileExists(TempFile) then DeleteFile(TempFile);
+  end;
+end;
+
+procedure TRequestSimpleTests.Test28_SaveToFileBinary;
+const
+  ByteCount = 512;
+var
+  R: TResponse;
+  TempFile: string;
+  FS: TFileStream;
+  Saved: array of Byte;
+  I: Integer;
+begin
+  R := Http.Get(TestURL('/bytes/' + IntToStr(ByteCount)));
+  AssertEquals('Status code should be 200', 200, R.StatusCode);
+  AssertEquals('Body length should match', ByteCount, Length(R.Text));
+
+  TempFile := GetTempDir + 'request_fp_save_binary_test.bin';
+  try
+    R.SaveToFile(TempFile);
+    FS := TFileStream.Create(TempFile, fmOpenRead or fmShareDenyWrite);
+    try
+      AssertEquals('Saved size should match', ByteCount, FS.Size);
+      SetLength(Saved, FS.Size);
+      if FS.Size > 0 then
+        FS.ReadBuffer(Saved[0], FS.Size);
+    finally
+      FS.Free;
+    end;
+    for I := 0 to ByteCount - 1 do
+      AssertEquals('Byte ' + IntToStr(I) + ' should match', I mod 256,
+        Saved[I]);
+  finally
     if FileExists(TempFile) then DeleteFile(TempFile);
   end;
 end;

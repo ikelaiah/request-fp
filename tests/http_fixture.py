@@ -125,10 +125,36 @@ class RequestHandler(BaseHTTPRequestHandler):
         )
         self.send_json(details)
 
+    def send_status(self, path):
+        """Handle /status/<code> for any method. Returns True if handled."""
+        if not path.startswith("/status/"):
+            return False
+        try:
+            status = int(path.rsplit("/", 1)[1])
+        except ValueError:
+            status = 400
+        # Drain any request body so the connection stays usable.
+        self.read_body()
+        if status in (204, 304):
+            self.send_bytes(status, b"", "application/json; charset=utf-8")
+        else:
+            self.send_json({"status": status}, status)
+        return True
+
     def do_GET(self):
         path = urlsplit(self.path).path
 
-        if path == "/health":
+        if self.send_status(path):
+            pass
+        elif path.startswith("/bytes/"):
+            # Deterministic binary body: bytes 0..255 repeated.
+            try:
+                count = int(path.rsplit("/", 1)[1])
+            except ValueError:
+                count = 256
+            body = bytes(i % 256 for i in range(count))
+            self.send_bytes(200, body, "application/octet-stream")
+        elif path == "/health":
             self.send_bytes(200, b"ok", "text/plain; charset=utf-8")
         elif path == "/html":
             self.send_bytes(
@@ -148,23 +174,20 @@ class RequestHandler(BaseHTTPRequestHandler):
                     }
                 }
             )
-        elif path.startswith("/status/"):
-            try:
-                status = int(path.rsplit("/", 1)[1])
-            except ValueError:
-                status = 400
-            self.send_json({"status": status}, status)
         else:
             self.send_request_echo()
 
     def do_POST(self):
-        self.send_body_echo()
+        if not self.send_status(urlsplit(self.path).path):
+            self.send_body_echo()
 
     def do_PUT(self):
-        self.send_body_echo()
+        if not self.send_status(urlsplit(self.path).path):
+            self.send_body_echo()
 
     def do_DELETE(self):
-        self.send_request_echo()
+        if not self.send_status(urlsplit(self.path).path):
+            self.send_request_echo()
 
 
 def main():
