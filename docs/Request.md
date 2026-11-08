@@ -158,6 +158,36 @@ Http.Head(URL, Headers, Params)
   body unless you pass a `Content-Type` header.
 - `Head` returns status and headers; `Text` is empty.
 
+For JSON, use `PutJSON` and `PatchJSON` (string or `TJSONData`, optional
+`Headers`, plus `TryPutJSON` / `TryPatchJSON`):
+
+```pascal
+Http.PutJSON(URL, '{"name":"Ada"}');
+Http.PatchJSON(URL, Body);  // TJSONData; you keep ownership
+```
+
+### Authentication
+
+```pascal
+Http.Get(URL, [KVBearer(Token)]);
+Http.Get(URL, [KVBasic('user', 'secret')]);
+```
+
+`Authorization` is dropped when a redirect goes to a different host, so
+credentials are not sent to another server.
+
+### Proxy
+
+```pascal
+Http.SetProxy('proxy.local', 3128);                   // all Http requests
+Http.SetProxy('proxy.local', 3128, 'user', 'secret'); // with proxy auth
+Http.SetProxy('', 0);                                 // remove
+```
+
+The proxy is used for `http://` URLs only. FPC 3.2.2 cannot tunnel HTTPS
+through a proxy, so an `https://` request raises `ERequestError` while a proxy
+is set.
+
 ### Timeout
 
 ```pascal
@@ -165,8 +195,15 @@ Http.SetTimeout(10000); // milliseconds, all stateless requests
 WriteLn(Http.GetTimeout);
 ```
 
-The default is 30000. `0` waits forever. It is the I/O timeout; FPC's
-connect timeout (3 seconds) is unchanged.
+The default is 30000. `0` waits forever. It is the I/O timeout.
+
+The connect timeout is separate (default 3000 ms; `0` uses the system
+default). Both raise `ETimeoutError`:
+
+```pascal
+Http.SetConnectTimeout(5000);
+WriteLn(Http.GetConnectTimeout);
+```
 
 ### Multipart POST
 
@@ -309,6 +346,8 @@ JSON: TJSONData
 OK: Boolean
 
 function HeaderValue(const Name: string): string;
+function HeaderValues(const Name: string): TStringArray;
+function HeaderNames: TStringArray;
 function IsSuccessStatus: Boolean;
 procedure RaiseForStatus;
 procedure SaveToFile(const FilePath: string);
@@ -321,7 +360,9 @@ function Bytes: TBytes;
   body raises `ERequestError` with a `JSON Parse Error` prefix.
 - `OK` and `IsSuccessStatus` are true for HTTP status 200 through 299.
 - `HeaderValue` performs a case-insensitive response-header lookup and returns
-  an empty string when the header is absent.
+  an empty string when the header is absent (first value if repeated).
+- `HeaderValues` returns every value of a repeated header such as
+  `Set-Cookie`; `HeaderNames` lists header names once each, in order.
 - `RaiseForStatus` raises `ERequestError` for a status outside 200..299.
 - `SaveToFile`, `SaveToStream`, and `Bytes` give the body bytes exactly as
   received, so they are safe for binary downloads.

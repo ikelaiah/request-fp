@@ -17,6 +17,16 @@ All notable changes to this project will be documented in this file.
   honouring `Retry-After`. POST and PATCH are never retried.
   `Http.SetRetry` / `Session.SetRetry` change it; `SetRetry(0, 0)` disables.
 - `TryParseHTTPDate` building block.
+- Auth helpers: `KVBasic(User, Pass)` and `KVBearer(Token)`, and session
+  `SetBasicAuth` / `SetBearerToken`.
+- `Http.PutJSON` / `PatchJSON` (with `Try*` variants) and session
+  `PutJSON` / `PatchJSON` / `TryPutJSON` / `TryPatchJSON`.
+- `Response.HeaderValues(Name)` and `Response.HeaderNames`.
+- `Http.SetConnectTimeout` / `GetConnectTimeout` and session
+  `SetConnectTimeout` (default 3000 ms).
+- `Http.SetProxy` / session `SetProxy` for `http://` URLs, with optional proxy
+  credentials. `https://` requests raise `ERequestError` while a proxy is
+  set, because FPC 3.2.2 cannot tunnel HTTPS.
 - macOS support: Request-FP finds Homebrew or MacPorts OpenSSL 3, and CI
   builds and tests on macOS with FPC 3.2.2.
 - `run-tests.sh` and `run-tests.ps1`: build the suite, start the local test
@@ -38,6 +48,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- `Authorization` headers were resent when a redirect went to another host;
+  they are now dropped (stateless and session requests).
 - A connection closed without any response returned status 0 instead of
   raising; it now raises `ENetworkError`.
 - Timeouts close to the configured limit were sometimes reported as

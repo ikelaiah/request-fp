@@ -81,6 +81,17 @@ Bytes := Response.Bytes;        // TBytes copy of the body
 WriteLn(Response.JSON.FindPath('user.name').AsString);
 ```
 
+## Auth, headers, and proxy
+
+```pascal
+Http.Get(URL, [KVBearer(Token)]);          // or KVBasic(User, Pass)
+Http.PutJSON(URL, '{"a":1}');              // also PatchJSON
+Values := Response.HeaderValues('Set-Cookie'); // every value
+Names := Response.HeaderNames;
+Http.SetConnectTimeout(5000);
+Http.SetProxy('proxy.local', 3128);        // http:// only; ('', 0) removes
+```
+
 ## Downloads
 
 ```pascal
@@ -141,15 +152,17 @@ var
 begin
   // No Init or Free needed.
   Session.SetBaseURL('https://api.example.com');
-  Session.SetHeader('Authorization', 'Bearer ' + Token);
+  Session.SetBearerToken(Token);      // or SetBasicAuth(User, Pass)
   Session.SetCookie('session_id', 'abc123');
-  Session.SetTimeout(10000); // milliseconds
+  Session.SetTimeout(10000);          // milliseconds
+  Session.SetConnectTimeout(5000);
+  Session.SetProxy('proxy.local', 3128); // http:// only
 
   Response := Session.Get('/profile');
   Response := Session.Get('/report', [KV('Accept', 'text/csv')]);
   Response := Session.PostJSON('/profile', '{"displayName":"Ada"}');
   Response := Session.PostForm('/login', [KV('user', 'ada')]);
-  Response := Session.Patch('/profile', '{"theme":"dark"}');
+  Response := Session.PatchJSON('/profile', '{"theme":"dark"}');
   Response := Session.Send('GET', '/search', '', '', [], [KV('q', 'fp')]);
   Result := Session.TryGet('/health');
 

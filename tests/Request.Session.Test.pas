@@ -65,6 +65,8 @@ type
     procedure Test37_Session_GetToStreamAndTryVariants;
     procedure Test38_Session_MultipartStreamsFile;
     procedure Test39_Session_Retry;
+    procedure Test40_Session_AuthAndJSONHelpers;
+    procedure Test41_Session_Proxy;
   end;
 
 implementation
@@ -1069,6 +1071,78 @@ begin
   Fresh.SetBaseURL(TestBaseURL);
   R := Fresh.Get('/flaky?key=' + Key + '-fresh&fail=1');
   AssertEquals('New sessions retry by default', 200, R.StatusCode);
+end;
+
+procedure TRequestSessionTests.Test40_Session_AuthAndJSONHelpers;
+var
+  R: TResponse;
+  Obj: TJSONObject;
+  OtherHost: string;
+begin
+  FSession.SetBearerToken('abc');
+  R := FSession.Get('/headers');
+  AssertEquals('Bearer sent', 'Bearer abc',
+    R.JSON.FindPath('headers.Authorization').AsString);
+
+  FSession.SetBasicAuth('user', 'pass');
+  R := FSession.Get('/headers');
+  AssertEquals('Basic replaces bearer', 'Basic dXNlcjpwYXNz',
+    R.JSON.FindPath('headers.Authorization').AsString);
+
+  R := FSession.PutJSON('/put', '{"x":2}');
+  AssertEquals('PUT JSON', 2, R.JSON.FindPath('json.x').AsInteger);
+  AssertEquals('PUT content type', 'application/json',
+    R.JSON.FindPath('headers.Content-Type').AsString);
+  Obj := TJSONObject.Create(['y', 3]);
+  try
+    R := FSession.PatchJSON('/patch', Obj);
+  finally
+    Obj.Free;
+  end;
+  AssertEquals('PATCH JSON', 3, R.JSON.FindPath('json.y').AsInteger);
+  AssertTrue('TryPatchJSON', FSession.TryPatchJSON('/patch', '{}').OK);
+
+  if Pos('127.0.0.1', TestBaseURL) = 0 then
+    Exit;
+  OtherHost := StringReplace(TestBaseURL, '127.0.0.1', 'localhost', []) +
+    '/headers';
+  R := FSession.Get('/redirect-to?url=' + OtherHost);
+  AssertTrue('Authorization not sent to another host',
+    R.JSON.FindPath('headers.Authorization') = nil);
+  R := FSession.Get('/headers');
+  AssertEquals('Session keeps its credentials', 'Basic dXNlcjpwYXNz',
+    R.JSON.FindPath('headers.Authorization').AsString);
+end;
+
+procedure TRequestSessionTests.Test41_Session_Proxy;
+var
+  R: TResponse;
+  Host, Msg: string;
+  Port: Integer;
+begin
+  if not LocalFixtureHostPort(Host, Port) then
+    Exit;
+  FSession.SetConnectTimeout(2000);
+  FSession.SetProxy(Host, Port);
+  R := FSession.Get('http://example.invalid/proxy-echo');
+  AssertEquals('Absolute URL sent to the proxy',
+    'http://example.invalid/proxy-echo', R.JSON.FindPath('target').AsString);
+  AssertEquals('No proxy credentials', '',
+    R.JSON.FindPath('proxy_authorization').AsString);
+
+  Msg := '';
+  try
+    FSession.Get('https://example.invalid/');
+  except
+    on E: ERequestError do
+      Msg := E.Message;
+  end;
+  AssertTrue('HTTPS through a proxy is refused clearly',
+    Pos('not supported', Msg) > 0);
+
+  FSession.SetProxy('', 0);
+  R := FSession.Get('/get');
+  AssertEquals('Proxy removed', 200, R.StatusCode);
 end;
 
 initialization
