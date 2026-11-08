@@ -29,6 +29,10 @@ a compatibility fallback when OpenSSL 3 is unavailable. Request-FP also
 checks the Boolean result from `InitSSLInterface`; a failed load is no longer
 recorded internally as a successful initialization.
 
+Since v1.3.1, the unit `initialization` section only sets the DLL names.
+OpenSSL itself loads on the first HTTPS request (or an explicit `EnsureSSL`
+call), and the library writes nothing to the console outside `DEBUG` builds.
+
 This is a filename-selection workaround, not a replacement TLS
 implementation. HTTPS still uses FPC's `openssl` and `opensslsockets` units.
 The Windows CI job validates this path with Lazarus 4.8, FPC 3.2.2, and the

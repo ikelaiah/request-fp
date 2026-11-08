@@ -271,10 +271,14 @@ Stateless methods separate transport success from HTTP status:
 
 ## HTTPS
 
-Request-FP uses FPC's OpenSSL support. On Windows, v1.3.0 automatically works
+Request-FP uses FPC's OpenSSL support. On Windows, it automatically works
 around FPC 3.2.2's DLL-name issue by selecting the standard OpenSSL 3 names
 first while retaining FPC's OpenSSL 1.1 fallback. The installed DLL
 architecture must still match the executable.
+
+OpenSSL loads on the first HTTPS request, so HTTP-only programs run without
+it. Call `EnsureSSL` at startup to fail fast instead; it raises
+`ERequestError` with setup hints if OpenSSL cannot be loaded.
 
 If HTTPS setup fails, run `examples/ssl_debug` and follow the
 [SSL/HTTPS guide](SSL-HTTPS-GUIDE.md). For the exact Windows loading order,

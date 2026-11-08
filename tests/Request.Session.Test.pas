@@ -36,7 +36,7 @@ type
     procedure Test02_SessionWithBaseURL;
     procedure Test03_PersistentHeaders;
     procedure Test04_CookieHandling;
-    procedure Test05_ThreadSafety;
+    procedure Test05_SingleThreadedReuse;
     
     // HTTP methods with session
     procedure Test11_GetWithSession;
@@ -53,6 +53,8 @@ type
     procedure Test25b_SessionMultipartUpload_Failure;
     procedure Test26_Session_ResponseHeaderValue;
     procedure Test27_Session_PostJSON;
+    procedure Test28_Session_NonSuccessStatusReturned;
+    procedure Test29_Session_TransportErrorRaisesRequestError;
   end;
 
 implementation
@@ -196,6 +198,70 @@ begin
   AssertEquals('JSON value should match', 'Ada', Echoed.Get('name', ''));
 end;
 
+procedure TRequestSessionTests.Test28_Session_NonSuccessStatusReturned;
+var
+  Response: TResponse;
+begin
+  // Sessions return the response for any HTTP status, like the Http API.
+  Response := FSession.Get('/status/404');
+  AssertEquals('GET 404 should be returned', 404, Response.StatusCode);
+  AssertFalse('GET 404 should not be OK', Response.OK);
+
+  Response := FSession.Get('/status/204');
+  AssertEquals('GET 204 should be returned', 204, Response.StatusCode);
+  AssertTrue('GET 204 should be OK', Response.OK);
+
+  Response := FSession.Post('/status/201', 'a=1');
+  AssertEquals('POST 201 should be returned', 201, Response.StatusCode);
+
+  Response := FSession.Post('/status/500', 'a=1');
+  AssertEquals('POST 500 should be returned', 500, Response.StatusCode);
+
+  Response := FSession.PostJSON('/status/422', '{"a":1}');
+  AssertEquals('PostJSON 422 should be returned', 422, Response.StatusCode);
+
+  Response := FSession.Put('/status/409', '{"a":1}');
+  AssertEquals('PUT 409 should be returned', 409, Response.StatusCode);
+
+  Response := FSession.Delete('/status/202');
+  AssertEquals('DELETE 202 should be returned', 202, Response.StatusCode);
+
+  Response := FSession.Delete('/status/404');
+  AssertEquals('DELETE 404 should be returned', 404, Response.StatusCode);
+end;
+
+procedure TRequestSessionTests.Test29_Session_TransportErrorRaisesRequestError;
+
+  procedure ExpectRequestError(const Method: string);
+  var
+    Raised: Boolean;
+  begin
+    Raised := False;
+    try
+      if Method = 'GET' then
+        FSession.Get('/get')
+      else if Method = 'POST' then
+        FSession.Post('/post', 'a=1')
+      else if Method = 'PUT' then
+        FSession.Put('/put', '{}')
+      else
+        FSession.Delete('/delete');
+    except
+      on E: ERequestError do
+        Raised := True;
+    end;
+    AssertTrue(Method + ' connection failure should raise ERequestError',
+      Raised);
+  end;
+
+begin
+  FSession.SetBaseURL(TestFailureURL);
+  ExpectRequestError('GET');
+  ExpectRequestError('POST');
+  ExpectRequestError('PUT');
+  ExpectRequestError('DELETE');
+end;
+
 procedure TRequestSessionTests.TearDown;
 begin
   // Session is automatically finalized when it goes out of scope
@@ -313,13 +379,13 @@ begin
   WriteLn('Test04_CookieHandling: Completed');
 end;
 
-procedure TRequestSessionTests.Test05_ThreadSafety;
+procedure TRequestSessionTests.Test05_SingleThreadedReuse;
 var
   Response: TResponse;
   Headers: TJSONObject;
 begin
 
-  WriteLn('Test05_ThreadSafety: Starting');
+  WriteLn('Test05_SingleThreadedReuse: Starting');
 
   // Simple test to verify session works in a single-threaded context
   Response := FSession.Get('/get');
@@ -339,7 +405,7 @@ begin
     // No need to free Response - it's managed by the advanced record
   end;
 
-  WriteLn('Test05_ThreadSafety: Completed');
+  WriteLn('Test05_SingleThreadedReuse: Completed');
 end;
 
 procedure TRequestSessionTests.Test11_GetWithSession;

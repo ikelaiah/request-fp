@@ -16,6 +16,36 @@ All notable changes to this project will be documented in this file.
 
 - (none)
 
+## [1.3.1] - Unreleased
+
+### Added
+
+- `EnsureSSL` to load OpenSSL up front and fail fast when it is missing.
+- Integration tests for session status codes, session transport errors, and
+  binary `SaveToFile`.
+
+### Changed
+
+- OpenSSL now loads on the first HTTPS request instead of at program start.
+  HTTP-only programs no longer fail to start when OpenSSL is missing.
+- The library no longer writes OpenSSL errors to the console outside `DEBUG`
+  builds; the same text is in the raised `ERequestError`.
+
+### Fixed
+
+- `THttpSession` methods now return any HTTP status instead of raising.
+  Previously `Get` raised for anything but 200, `Post`/`Put` for anything but
+  200/201/204, and `Delete` for anything but 200/204.
+- `Session.Post` and `Session.PostJSON` now raise `ERequestError` for
+  transport failures instead of raw FPC exceptions.
+- `Response.SaveToFile` now writes the body bytes unchanged. Binary downloads
+  were previously re-encoded and corrupted.
+- Unix OpenSSL initialization now treats a `False` result from
+  `InitSSLInterface` as a failure, matching Windows.
+- Removed a test-only shortcut that silently downgraded `https://httpbin.org`
+  requests to HTTP in programs whose name contained "test".
+- Removed stale backup sources and a leftover `.new` test file from the repo.
+
 ## [1.3.0] - 2026-07-29
 
 ### Added

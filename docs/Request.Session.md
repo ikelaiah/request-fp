@@ -145,25 +145,24 @@ See the [Request API reference](Request.md#tresponse) for all response helpers.
 
 ## Error handling
 
-Session methods raise exceptions when the underlying request fails. `Get`,
-`Put`, and `Delete` normalize those failures to `ERequestError`; `Post` and
-`PostJSON` currently allow the underlying FPC exception type to propagate.
-Catch `Exception` when one handler must cover every session method:
+Session methods behave like the stateless API:
+
+- Any HTTP status, including 4xx and 5xx, is returned in the response.
+- Network, TLS, and request failures raise `ERequestError`.
+- Call `Response.RaiseForStatus` to raise for non-2xx.
 
 ```pascal
 try
   Response := Session.Get('/profile');
+  Response.RaiseForStatus;
 except
-  on E: Exception do
+  on E: ERequestError do
     WriteLn('Request failed: ', E.Message);
 end;
 ```
 
-The session API follows the accepted-status behavior of its underlying FPC
-calls. `Post` and `Put` accept 200, 201, and 204; `Delete` accepts 200 and 204;
-`Get` uses the FPC client's default accepted status. Other response statuses
-may raise an exception. If you need the stateless API's transport/status
-separation or an exception-free result, use `Http.Try*`.
+Before v1.3.1, session methods raised for some non-error statuses (for
+example `Get` on 201 or 404) and `Post` could raise FPC exception types.
 
 ## API reference
 
