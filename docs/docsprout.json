@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "project": {
+    "name": "Request-FP",
+    "description": "Easy, safe HTTP requests for Free Pascal",
+    "repository_url": "https://github.com/ikelaiah/request-fp"
+  },
+  "theme": {
+    "accent": "#4338ca",
+    "accent_secondary": "#a21caf"
+  },
+  "banner": {
+    "path": "docs/assets/request-fp-banner.svg",
+    "alt": "Request-FP: easy HTTP for Free Pascal"
+  },
+  "identity": {
+    "footer": "Request-FP is MIT licensed. Built for Free Pascal and Lazarus developers.",
+    "links": [
+      {"label": "Source code", "url": "https://github.com/ikelaiah/request-fp"},
+      {"label": "Releases", "url": "https://github.com/ikelaiah/request-fp/releases"},
+      {"label": "Changelog", "url": "https://github.com/ikelaiah/request-fp/blob/main/CHANGELOG.md"}
+    ]
+  },
+  "homepage": {
+    "capabilities": [
+      {"title": "One line per request", "description": "Http.Get, PostJSON, Download: records clean themselves up, no Free needed."},
+      {"title": "Resilient by default", "description": "Safe retries with backoff, Retry-After, typed timeout and network errors."},
+      {"title": "Big files, small memory", "description": "Stream downloads and uploads straight to and from disk, with progress."},
+      {"title": "Sessions that behave", "description": "Cookies follow Domain and Path; credentials never leak across hosts."}
+    ],
+    "sections": {"release_context": false}
+  }
+}

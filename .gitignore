@@ -1,6 +1,7 @@
 # Request-FP project specific
 /bin
 /example-bin/
+/build/
 test_dir/
 
 # Compiled l10n files: .mo should be ignored

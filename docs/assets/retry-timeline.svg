@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="320" viewBox="0 0 1000 320" role="img" aria-labelledby="rt-title rt-desc">
+  <title id="rt-title">Automatic retries</title>
+  <desc id="rt-desc">A GET request: attempt 1 gets 503 Service Unavailable, Request-FP waits 250 milliseconds; attempt 2 hits a network error, it waits 500 milliseconds; attempt 3 gets 200 OK, which is returned as the TResponse. POST and PATCH are never retried, Retry-After replaces the wait, and timeouts are not retried.</desc>
+  <style>
+    .bg { fill: #FFFFFF; stroke: #E2E8F0; }
+    .t { fill: #0F172A; }
+    .m { fill: #475569; }
+    .ln { stroke: #CBD5E1; }
+    .dot { fill: #4338CA; }
+    .wait { fill: #FEF3C7; stroke: #D97706; }
+    .waitt { fill: #B45309; }
+    .bad { fill: #FFF1F2; stroke: #E11D48; }
+    .badt { fill: #BE123C; }
+    .ok { fill: #ECFDF5; stroke: #059669; }
+    .okt { fill: #047857; }
+    .pill { fill: #F1F5F9; stroke: #CBD5E1; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0F172A; stroke: #1E293B; }
+      .t { fill: #F1F5F9; }
+      .m { fill: #94A3B8; }
+      .ln { stroke: #334155; }
+      .dot { fill: #A5B4FC; }
+      .wait { fill: #3A2405; stroke: #F59E0B; }
+      .waitt { fill: #FCD34D; }
+      .bad { fill: #3B0712; stroke: #FB7185; }
+      .badt { fill: #FDA4AF; }
+      .ok { fill: #052E24; stroke: #34D399; }
+      .okt { fill: #6EE7B7; }
+      .pill { fill: #1E293B; stroke: #334155; }
+    }
+    text { font-family: Inter, 'Segoe UI', system-ui, Arial, sans-serif; }
+    .mono { font-family: ui-monospace, 'Cascadia Code', Consolas, 'DejaVu Sans Mono', monospace; }
+  </style>
+
+  <rect x="1" y="1" width="998" height="318" rx="18" class="bg"/>
+  <text x="32" y="44" font-size="20" font-weight="700" class="t">Automatic retries for <tspan class="mono" font-size="18">Http.Get</tspan></text>
+  <text x="32" y="68" font-size="13" class="m">Default: 2 retries, waiting 250 ms then 500 ms</text>
+
+  <!-- Timeline -->
+  <path d="M70 150H930" class="ln" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Attempt 1 -->
+  <circle cx="110" cy="150" r="11" class="dot"/>
+  <text x="110" y="122" font-size="14" font-weight="700" text-anchor="middle" class="t">Attempt 1</text>
+  <rect x="40" y="176" width="140" height="44" rx="10" class="bad" stroke-width="1.5"/>
+  <text x="110" y="196" font-size="15" font-weight="700" text-anchor="middle" class="badt mono">503</text>
+  <text x="110" y="212" font-size="11.5" text-anchor="middle" class="m">Service Unavailable</text>
+
+  <!-- Wait 250 -->
+  <rect x="136" y="138" width="190" height="24" rx="12" class="wait" stroke-width="1.5"/>
+  <text x="231" y="155" font-size="12.5" font-weight="700" text-anchor="middle" class="waitt">wait 250 ms</text>
+
+  <!-- Attempt 2 -->
+  <circle cx="356" cy="150" r="11" class="dot"/>
+  <text x="356" y="122" font-size="14" font-weight="700" text-anchor="middle" class="t">Attempt 2</text>
+  <rect x="286" y="176" width="140" height="44" rx="10" class="bad" stroke-width="1.5"/>
+  <text x="356" y="196" font-size="13.5" font-weight="700" text-anchor="middle" class="badt">network error</text>
+  <text x="356" y="212" font-size="11.5" text-anchor="middle" class="m">connection reset</text>
+
+  <!-- Wait 500 -->
+  <rect x="382" y="138" width="300" height="24" rx="12" class="wait" stroke-width="1.5"/>
+  <text x="532" y="155" font-size="12.5" font-weight="700" text-anchor="middle" class="waitt">wait 500 ms (doubled)</text>
+
+  <!-- Attempt 3 -->
+  <circle cx="712" cy="150" r="11" class="dot"/>
+  <text x="712" y="122" font-size="14" font-weight="700" text-anchor="middle" class="t">Attempt 3</text>
+  <rect x="642" y="176" width="140" height="44" rx="10" class="ok" stroke-width="1.5"/>
+  <text x="712" y="196" font-size="15" font-weight="700" text-anchor="middle" class="okt mono">200 OK</text>
+  <text x="712" y="212" font-size="11.5" text-anchor="middle" class="m">success</text>
+
+  <!-- Result -->
+  <rect x="806" y="128" width="164" height="44" rx="12" class="ok" stroke-width="1.5"/>
+  <text x="888" y="155" font-size="15" font-weight="700" text-anchor="middle" class="okt mono">TResponse</text>
+
+  <!-- Rules -->
+  <rect x="32" y="252" width="284" height="40" rx="20" class="pill" stroke-width="1.2"/>
+  <text x="174" y="277" font-size="13" text-anchor="middle" class="t">POST and PATCH are never retried</text>
+  <rect x="332" y="252" width="320" height="40" rx="20" class="pill" stroke-width="1.2"/>
+  <text x="492" y="277" font-size="13" text-anchor="middle" class="t">A Retry-After header replaces the wait</text>
+  <rect x="668" y="252" width="300" height="40" rx="20" class="pill" stroke-width="1.2"/>
+  <text x="818" y="277" font-size="13" text-anchor="middle" class="t">Timeouts are raised, not retried</text>
+</svg>

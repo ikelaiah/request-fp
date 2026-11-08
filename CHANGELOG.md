@@ -30,6 +30,9 @@ All notable changes to this project will be documented in this file.
 - Session cookies honour `Domain`, `Path`, `Secure`, `Max-Age`, and `Expires`
   (RFC 6265), via the public `TCookieJar`. `SetCookie` cookies stay global.
 - Examples: `streaming_download`, `session_login_redirect`, `typed_errors`.
+- Documentation site built with DocSprout and published to GitHub Pages, with
+  new Getting started and How it works pages and SVG diagrams. CI runs
+  `docsprout check` and `docsprout audit --strict`.
 - macOS support: Request-FP finds Homebrew or MacPorts OpenSSL 3, and CI
   builds and tests on macOS with FPC 3.2.2.
 - `run-tests.sh` and `run-tests.ps1`: build the suite, start the local test

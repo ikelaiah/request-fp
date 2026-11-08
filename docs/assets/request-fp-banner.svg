@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="240" viewBox="0 0 1200 240" role="img" aria-labelledby="banner-title banner-desc">
+  <title id="banner-title">Request-FP</title>
+  <desc id="banner-desc">The Request-FP monogram and wordmark with the tagline Easy HTTP for Free Pascal, beside three example requests: GET returns 200 OK, POST returns 201 Created, and a PUT upload is streamed.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0F172A"/>
+      <stop offset="0.55" stop-color="#172554"/>
+      <stop offset="1" stop-color="#312E81"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.82" cy="0.5" r="0.45">
+      <stop offset="0" stop-color="#A21CAF" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#A21CAF" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.2" fill="#FFFFFF" fill-opacity="0.07"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="240" fill="url(#bg)"/>
+  <rect width="1200" height="240" fill="url(#dots)"/>
+  <rect width="1200" height="240" fill="url(#glow)"/>
+
+  <!-- Monogram -->
+  <g transform="translate(30 22) scale(0.92)">
+    <path d="M42 58C42 43.641 53.641 32 68 32h112c14.359 0 26 11.641 26 26v104c0 14.359-11.641 26-26 26H68c-14.359 0-26-11.641-26-26V58z" fill="#FFFFFF" fill-opacity="0.07" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="2"/>
+    <path d="M96 70L68 110l28 40" fill="none" stroke="#F0ABFC" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M152 70l28 40-28 40" fill="none" stroke="#60A5FA" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="124" y="121" fill="#FFFFFF" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="30" font-weight="800" text-anchor="middle">FP</text>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="256" y="128" fill="#FFFFFF" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="68" font-weight="800" letter-spacing="-2">Request<tspan fill="#67E8F9">-FP</tspan></text>
+  <text x="260" y="168" fill="#C7D2FE" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="24" font-weight="500" letter-spacing="0.4">Easy HTTP for Free Pascal</text>
+
+  <!-- Example requests -->
+  <g font-family="ui-monospace, 'Cascadia Code', Consolas, 'DejaVu Sans Mono', monospace" font-size="17">
+    <rect x="770" y="58" width="370" height="38" rx="10" fill="#FFFFFF" fill-opacity="0.06" stroke="#FFFFFF" stroke-opacity="0.14"/>
+    <text x="788" y="83" fill="#67E8F9" font-weight="700">GET</text>
+    <text x="848" y="83" fill="#E2E8F0">/users</text>
+    <text x="1124" y="83" fill="#86EFAC" text-anchor="end">200 OK</text>
+
+    <rect x="770" y="106" width="370" height="38" rx="10" fill="#FFFFFF" fill-opacity="0.06" stroke="#FFFFFF" stroke-opacity="0.14"/>
+    <text x="788" y="131" fill="#F0ABFC" font-weight="700">POST</text>
+    <text x="848" y="131" fill="#E2E8F0">/orders</text>
+    <text x="1124" y="131" fill="#86EFAC" text-anchor="end">201 Created</text>
+
+    <rect x="770" y="154" width="370" height="38" rx="10" fill="#FFFFFF" fill-opacity="0.06" stroke="#FFFFFF" stroke-opacity="0.14"/>
+    <text x="788" y="179" fill="#A5B4FC" font-weight="700">PUT</text>
+    <text x="848" y="179" fill="#E2E8F0">/files/big.zip</text>
+    <text x="1124" y="179" fill="#FDE68A" text-anchor="end">streamed</text>
+  </g>
+</svg>

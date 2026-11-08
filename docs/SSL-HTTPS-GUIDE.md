@@ -136,5 +136,5 @@ confirm the loaded paths. Do not rename or remove DLLs from `System32`.
 
 - [OpenSSL version selection](OPENSSL-VERSION-SELECTION.md)
 - [Technical details](TECHNICAL-DETAILS.md#windows-openssl-3-loading-with-fpc-322)
-- [SSL debug example](../examples/ssl_debug/)
+- [SSL debug example](https://github.com/ikelaiah/request-fp/tree/main/examples/ssl_debug)
 - [API reference](Request.md)

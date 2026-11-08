@@ -159,4 +159,4 @@ v1.3.0 is backward compatible with v1.2.0:
 Replace the source units with the v1.3.0 versions. No code migration is
 required. Existing code can adopt the new helpers incrementally.
 
-See [CHANGELOG.md](../CHANGELOG.md#130---2026-07-29) for the complete change list.
+See [CHANGELOG.md](https://github.com/ikelaiah/request-fp/blob/main/CHANGELOG.md#130---2026-07-29) for the complete change list.
