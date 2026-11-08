@@ -160,10 +160,13 @@ body is in `Response.Text`. `TryDownload` and `TryGetToStream` return
 Cookies received in `Set-Cookie` headers are stored and sent by later calls:
 
 - Cookies set on redirect responses (common after a login POST) are kept.
-- A cookie with `Max-Age=0` or a past `Expires` is removed.
-- Session cookies are not sent when a redirect goes to a different host.
-- `Domain` and `Path` attributes are not checked: every stored cookie is sent
-  to the session's own requests.
+- `Domain` and `Path` are honoured (RFC 6265): a cookie is only sent to
+  matching hosts and paths. Without `Domain`, only the exact host gets it;
+  without `Path`, the request's directory is used.
+- A `Domain` the server is not part of (or a bare top-level name such as
+  `com`) is ignored. There is no public-suffix list.
+- `Secure` cookies are only sent over `https://`.
+- `Max-Age` and `Expires` are tracked; expired cookies are removed.
 
 You can also manage them directly:
 
@@ -172,6 +175,11 @@ Session.SetCookie('session_id', 'abc123');
 WriteLn(Session.GetCookie('session_id'));
 Session.ClearCookies;
 ```
+
+- `SetCookie` cookies are sent with every request, to any host or path, but
+  not when a redirect leaves the host. A server cookie with the same name
+  replaces it.
+- `GetCookie` returns the first stored cookie with that name, from any host.
 
 ## Timeouts
 

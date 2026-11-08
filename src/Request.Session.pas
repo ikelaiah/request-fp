@@ -56,6 +56,41 @@ type
     procedure SetItem(const Key, Value: string);
   end;
 
+  { One stored cookie. Domain is lower case, without a leading dot. }
+  TSessionCookie = record
+    Name: string;
+    Value: string;
+    Domain: string;
+    Path: string;
+    HostOnly: Boolean;  // no Domain attribute: only the exact host
+    Secure: Boolean;    // only sent over https
+    Global: Boolean;    // set with SetCookie: sent to every host called directly
+    Expires: TDateTime; // UTC; 0 = until the session ends
+  end;
+
+  { Session cookie store with RFC 6265 Domain, Path, Secure, and expiry
+    matching. Used by THttpSession; applications rarely need it directly. }
+  TCookieJar = record
+  private
+    FItems: array of TSessionCookie;
+    function IndexOf(const Name, Domain, Path: string; Global: Boolean): Integer;
+    procedure RemoveName(const Name: string; GlobalOnly: Boolean);
+    procedure RemoveExpired;
+  public
+    procedure Clear;
+    procedure Assign(const Source: TCookieJar);
+    { Stores a cookie sent to every host (SetCookie). }
+    procedure SetGlobal(const Name, Value: string);
+    { Stores, replaces, or removes a cookie from a Set-Cookie header value
+      received in a response from URL. Invalid Domain attributes are ignored. }
+    procedure Apply(const SetCookieValue, URL: string);
+    { Cookie header value for a request to URL. }
+    function HeaderFor(const URL: string; IncludeGlobal: Boolean): string;
+    { Value of the first cookie named Name, or ''. }
+    function Get(const Name: string): string;
+    function Count: Integer;
+  end;
+
   { THttpSession }
   {
     @description HTTP session with connection reuse, shared headers, and cookies.
@@ -82,7 +117,7 @@ type
   private
     FClient: TFPHTTPClient;
     FHeaders: TSimpleMap;
-    FCookies: TSimpleMap;
+    FCookies: TCookieJar;
     FBaseURL: string;
     FUserAgent: string;
     FTimeout: Integer;
@@ -96,7 +131,7 @@ type
 
     function GetClient: TFPHTTPClient;
     function GetFullURL(const URL: string): string;
-    procedure SetupRequest(Client: TFPHTTPClient);
+    procedure SetupRequest(Client: TFPHTTPClient; const FullURL: string);
     { Target nil keeps the body in memory; otherwise a 2xx body is streamed
       into Target. }
     function DoRequest(const Method, URL: string; Body: TStream;
@@ -195,7 +230,8 @@ type
 
     { Sets a header for all requests }
     procedure SetHeader(const Name, Value: string);
-    { Sets a cookie for all requests }
+    { Sets a cookie sent with every request, whatever the host or path.
+      Cookies from servers follow their Domain and Path instead. }
     procedure SetCookie(const Name, Value: string);
     { Sets the base URL for relative requests }
     procedure SetBaseURL(const URL: string);
@@ -232,7 +268,7 @@ uses
   DateUtils, URIParser;
 
 type
-  PSimpleMap = ^TSimpleMap;
+  PCookieJar = ^TCookieJar;
 
   { FPC client that skips the empty "Cookie:" header it would otherwise send
     when its own cookie list is empty. The session manages cookies itself. }
@@ -242,18 +278,19 @@ type
   end;
 
   { Keeps session cookies correct across redirects: applies Set-Cookie from
-    each redirect response, resends the merged cookies on same-host hops,
-    and drops them when the redirect leaves the host. }
+    each redirect response and sends the cookies that match the next URL.
+    Global cookies (SetCookie) are not sent when a redirect leaves the host. }
   TRedirectCookieHandler = class
   public
-    Cookies: PSimpleMap;
+    Cookies: PCookieJar;
+    { The URL being requested; updated on every redirect. }
+    CurrentURL: string;
     procedure HandleRedirect(Sender: TObject; const ASrc: string;
       var ADest: string);
   end;
 
-procedure ApplySetCookie(var Cookies: TSimpleMap; const HeaderValue: string); forward;
-procedure ApplySetCookieHeaders(var Cookies: TSimpleMap; Headers: TStrings); forward;
-function BuildCookieHeader(const Cookies: TSimpleMap): string; forward;
+procedure ApplySetCookieHeaders(var Cookies: TCookieJar; Headers: TStrings;
+  const URL: string); forward;
 
 function TSessionHTTPClient.AllowHeader(var AHeader: string): Boolean;
 var
@@ -270,11 +307,11 @@ procedure TRedirectCookieHandler.HandleRedirect(Sender: TObject;
   const ASrc: string; var ADest: string);
 var
   Client: TFPHTTPClient;
-  DestHost, CookieStr: string;
+  NextURL, CookieStr: string;
   Idx: Integer;
 begin
   Client := TFPHTTPClient(Sender);
-  ApplySetCookieHeaders(Cookies^, Client.ResponseHeaders);
+  ApplySetCookieHeaders(Cookies^, Client.ResponseHeaders, ASrc);
   DropAuthOnHostChange(Client, ASrc, ADest);
   // FPC would resend only the redirect response's cookies; send ours instead.
   Client.Cookies.Clear;
@@ -283,10 +320,13 @@ begin
   if Idx >= 0 then
     Client.RequestHeaders.Delete(Idx);
 
-  DestHost := ParseURI(ADest).Host;
-  CookieStr := BuildCookieHeader(Cookies^);
-  if (CookieStr <> '') and
-     ((DestHost = '') or SameText(DestHost, ParseURI(ASrc).Host)) then
+  NextURL := ADest;
+  if not IsAbsoluteURI(NextURL) then
+    ResolveRelativeURI(ASrc, ADest, NextURL);
+  CurrentURL := NextURL;
+  CookieStr := Cookies^.HeaderFor(NextURL,
+    SameText(ParseURI(NextURL).Host, ParseURI(ASrc).Host));
+  if CookieStr <> '' then
     Client.AddHeader('Cookie', CookieStr);
 end;
 
@@ -454,10 +494,8 @@ begin
   for I := 0 to Source.FHeaders.GetCount - 1 do
     Dest.FHeaders.SetItem(Source.FHeaders.GetKey(I), Source.FHeaders.GetValue(I));
 
-  // Copy cookies
-  Dest.FCookies.Clear;
-  for I := 0 to Source.FCookies.GetCount - 1 do
-    Dest.FCookies.SetItem(Source.FCookies.GetKey(I), Source.FCookies.GetValue(I));
+  // Copy cookies (a separate copy, not shared)
+  Dest.FCookies.Assign(Source.FCookies);
 
   // Don't copy the client - it will be created on demand
   if Dest.FClient <> nil then
@@ -502,7 +540,8 @@ begin
     Result := FBaseURL + URL;
 end;
 
-procedure THttpSession.SetupRequest(Client: TFPHTTPClient);
+procedure THttpSession.SetupRequest(Client: TFPHTTPClient;
+  const FullURL: string);
 var
   I: Integer;
   CookieStr: string;
@@ -517,8 +556,8 @@ begin
   for I := 0 to FHeaders.GetCount - 1 do
     Client.AddHeader(FHeaders.GetKey(I), FHeaders.GetValue(I));
 
-  // Handle cookies - AddHeader will override any existing header with the same name
-  CookieStr := BuildCookieHeader(FCookies);
+  // Cookies that match this URL; AddHeader overrides a Cookie set by SetHeader.
+  CookieStr := FCookies.HeaderFor(FullURL, True);
   if CookieStr <> '' then
     Client.AddHeader('Cookie', CookieStr);
 
@@ -535,72 +574,270 @@ begin
     Client.AddHeader('User-Agent', FUserAgent);
 end;
 
-function BuildCookieHeader(const Cookies: TSimpleMap): string;
+{ TCookieJar }
+
+function IsIPAddress(const Host: string): Boolean;
 var
   I: Integer;
 begin
-  Result := '';
-  for I := 0 to Cookies.GetCount - 1 do
-  begin
-    if I > 0 then
-      Result := Result + '; ';
-    Result := Result + Cookies.GetKey(I) + '=' + Cookies.GetValue(I);
-  end;
+  Result := (Host <> '') and (Pos(':', Host) > 0);
+  if Result then
+    Exit;
+  for I := 1 to Length(Host) do
+    if not (Host[I] in ['0'..'9', '.']) then
+      Exit(False);
+  Result := Host <> '';
 end;
 
-procedure ApplySetCookie(var Cookies: TSimpleMap; const HeaderValue: string);
-var
-  Parts: TStringArray;
-  Pair, AttrName, AttrValue: string;
-  Name, Value: string;
-  P, I, MaxAge: Integer;
-  Expires: TDateTime;
-  Expired: Boolean;
+{ RFC 6265 5.1.3: Host is Domain, or a subdomain of it (never for IPs). }
+function DomainMatches(const Host, Domain: string): Boolean;
 begin
-  Parts := HeaderValue.Split([';']);
+  Result := (Host = Domain) or
+    (not IsIPAddress(Host) and (Length(Host) > Length(Domain)) and
+     (Copy(Host, Length(Host) - Length(Domain), MaxInt) = '.' + Domain));
+end;
+
+{ RFC 6265 5.1.4. }
+function PathMatches(const RequestPath, CookiePath: string): Boolean;
+begin
+  Result := (RequestPath = CookiePath) or
+    ((Pos(CookiePath, RequestPath) = 1) and
+     ((CookiePath[Length(CookiePath)] = '/') or
+      (RequestPath[Length(CookiePath) + 1] = '/')));
+end;
+
+function URLPath(const URI: TURI): string;
+begin
+  Result := URI.Path + URI.Document;
+  if Result = '' then
+    Result := '/'
+  else if Result[1] <> '/' then
+    Result := '/' + Result;
+end;
+
+{ RFC 6265 5.1.4 default-path: the request path up to its last '/'. }
+function DefaultCookiePath(const URI: TURI): string;
+var
+  P: Integer;
+begin
+  Result := URLPath(URI);
+  P := Length(Result);
+  while (P > 1) and (Result[P] <> '/') do
+    Dec(P);
+  if P <= 1 then
+    Result := '/'
+  else
+    Result := Copy(Result, 1, P - 1);
+end;
+
+function TCookieJar.IndexOf(const Name, Domain, Path: string;
+  Global: Boolean): Integer;
+var
+  I: Integer;
+begin
+  for I := 0 to High(FItems) do
+    if (FItems[I].Name = Name) and (FItems[I].Global = Global) and
+       (Global or ((FItems[I].Domain = Domain) and (FItems[I].Path = Path))) then
+      Exit(I);
+  Result := -1;
+end;
+
+procedure TCookieJar.RemoveName(const Name: string; GlobalOnly: Boolean);
+var
+  I: Integer;
+begin
+  for I := High(FItems) downto 0 do
+    if (FItems[I].Name = Name) and (FItems[I].Global or not GlobalOnly) then
+      Delete(FItems, I, 1);
+end;
+
+procedure TCookieJar.RemoveExpired;
+var
+  I: Integer;
+  NowUTC: TDateTime;
+begin
+  NowUTC := LocalTimeToUniversal(Now);
+  for I := High(FItems) downto 0 do
+    if (FItems[I].Expires <> 0) and (FItems[I].Expires <= NowUTC) then
+      Delete(FItems, I, 1);
+end;
+
+procedure TCookieJar.Clear;
+begin
+  FItems := nil;
+end;
+
+procedure TCookieJar.Assign(const Source: TCookieJar);
+begin
+  FItems := Copy(Source.FItems);
+end;
+
+procedure TCookieJar.SetGlobal(const Name, Value: string);
+var
+  C: TSessionCookie;
+begin
+  // Replaces any cookie of that name, as SetCookie always has.
+  RemoveName(Name, False);
+  C := Default(TSessionCookie);
+  C.Name := Name;
+  C.Value := Value;
+  C.Path := '/';
+  C.Global := True;
+  Insert(C, FItems, Length(FItems));
+end;
+
+procedure TCookieJar.Apply(const SetCookieValue, URL: string);
+var
+  URI: TURI;
+  Parts: TStringArray;
+  Pair, AttrName, AttrValue, Host: string;
+  C: TSessionCookie;
+  P, I, Idx: Integer;
+  MaxAge: Int64;
+  HasMaxAge, Expired: Boolean;
+  ExpiresAt: TDateTime;
+begin
+  Parts := SetCookieValue.Split([';']);
   if Length(Parts) = 0 then
     Exit;
-
   Pair := Trim(Parts[0]);
   P := Pos('=', Pair);
   if P <= 1 then
     Exit;
-  Name := Trim(Copy(Pair, 1, P - 1));
-  Value := Trim(Copy(Pair, P + 1, MaxInt));
 
-  // Max-Age wins over Expires (RFC 6265).
+  URI := ParseURI(URL);
+  Host := LowerCase(URI.Host);
+  C := Default(TSessionCookie);
+  C.Name := Trim(Copy(Pair, 1, P - 1));
+  C.Value := Trim(Copy(Pair, P + 1, MaxInt));
+  C.Domain := Host;
+  C.HostOnly := True;
+  C.Path := DefaultCookiePath(URI);
+  HasMaxAge := False;
   Expired := False;
+
   for I := 1 to High(Parts) do
   begin
     Pair := Trim(Parts[I]);
     P := Pos('=', Pair);
     if P = 0 then
+    begin
+      if SameText(Pair, 'Secure') then
+        C.Secure := True;
       Continue;
+    end;
     AttrName := Trim(Copy(Pair, 1, P - 1));
     AttrValue := Trim(Copy(Pair, P + 1, MaxInt));
-    if SameText(AttrName, 'Max-Age') and TryStrToInt(AttrValue, MaxAge) then
+    if SameText(AttrName, 'Domain') then
     begin
+      AttrValue := LowerCase(AttrValue);
+      if (AttrValue <> '') and (AttrValue[1] = '.') then
+        Delete(AttrValue, 1, 1);
+      if AttrValue = '' then
+        Continue;
+      // Reject a domain the host is not part of, or a bare top-level name.
+      if not DomainMatches(Host, AttrValue) or
+         ((Pos('.', AttrValue) = 0) and (AttrValue <> Host)) then
+        Exit;
+      C.Domain := AttrValue;
+      C.HostOnly := AttrValue = Host;
+    end
+    else if SameText(AttrName, 'Path') then
+    begin
+      if (AttrValue <> '') and (AttrValue[1] = '/') then
+        C.Path := AttrValue;
+    end
+    else if SameText(AttrName, 'Max-Age') and TryStrToInt64(AttrValue, MaxAge) then
+    begin
+      // Max-Age wins over Expires (RFC 6265).
+      HasMaxAge := True;
       Expired := MaxAge <= 0;
-      Break;
+      if not Expired then
+        C.Expires := IncSecond(LocalTimeToUniversal(Now), MaxAge);
+    end
+    else if SameText(AttrName, 'Expires') and not HasMaxAge and
+       TryParseHTTPDate(AttrValue, ExpiresAt) then
+    begin
+      Expired := ExpiresAt <= LocalTimeToUniversal(Now);
+      C.Expires := ExpiresAt;
     end;
-    if SameText(AttrName, 'Expires') and
-       TryParseHTTPDate(AttrValue, Expires) then
-      Expired := Expires <= LocalTimeToUniversal(Now);
   end;
 
+  // A server cookie supersedes a SetCookie cookie of the same name.
+  RemoveName(C.Name, True);
+  Idx := IndexOf(C.Name, C.Domain, C.Path, False);
   if Expired then
-    Cookies.Remove(Name)
+  begin
+    if Idx >= 0 then
+      Delete(FItems, Idx, 1);
+  end
+  else if Idx >= 0 then
+    FItems[Idx] := C
   else
-    Cookies.SetItem(Name, Value);
+    Insert(C, FItems, Length(FItems));
 end;
 
-procedure ApplySetCookieHeaders(var Cookies: TSimpleMap; Headers: TStrings);
+function TCookieJar.HeaderFor(const URL: string;
+  IncludeGlobal: Boolean): string;
+var
+  URI: TURI;
+  Host, Path: string;
+  IsHTTPS, Send: Boolean;
+  I: Integer;
+begin
+  Result := '';
+  RemoveExpired;
+  URI := ParseURI(URL);
+  Host := LowerCase(URI.Host);
+  Path := URLPath(URI);
+  IsHTTPS := SameText(URI.Protocol, 'https');
+  for I := 0 to High(FItems) do
+  begin
+    if FItems[I].Global then
+      Send := IncludeGlobal
+    else
+    begin
+      if FItems[I].HostOnly then
+        Send := Host = FItems[I].Domain
+      else
+        Send := DomainMatches(Host, FItems[I].Domain);
+      Send := Send and PathMatches(Path, FItems[I].Path) and
+        (IsHTTPS or not FItems[I].Secure);
+    end;
+    if Send then
+    begin
+      if Result <> '' then
+        Result := Result + '; ';
+      Result := Result + FItems[I].Name + '=' + FItems[I].Value;
+    end;
+  end;
+end;
+
+function TCookieJar.Get(const Name: string): string;
+var
+  I: Integer;
+begin
+  RemoveExpired;
+  for I := 0 to High(FItems) do
+    if FItems[I].Name = Name then
+      Exit(FItems[I].Value);
+  Result := '';
+end;
+
+function TCookieJar.Count: Integer;
+begin
+  RemoveExpired;
+  Result := Length(FItems);
+end;
+
+procedure ApplySetCookieHeaders(var Cookies: TCookieJar; Headers: TStrings;
+  const URL: string);
 var
   I: Integer;
 begin
   for I := 0 to Headers.Count - 1 do
     if SameText(Trim(Headers.Names[I]), 'Set-Cookie') then
-      ApplySetCookie(Cookies, Trim(Headers.ValueFromIndex[I]));
+      Cookies.Apply(Trim(Headers.ValueFromIndex[I]), URL);
 end;
 
 function THttpSession.DoRequest(const Method, URL: string; Body: TStream;
@@ -610,10 +847,12 @@ function THttpSession.DoRequest(const Method, URL: string; Body: TStream;
 var
   Client: TFPHTTPClient;
   RedirectHandler: TRedirectCookieHandler;
+  FullURL: string;
   I: Integer;
 begin
+  FullURL := AppendQueryParams(GetFullURL(URL), Params);
   Client := GetClient;
-  SetupRequest(Client);
+  SetupRequest(Client, FullURL);
   if ContentType <> '' then
     Client.AddHeader('Content-Type', ContentType);
   for I := 0 to High(Headers) do
@@ -622,20 +861,21 @@ begin
   RedirectHandler := TRedirectCookieHandler.Create;
   try
     RedirectHandler.Cookies := @FCookies;
+    RedirectHandler.CurrentURL := FullURL;
     Client.OnRedirect := @RedirectHandler.HandleRedirect;
     try
       if Assigned(Target) then
-        Result := ExecuteRequest(Client, Method,
-          AppendQueryParams(GetFullURL(URL), Params), Body, Target,
+        Result := ExecuteRequest(Client, Method, FullURL, Body, Target,
           OnProgress, OnProgressEvent, FRetryCount, FRetryDelay)
       else
-        Result := ExecuteRequest(Client, Method,
-          AppendQueryParams(GetFullURL(URL), Params), Body, FRetryCount,
+        Result := ExecuteRequest(Client, Method, FullURL, Body, FRetryCount,
           FRetryDelay);
     finally
       Client.OnRedirect := nil;
     end;
-    ApplySetCookieHeaders(FCookies, Client.ResponseHeaders);
+    // Cookies from the final response belong to the last URL requested.
+    ApplySetCookieHeaders(FCookies, Client.ResponseHeaders,
+      RedirectHandler.CurrentURL);
   finally
     RedirectHandler.Free;
   end;
@@ -1063,7 +1303,7 @@ end;
 
 procedure THttpSession.SetCookie(const Name, Value: string);
 begin
-  FCookies.SetItem(Name, Value);
+  FCookies.SetGlobal(Name, Value);
 end;
 
 procedure THttpSession.SetBaseURL(const URL: string);
@@ -1082,8 +1322,6 @@ begin
   if FClient <> nil then
     FClient.IOTimeout := Timeout;
 end;
-
-// Cookie Management
 
 procedure THttpSession.SetConnectTimeout(Timeout: Integer);
 begin
@@ -1120,6 +1358,8 @@ begin
   FRetryCount := MaxRetries;
   FRetryDelay := BaseDelayMS;
 end;
+
+// Cookie Management
 
 procedure THttpSession.ClearCookies;
 var

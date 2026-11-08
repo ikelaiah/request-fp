@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  EXPECTED_EXAMPLES: 13
+  EXPECTED_EXAMPLES: 16
 
 jobs:
   linux:
