@@ -90,9 +90,17 @@ type
     function GetClient: TFPHTTPClient;
     function GetFullURL(const URL: string): string;
     procedure SetupRequest(Client: TFPHTTPClient);
+    { Target nil keeps the body in memory; otherwise a 2xx body is streamed
+      into Target. }
     function DoRequest(const Method, URL: string; Body: TStream;
       const ContentType: string; const Headers: array of TKeyValue;
-      const Params: array of TKeyValue): TResponse;
+      const Params: array of TKeyValue; Target: TStream = nil;
+      OnProgress: TProgressProc = nil;
+      OnProgressEvent: TProgressEvent = nil): TResponse;
+    function DoStreamGet(const URL: string; Target: TStream;
+      OnProgress: TProgressProc; OnProgressEvent: TProgressEvent): TResponse;
+    function DoDownload(const URL, FilePath: string;
+      OnProgress: TProgressProc; OnProgressEvent: TProgressEvent): TResponse;
     function DoTextRequest(const Method, URL, Body: string; HasBody: Boolean;
       const ContentType: string; const Headers: array of TKeyValue;
       const Params: array of TKeyValue): TResponse;
@@ -154,6 +162,22 @@ type
     function TrySend(const Method, URL: string; const Body: string;
       const ContentType: string; const Headers: array of TKeyValue;
       const Params: array of TKeyValue): TRequestResult;
+
+    { Streams a GET response to FilePath with session headers and cookies.
+      Same rules as THttp.Download: FilePath is replaced only on a 2xx. }
+    function Download(const URL, FilePath: string): TResponse; overload;
+    function Download(const URL, FilePath: string; OnProgress: TProgressProc): TResponse; overload;
+    function Download(const URL, FilePath: string; OnProgress: TProgressEvent): TResponse; overload;
+    function TryDownload(const URL, FilePath: string): TRequestResult; overload;
+    function TryDownload(const URL, FilePath: string; OnProgress: TProgressProc): TRequestResult; overload;
+    function TryDownload(const URL, FilePath: string; OnProgress: TProgressEvent): TRequestResult; overload;
+    { Streams a GET response into Stream; see THttp.GetToStream. }
+    function GetToStream(const URL: string; Stream: TStream): TResponse; overload;
+    function GetToStream(const URL: string; Stream: TStream; OnProgress: TProgressProc): TResponse; overload;
+    function GetToStream(const URL: string; Stream: TStream; OnProgress: TProgressEvent): TResponse; overload;
+    function TryGetToStream(const URL: string; Stream: TStream): TRequestResult; overload;
+    function TryGetToStream(const URL: string; Stream: TStream; OnProgress: TProgressProc): TRequestResult; overload;
+    function TryGetToStream(const URL: string; Stream: TStream; OnProgress: TProgressEvent): TRequestResult; overload;
 
     { Sets a header for all requests }
     procedure SetHeader(const Name, Value: string);
@@ -576,7 +600,8 @@ end;
 
 function THttpSession.DoRequest(const Method, URL: string; Body: TStream;
   const ContentType: string; const Headers: array of TKeyValue;
-  const Params: array of TKeyValue): TResponse;
+  const Params: array of TKeyValue; Target: TStream;
+  OnProgress: TProgressProc; OnProgressEvent: TProgressEvent): TResponse;
 var
   Client: TFPHTTPClient;
   RedirectHandler: TRedirectCookieHandler;
@@ -594,14 +619,43 @@ begin
     RedirectHandler.Cookies := @FCookies;
     Client.OnRedirect := @RedirectHandler.HandleRedirect;
     try
-      Result := ExecuteRequest(Client, Method,
-        AppendQueryParams(GetFullURL(URL), Params), Body);
+      if Assigned(Target) then
+        Result := ExecuteRequest(Client, Method,
+          AppendQueryParams(GetFullURL(URL), Params), Body, Target,
+          OnProgress, OnProgressEvent)
+      else
+        Result := ExecuteRequest(Client, Method,
+          AppendQueryParams(GetFullURL(URL), Params), Body);
     finally
       Client.OnRedirect := nil;
     end;
     ApplySetCookieHeaders(FCookies, Client.ResponseHeaders);
   finally
     RedirectHandler.Free;
+  end;
+end;
+
+function THttpSession.DoStreamGet(const URL: string; Target: TStream;
+  OnProgress: TProgressProc; OnProgressEvent: TProgressEvent): TResponse;
+begin
+  if Target = nil then
+    raise ERequestError.Create('Stream cannot be nil');
+  Result := DoRequest('GET', URL, nil, '', [], [], Target, OnProgress,
+    OnProgressEvent);
+end;
+
+function THttpSession.DoDownload(const URL, FilePath: string;
+  OnProgress: TProgressProc; OnProgressEvent: TProgressEvent): TResponse;
+var
+  PartFile: TDownloadFile;
+begin
+  PartFile := TDownloadFile.Create(FilePath);
+  try
+    Result := DoStreamGet(URL, PartFile.Stream, OnProgress, OnProgressEvent);
+    if Result.OK then
+      PartFile.Commit;
+  finally
+    PartFile.Free;
   end;
 end;
 
@@ -834,6 +888,105 @@ function THttpSession.TrySend(const Method, URL: string; const Body: string;
 begin
   try
     Result.Response := Send(Method, URL, Body, ContentType, Headers, Params);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+      SetTryFailure(Result, E);
+  end;
+end;
+
+// Streaming downloads
+
+function THttpSession.Download(const URL, FilePath: string): TResponse;
+begin
+  Result := DoDownload(URL, FilePath, nil, nil);
+end;
+
+function THttpSession.Download(const URL, FilePath: string;
+  OnProgress: TProgressProc): TResponse;
+begin
+  Result := DoDownload(URL, FilePath, OnProgress, nil);
+end;
+
+function THttpSession.Download(const URL, FilePath: string;
+  OnProgress: TProgressEvent): TResponse;
+begin
+  Result := DoDownload(URL, FilePath, nil, OnProgress);
+end;
+
+function THttpSession.TryDownload(const URL, FilePath: string): TRequestResult;
+begin
+  Result := TryDownload(URL, FilePath, TProgressProc(nil));
+end;
+
+function THttpSession.TryDownload(const URL, FilePath: string;
+  OnProgress: TProgressProc): TRequestResult;
+begin
+  try
+    Result.Response := DoDownload(URL, FilePath, OnProgress, nil);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+      SetTryFailure(Result, E);
+  end;
+end;
+
+function THttpSession.TryDownload(const URL, FilePath: string;
+  OnProgress: TProgressEvent): TRequestResult;
+begin
+  try
+    Result.Response := DoDownload(URL, FilePath, nil, OnProgress);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+      SetTryFailure(Result, E);
+  end;
+end;
+
+function THttpSession.GetToStream(const URL: string; Stream: TStream): TResponse;
+begin
+  Result := DoStreamGet(URL, Stream, nil, nil);
+end;
+
+function THttpSession.GetToStream(const URL: string; Stream: TStream;
+  OnProgress: TProgressProc): TResponse;
+begin
+  Result := DoStreamGet(URL, Stream, OnProgress, nil);
+end;
+
+function THttpSession.GetToStream(const URL: string; Stream: TStream;
+  OnProgress: TProgressEvent): TResponse;
+begin
+  Result := DoStreamGet(URL, Stream, nil, OnProgress);
+end;
+
+function THttpSession.TryGetToStream(const URL: string;
+  Stream: TStream): TRequestResult;
+begin
+  Result := TryGetToStream(URL, Stream, TProgressProc(nil));
+end;
+
+function THttpSession.TryGetToStream(const URL: string; Stream: TStream;
+  OnProgress: TProgressProc): TRequestResult;
+begin
+  try
+    Result.Response := DoStreamGet(URL, Stream, OnProgress, nil);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+      SetTryFailure(Result, E);
+  end;
+end;
+
+function THttpSession.TryGetToStream(const URL: string; Stream: TStream;
+  OnProgress: TProgressEvent): TRequestResult;
+begin
+  try
+    Result.Response := DoStreamGet(URL, Stream, nil, OnProgress);
     Result.Success := True;
     Result.Error := '';
   except

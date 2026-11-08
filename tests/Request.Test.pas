@@ -12,6 +12,12 @@ uses
 type
   { TRequestSimpleTests }
   TRequestSimpleTests = class(TTestCase)
+  private
+    FProgressCalls: Integer;
+    FLastReceived: Int64;
+    FLastTotal: Int64;
+    FCancelAfter: Integer;
+    procedure TrackProgress(Received, Total: Int64);
   published
     // Basic HTTP methods
     procedure Test01_SimpleGet;
@@ -60,6 +66,13 @@ type
     procedure Test33_MultipartEscapingAndContentType;
     procedure Test34_MultipartMissingFileRaisesRequestError;
     procedure Test35_PostJSONKeepsCustomContentType;
+    // Streaming downloads
+    procedure Test36_DownloadToFileWithProgress;
+    procedure Test37_GetToStreamChunkedUnknownTotal;
+    procedure Test38_DownloadErrorStatusKeepsFile;
+    procedure Test39_DownloadCancelKeepsOldFile;
+    procedure Test40_TruncatedDownloadRaises;
+    procedure Test41_GetToStreamRedirectAndPlainProc;
   end;
 
 implementation
@@ -733,6 +746,232 @@ begin
   AssertEquals('Custom Content-Type is sent unchanged',
     'application/vnd.api+json',
     R.JSON.FindPath('headers.Content-Type').AsString);
+end;
+
+{ Streaming downloads }
+
+var
+  GPlainProgressCalls: Integer;
+  GPlainLastReceived: Int64;
+
+procedure PlainProgress(Received, Total: Int64);
+begin
+  Inc(GPlainProgressCalls);
+  GPlainLastReceived := Received;
+end;
+
+function ReadFileText(const Path: string): RawByteString;
+var
+  FS: TFileStream;
+begin
+  FS := TFileStream.Create(Path, fmOpenRead or fmShareDenyWrite);
+  try
+    SetLength(Result, FS.Size);
+    if FS.Size > 0 then
+      FS.ReadBuffer(Result[1], FS.Size);
+  finally
+    FS.Free;
+  end;
+end;
+
+procedure WriteFileText(const Path: string; const Data: RawByteString);
+var
+  FS: TFileStream;
+begin
+  FS := TFileStream.Create(Path, fmCreate);
+  try
+    if Data <> '' then
+      FS.WriteBuffer(Data[1], Length(Data));
+  finally
+    FS.Free;
+  end;
+end;
+
+function StreamText(Stream: TMemoryStream): RawByteString;
+begin
+  SetLength(Result, Stream.Size);
+  if Stream.Size > 0 then
+    Move(Stream.Memory^, Result[1], Stream.Size);
+end;
+
+function IsPatternBytes(const Data: RawByteString; Count: Integer): Boolean;
+var
+  I: Integer;
+begin
+  Result := Length(Data) = Count;
+  if Result then
+    for I := 1 to Count do
+      if Ord(Data[I]) <> (I - 1) mod 256 then
+        Exit(False);
+end;
+
+procedure TRequestSimpleTests.TrackProgress(Received, Total: Int64);
+begin
+  Inc(FProgressCalls);
+  FLastReceived := Received;
+  FLastTotal := Total;
+  if (FCancelAfter > 0) and (FProgressCalls >= FCancelAfter) then
+    raise ERequestError.Create('Cancelled by test');
+end;
+
+procedure TRequestSimpleTests.Test36_DownloadToFileWithProgress;
+const
+  ByteCount = 200000;
+var
+  R: TResponse;
+  Path: string;
+begin
+  Path := GetTempDir + 'request_fp_download.bin';
+  DeleteFile(Path);
+  FProgressCalls := 0;
+  FCancelAfter := 0;
+  try
+    R := Http.Download(TestURL('/bytes/' + IntToStr(ByteCount)), Path,
+      @TrackProgress);
+    AssertEquals('Status', 200, R.StatusCode);
+    AssertEquals('Body is not kept in memory', '', R.Text);
+    AssertEquals('Headers are kept', IntToStr(ByteCount),
+      R.HeaderValue('Content-Length'));
+    AssertTrue('File holds the exact bytes',
+      IsPatternBytes(ReadFileText(Path), ByteCount));
+    AssertFalse('No partial file left', FileExists(Path + '.part'));
+    AssertTrue('Progress was reported', FProgressCalls > 0);
+    AssertEquals('Last progress = all bytes', ByteCount, FLastReceived);
+    AssertEquals('Total from Content-Length', ByteCount, FLastTotal);
+  finally
+    DeleteFile(Path);
+  end;
+end;
+
+procedure TRequestSimpleTests.Test37_GetToStreamChunkedUnknownTotal;
+const
+  ByteCount = 5500;
+var
+  R: TResponse;
+  Stream: TMemoryStream;
+begin
+  FProgressCalls := 0;
+  FCancelAfter := 0;
+  Stream := TMemoryStream.Create;
+  try
+    R := Http.GetToStream(TestURL('/stream-bytes/' + IntToStr(ByteCount)),
+      Stream, @TrackProgress);
+    AssertEquals('Status', 200, R.StatusCode);
+    AssertTrue('Chunked body arrives intact',
+      IsPatternBytes(StreamText(Stream), ByteCount));
+    AssertEquals('Last progress = all bytes', ByteCount, FLastReceived);
+    AssertEquals('Total unknown without Content-Length', -1, FLastTotal);
+  finally
+    Stream.Free;
+  end;
+end;
+
+procedure TRequestSimpleTests.Test38_DownloadErrorStatusKeepsFile;
+var
+  R: TResponse;
+  Res: TRequestResult;
+  Path: string;
+begin
+  Path := GetTempDir + 'request_fp_keep.txt';
+  WriteFileText(Path, 'old');
+  try
+    R := Http.Download(TestURL('/status/404'), Path);
+    AssertEquals('Status', 404, R.StatusCode);
+    AssertTrue('Error body is in Text', Pos('404', R.Text) > 0);
+    AssertEquals('Existing file untouched', 'old', ReadFileText(Path));
+    AssertFalse('No partial file left', FileExists(Path + '.part'));
+
+    Res := Http.TryDownload(TestURL('/status/500'), Path);
+    AssertTrue('Transport succeeded', Res.Success);
+    AssertFalse('Not OK', Res.OK);
+    AssertEquals('Existing file still untouched', 'old', ReadFileText(Path));
+  finally
+    DeleteFile(Path);
+  end;
+end;
+
+procedure TRequestSimpleTests.Test39_DownloadCancelKeepsOldFile;
+var
+  Res: TRequestResult;
+  Path: string;
+  Raised: Boolean;
+begin
+  Path := GetTempDir + 'request_fp_cancel.bin';
+  WriteFileText(Path, 'old');
+  try
+    FProgressCalls := 0;
+    FCancelAfter := 1;
+    Raised := False;
+    try
+      Http.Download(TestURL('/bytes/300000'), Path, @TrackProgress);
+    except
+      on E: ERequestError do
+        Raised := Pos('Cancelled by test', E.Message) > 0;
+    end;
+    AssertTrue('Exception from the callback cancels', Raised);
+    AssertEquals('Existing file untouched', 'old', ReadFileText(Path));
+    AssertFalse('Partial file deleted', FileExists(Path + '.part'));
+
+    FProgressCalls := 0;
+    Res := Http.TryDownload(TestURL('/bytes/300000'), Path, @TrackProgress);
+    AssertFalse('TryDownload reports the cancel', Res.Success);
+    AssertFalse('Partial file deleted', FileExists(Path + '.part'));
+  finally
+    FCancelAfter := 0;
+    DeleteFile(Path);
+  end;
+end;
+
+procedure TRequestSimpleTests.Test40_TruncatedDownloadRaises;
+var
+  Path: string;
+  Raised: Boolean;
+begin
+  Path := GetTempDir + 'request_fp_truncated.bin';
+  DeleteFile(Path);
+  Raised := False;
+  try
+    Http.Download(TestURL('/truncated-bytes/4000'), Path);
+  except
+    on E: ENetworkError do
+      Raised := Pos('closed after 2000 of 4000 bytes', E.Message) > 0;
+  end;
+  AssertTrue('Short body raises ENetworkError', Raised);
+  AssertFalse('No file created', FileExists(Path));
+  AssertFalse('Partial file deleted', FileExists(Path + '.part'));
+end;
+
+procedure TRequestSimpleTests.Test41_GetToStreamRedirectAndPlainProc;
+const
+  ByteCount = 3000;
+var
+  R: TResponse;
+  Stream: TMemoryStream;
+  Raised: Boolean;
+begin
+  GPlainProgressCalls := 0;
+  Stream := TMemoryStream.Create;
+  try
+    R := Http.GetToStream(TestURL('/redirect-to'), Stream,
+      [KV('X-Test', '1')], [KV('url', '/bytes/' + IntToStr(ByteCount))],
+      @PlainProgress);
+    AssertEquals('Status after redirect', 200, R.StatusCode);
+    AssertTrue('Only the final body is written',
+      IsPatternBytes(StreamText(Stream), ByteCount));
+    AssertTrue('Plain procedure progress', GPlainProgressCalls > 0);
+    AssertEquals('Plain procedure saw all bytes', ByteCount, GPlainLastReceived);
+  finally
+    Stream.Free;
+  end;
+
+  Raised := False;
+  try
+    Http.GetToStream(TestURL('/get'), nil);
+  except
+    on E: ERequestError do
+      Raised := True;
+  end;
+  AssertTrue('nil stream raises ERequestError', Raised);
 end;
 
 procedure TRequestSimpleTests.Test25_SSLInitialization;

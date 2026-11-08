@@ -216,6 +216,29 @@ class RequestHandler(BaseHTTPRequestHandler):
                 count = 256
             body = bytes(i % 256 for i in range(count))
             self.send_bytes(200, body, "application/octet-stream")
+        elif path.startswith("/stream-bytes/"):
+            # Same bytes as /bytes/N, sent chunked without Content-Length.
+            count = int(path.rsplit("/", 1)[1])
+            body = bytes(i % 256 for i in range(count))
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Transfer-Encoding", "chunked")
+            self.end_headers()
+            for start in range(0, count, 1000):
+                chunk = body[start:start + 1000]
+                self.wfile.write(b"%x\r\n%s\r\n" % (len(chunk), chunk))
+            self.wfile.write(b"0\r\n\r\n")
+        elif path.startswith("/truncated-bytes/"):
+            # Promises N bytes, sends half, then closes the connection.
+            count = int(path.rsplit("/", 1)[1])
+            body = bytes(i % 256 for i in range(count // 2))
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(count))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
+            self.close_connection = True
         elif path == "/health":
             self.send_bytes(200, b"ok", "text/plain; charset=utf-8")
         elif path == "/html":

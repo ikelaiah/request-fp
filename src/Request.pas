@@ -29,6 +29,11 @@ type
   { Connect timeout, or a read/write failure after the I/O timeout elapsed. }
   ETimeoutError = class(ENetworkError);
 
+  { Streaming progress: bytes written so far and the expected total, which is
+    -1 when the server sends no Content-Length. Raise an exception to cancel. }
+  TProgressProc = procedure(Received, Total: Int64);
+  TProgressEvent = procedure(Received, Total: Int64) of object;
+
   { TKeyValue - Simple key-value pair }
   TKeyValue = record
     Key: string;
@@ -144,6 +149,24 @@ type
     Error: string;
     { True only when transport succeeded and the response status is 2xx. }
     property OK: Boolean read GetOK;
+  end;
+
+  { Writes a download to FilePath + '.part'. Commit replaces FilePath with it;
+    freeing without Commit deletes the partial file, so FilePath is never left
+    half-written. Used by Download; applications rarely need it directly. }
+  TDownloadFile = class
+  private
+    FFilePath: string;
+    FPartPath: string;
+    FStream: TFileStream;
+    FCommitted: Boolean;
+  public
+    { Raises ERequestError if the partial file cannot be created. }
+    constructor Create(const AFilePath: string);
+    destructor Destroy; override;
+    { Replaces FilePath with the partial file. Raises ERequestError on failure. }
+    procedure Commit;
+    property Stream: TFileStream read FStream;
   end;
 
   { Global HTTP functions }
@@ -437,6 +460,41 @@ type
     class function TryHead(const URL: string): TRequestResult; static; overload;
     class function TryHead(const URL: string; const Headers: array of TKeyValue): TRequestResult; static; overload;
 
+    { Streams a GET response to FilePath without holding it in memory.
+      A 2xx body goes to FilePath + '.part', which replaces FilePath once
+      complete; Response.Text is then empty. Any other status leaves FilePath
+      untouched and puts the body in Response.Text. A failed or cancelled
+      transfer deletes the partial file. }
+    class function Download(const URL, FilePath: string): TResponse; static; overload;
+    class function Download(const URL, FilePath: string; OnProgress: TProgressProc): TResponse; static; overload;
+    class function Download(const URL, FilePath: string; OnProgress: TProgressEvent): TResponse; static; overload;
+    class function Download(const URL, FilePath: string; const Headers, Params: array of TKeyValue): TResponse; static; overload;
+    class function Download(const URL, FilePath: string; const Headers, Params: array of TKeyValue; OnProgress: TProgressProc): TResponse; static; overload;
+    class function Download(const URL, FilePath: string; const Headers, Params: array of TKeyValue; OnProgress: TProgressEvent): TResponse; static; overload;
+    class function TryDownload(const URL, FilePath: string): TRequestResult; static; overload;
+    class function TryDownload(const URL, FilePath: string; OnProgress: TProgressProc): TRequestResult; static; overload;
+    class function TryDownload(const URL, FilePath: string; OnProgress: TProgressEvent): TRequestResult; static; overload;
+    class function TryDownload(const URL, FilePath: string; const Headers, Params: array of TKeyValue): TRequestResult; static; overload;
+    class function TryDownload(const URL, FilePath: string; const Headers, Params: array of TKeyValue; OnProgress: TProgressProc): TRequestResult; static; overload;
+    class function TryDownload(const URL, FilePath: string; const Headers, Params: array of TKeyValue; OnProgress: TProgressEvent): TRequestResult; static; overload;
+
+    { Streams a GET response into Stream (written at its current position).
+      Same rules as Download: only a 2xx body is written to Stream; any other
+      body is returned in Response.Text. Bytes already written stay in Stream
+      if the transfer fails. The caller owns Stream. }
+    class function GetToStream(const URL: string; Stream: TStream): TResponse; static; overload;
+    class function GetToStream(const URL: string; Stream: TStream; OnProgress: TProgressProc): TResponse; static; overload;
+    class function GetToStream(const URL: string; Stream: TStream; OnProgress: TProgressEvent): TResponse; static; overload;
+    class function GetToStream(const URL: string; Stream: TStream; const Headers, Params: array of TKeyValue): TResponse; static; overload;
+    class function GetToStream(const URL: string; Stream: TStream; const Headers, Params: array of TKeyValue; OnProgress: TProgressProc): TResponse; static; overload;
+    class function GetToStream(const URL: string; Stream: TStream; const Headers, Params: array of TKeyValue; OnProgress: TProgressEvent): TResponse; static; overload;
+    class function TryGetToStream(const URL: string; Stream: TStream): TRequestResult; static; overload;
+    class function TryGetToStream(const URL: string; Stream: TStream; OnProgress: TProgressProc): TRequestResult; static; overload;
+    class function TryGetToStream(const URL: string; Stream: TStream; OnProgress: TProgressEvent): TRequestResult; static; overload;
+    class function TryGetToStream(const URL: string; Stream: TStream; const Headers, Params: array of TKeyValue): TRequestResult; static; overload;
+    class function TryGetToStream(const URL: string; Stream: TStream; const Headers, Params: array of TKeyValue; OnProgress: TProgressProc): TRequestResult; static; overload;
+    class function TryGetToStream(const URL: string; Stream: TStream; const Headers, Params: array of TKeyValue; OnProgress: TProgressEvent): TRequestResult; static; overload;
+
     { I/O timeout in milliseconds for all Http requests (default 30000).
       0 waits forever. Sessions have their own SetTimeout. }
     class procedure SetTimeout(Milliseconds: Integer); static;
@@ -457,7 +515,13 @@ procedure EnsureSSL;
 { Runs one request on Client (any status is returned) and maps transport
   failures to ERequestError, ENetworkError, or ETimeoutError. }
 function ExecuteRequest(Client: TFPHTTPClient; const Method, URL: string;
-  Body: TStream): TResponse;
+  Body: TStream): TResponse; overload;
+{ Like ExecuteRequest, but writes a 2xx response body to Target and reports
+  progress (either callback may be nil); Response.Text is then empty. Any
+  other body stays in Response.Text. }
+function ExecuteRequest(Client: TFPHTTPClient; const Method, URL: string;
+  Body, Target: TStream; OnProgress: TProgressProc;
+  OnProgressEvent: TProgressEvent): TResponse; overload;
 { Appends URL-encoded Params to URL. }
 function AppendQueryParams(const URL: string;
   const Params: array of TKeyValue): string;
@@ -952,13 +1016,139 @@ begin
   Result := ERequestError.Create('HTTP Request Error: ' + E.Message);
 end;
 
-function ExecuteRequest(Client: TFPHTTPClient; const Method, URL: string;
-  Body: TStream): TResponse;
+type
+  { Receives the response body from TFPHTTPClient. A 2xx body goes to Target
+    with progress reports; any other body is kept in ErrorBody. FPC does not
+    write redirect bodies, so only the final response reaches the sink. }
+  TResponseSink = class(TStream)
+  private
+    FClient: TFPHTTPClient;
+    FTarget: TStream;
+    FErrorBody: TMemoryStream;
+    FWritten: Int64;
+    FReceived: Int64;
+    FTotal: Int64;
+    FStarted: Boolean;
+    FOnProgress: TProgressProc;
+    FOnProgressEvent: TProgressEvent;
+  public
+    constructor Create(AClient: TFPHTTPClient; ATarget: TStream;
+      AOnProgress: TProgressProc; AOnProgressEvent: TProgressEvent);
+    destructor Destroy; override;
+    function Read(var Buffer; Count: Longint): Longint; override;
+    function Write(const Buffer; Count: Longint): Longint; override;
+    function Seek(const Offset: Int64; Origin: TSeekOrigin): Int64; override;
+    property ErrorBody: TMemoryStream read FErrorBody;
+    property Received: Int64 read FReceived;
+  end;
+
+constructor TResponseSink.Create(AClient: TFPHTTPClient; ATarget: TStream;
+  AOnProgress: TProgressProc; AOnProgressEvent: TProgressEvent);
+begin
+  inherited Create;
+  FClient := AClient;
+  FTarget := ATarget;
+  FOnProgress := AOnProgress;
+  FOnProgressEvent := AOnProgressEvent;
+  FErrorBody := TMemoryStream.Create;
+end;
+
+destructor TResponseSink.Destroy;
+begin
+  FErrorBody.Free;
+  inherited Destroy;
+end;
+
+function TResponseSink.Read(var Buffer; Count: Longint): Longint;
+begin
+  raise EStreamError.Create('TResponseSink is write-only');
+end;
+
+function TResponseSink.Write(const Buffer; Count: Longint): Longint;
+var
+  Status: Integer;
+begin
+  Result := Count;
+  if Count <= 0 then
+    Exit;
+  Inc(FWritten, Count);
+  Status := FClient.ResponseStatusCode;
+  if (Status < 200) or (Status > 299) then
+  begin
+    FErrorBody.WriteBuffer(Buffer, Count);
+    Exit;
+  end;
+  if not FStarted then
+  begin
+    FStarted := True;
+    FTotal := StrToInt64Def(
+      TFPHTTPClient.GetHeader(FClient.ResponseHeaders, 'Content-Length'), -1);
+  end;
+  FTarget.WriteBuffer(Buffer, Count);
+  Inc(FReceived, Count);
+  if Assigned(FOnProgress) then
+    FOnProgress(FReceived, FTotal);
+  if Assigned(FOnProgressEvent) then
+    FOnProgressEvent(FReceived, FTotal);
+end;
+
+function TResponseSink.Seek(const Offset: Int64; Origin: TSeekOrigin): Int64;
+var
+  NewPos: Int64;
+begin
+  // Forward-only: allow position queries, refuse real moves.
+  if Origin = soBeginning then
+    NewPos := Offset
+  else
+    NewPos := FWritten + Offset;
+  if NewPos <> FWritten then
+    raise EStreamError.Create('TResponseSink cannot seek');
+  Result := FWritten;
+end;
+
+{ TDownloadFile }
+
+constructor TDownloadFile.Create(const AFilePath: string);
+begin
+  inherited Create;
+  FFilePath := AFilePath;
+  FPartPath := AFilePath + '.part';
+  try
+    FStream := TFileStream.Create(FPartPath, fmCreate);
+  except
+    on E: Exception do
+      raise ERequestError.Create('Cannot write download file "' +
+        FPartPath + '": ' + E.Message);
+  end;
+end;
+
+destructor TDownloadFile.Destroy;
+begin
+  FreeAndNil(FStream);
+  if not FCommitted and FileExists(FPartPath) then
+    SysUtils.DeleteFile(FPartPath);
+  inherited Destroy;
+end;
+
+procedure TDownloadFile.Commit;
+begin
+  FreeAndNil(FStream);
+  if FileExists(FFilePath) and not SysUtils.DeleteFile(FFilePath) then
+    raise ERequestError.Create('Cannot replace "' + FFilePath + '"');
+  if not SysUtils.RenameFile(FPartPath, FFilePath) then
+    raise ERequestError.Create('Cannot rename "' + FPartPath + '" to "' +
+      FFilePath + '"');
+  FCommitted := True;
+end;
+
+{ Runs the request, writing the body to Sink when given or to memory. }
+function RunRequest(Client: TFPHTTPClient; const Method, URL: string;
+  Body: TStream; Sink: TResponseSink): TResponse;
 var
   ResponseStream: TMemoryStream;
   StartTick: QWord;
 begin
-  ResponseStream := TMemoryStream.Create;
+  ResponseStream := nil;
   try
     StartTick := GetTickCount64;
     try
@@ -969,13 +1159,22 @@ begin
       Client.RequestBody := Body;
       try
         // Accept any status; callers inspect StatusCode, OK, or RaiseForStatus.
-        Client.HTTPMethod(Method, URL, ResponseStream, []);
+        if Assigned(Sink) then
+          Client.HTTPMethod(Method, URL, Sink, [])
+        else
+        begin
+          ResponseStream := TMemoryStream.Create;
+          Client.HTTPMethod(Method, URL, ResponseStream, []);
+        end;
       finally
         Client.RequestBody := nil;
       end;
       Result.StatusCode := Client.ResponseStatusCode;
       Result.FHeaders := Client.ResponseHeaders.Text;
-      Result.SetContent(ReadStreamAsUTF8String(ResponseStream));
+      if Assigned(Sink) then
+        Result.SetContent(ReadStreamAsUTF8String(Sink.ErrorBody))
+      else
+        Result.SetContent(ReadStreamAsUTF8String(ResponseStream));
     except
       on E: ERequestError do
         raise;
@@ -988,26 +1187,100 @@ begin
   end;
 end;
 
+function ExecuteRequest(Client: TFPHTTPClient; const Method, URL: string;
+  Body: TStream): TResponse;
+begin
+  Result := RunRequest(Client, Method, URL, Body, nil);
+end;
+
+function ExecuteRequest(Client: TFPHTTPClient; const Method, URL: string;
+  Body, Target: TStream; OnProgress: TProgressProc;
+  OnProgressEvent: TProgressEvent): TResponse;
+var
+  Sink: TResponseSink;
+  Expected: Int64;
+begin
+  if Target = nil then
+    raise ERequestError.Create('Target stream cannot be nil');
+  Sink := TResponseSink.Create(Client, Target, OnProgress, OnProgressEvent);
+  try
+    Result := RunRequest(Client, Method, URL, Body, Sink);
+    { FPC stops quietly when the server closes early, so check the length
+      to avoid saving a truncated body as complete. }
+    if Result.OK and not SameText(Method, 'HEAD') then
+    begin
+      Expected := StrToInt64Def(Result.HeaderValue('Content-Length'), -1);
+      if (Expected >= 0) and (Sink.Received <> Expected) then
+        raise ENetworkError.CreateFmt(
+          'Network Error: connection closed after %d of %d bytes',
+          [Sink.Received, Expected]);
+    end;
+  finally
+    Sink.Free;
+  end;
+end;
+
+function NewClient(const DefaultContentType: string;
+  const Headers: array of TKeyValue): TFPHTTPClient;
+var
+  I: Integer;
+begin
+  Result := TFPHTTPClient.Create(nil);
+  Result.AllowRedirect := True;
+  Result.IOTimeout := GDefaultTimeout;
+  for I := 0 to High(Headers) do
+    Result.RequestHeaders.Add(Headers[I].Key + ': ' + Headers[I].Value);
+  if (DefaultContentType <> '') and not HasHeader(Headers, 'Content-Type') then
+    Result.RequestHeaders.Add('Content-Type: ' + DefaultContentType);
+  if not HasHeader(Headers, 'User-Agent') then
+    Result.RequestHeaders.Add('User-Agent: ' + DEFAULT_USER_AGENT);
+end;
+
 function SendStream(const Method, URL: string; Body: TStream;
   const DefaultContentType: string; const Headers: array of TKeyValue;
   const Params: array of TKeyValue): TResponse;
 var
   Client: TFPHTTPClient;
-  I: Integer;
 begin
-  Client := TFPHTTPClient.Create(nil);
+  Client := NewClient(DefaultContentType, Headers);
   try
-    Client.AllowRedirect := True;
-    Client.IOTimeout := GDefaultTimeout;
-    for I := 0 to High(Headers) do
-      Client.RequestHeaders.Add(Headers[I].Key + ': ' + Headers[I].Value);
-    if (DefaultContentType <> '') and not HasHeader(Headers, 'Content-Type') then
-      Client.RequestHeaders.Add('Content-Type: ' + DefaultContentType);
-    if not HasHeader(Headers, 'User-Agent') then
-      Client.RequestHeaders.Add('User-Agent: ' + DEFAULT_USER_AGENT);
     Result := ExecuteRequest(Client, Method, AppendQueryParams(URL, Params), Body);
   finally
     Client.Free;
+  end;
+end;
+
+function StreamGet(const URL: string; Target: TStream;
+  const Headers, Params: array of TKeyValue; OnProgress: TProgressProc;
+  OnProgressEvent: TProgressEvent): TResponse;
+var
+  Client: TFPHTTPClient;
+begin
+  if Target = nil then
+    raise ERequestError.Create('Stream cannot be nil');
+  Client := NewClient('', Headers);
+  try
+    Result := ExecuteRequest(Client, 'GET', AppendQueryParams(URL, Params),
+      nil, Target, OnProgress, OnProgressEvent);
+  finally
+    Client.Free;
+  end;
+end;
+
+function DownloadFile(const URL, FilePath: string;
+  const Headers, Params: array of TKeyValue; OnProgress: TProgressProc;
+  OnProgressEvent: TProgressEvent): TResponse;
+var
+  Download: TDownloadFile;
+begin
+  Download := TDownloadFile.Create(FilePath);
+  try
+    Result := StreamGet(URL, Download.Stream, Headers, Params, OnProgress,
+      OnProgressEvent);
+    if Result.OK then
+      Download.Commit;
+  finally
+    Download.Free;
   end;
 end;
 
@@ -1565,6 +1838,158 @@ end;
 class function THttp.TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue; const Headers: array of TKeyValue): TRequestResult;
 begin
   Result := TryPostMultipart(URL, Fields, Files, Headers, []);
+end;
+
+{ Streaming downloads }
+
+function TryDownloadFile(const URL, FilePath: string;
+  const Headers, Params: array of TKeyValue; OnProgress: TProgressProc;
+  OnProgressEvent: TProgressEvent): TRequestResult;
+begin
+  try
+    Result.Response := DownloadFile(URL, FilePath, Headers, Params,
+      OnProgress, OnProgressEvent);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+      SetTryFailure(Result, E);
+  end;
+end;
+
+function TryStreamGet(const URL: string; Target: TStream;
+  const Headers, Params: array of TKeyValue; OnProgress: TProgressProc;
+  OnProgressEvent: TProgressEvent): TRequestResult;
+begin
+  try
+    Result.Response := StreamGet(URL, Target, Headers, Params, OnProgress,
+      OnProgressEvent);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+      SetTryFailure(Result, E);
+  end;
+end;
+
+class function THttp.Download(const URL, FilePath: string): TResponse;
+begin
+  Result := DownloadFile(URL, FilePath, [], [], nil, nil);
+end;
+
+class function THttp.Download(const URL, FilePath: string; OnProgress: TProgressProc): TResponse;
+begin
+  Result := DownloadFile(URL, FilePath, [], [], OnProgress, nil);
+end;
+
+class function THttp.Download(const URL, FilePath: string; OnProgress: TProgressEvent): TResponse;
+begin
+  Result := DownloadFile(URL, FilePath, [], [], nil, OnProgress);
+end;
+
+class function THttp.Download(const URL, FilePath: string; const Headers, Params: array of TKeyValue): TResponse;
+begin
+  Result := DownloadFile(URL, FilePath, Headers, Params, nil, nil);
+end;
+
+class function THttp.Download(const URL, FilePath: string; const Headers, Params: array of TKeyValue; OnProgress: TProgressProc): TResponse;
+begin
+  Result := DownloadFile(URL, FilePath, Headers, Params, OnProgress, nil);
+end;
+
+class function THttp.Download(const URL, FilePath: string; const Headers, Params: array of TKeyValue; OnProgress: TProgressEvent): TResponse;
+begin
+  Result := DownloadFile(URL, FilePath, Headers, Params, nil, OnProgress);
+end;
+
+class function THttp.TryDownload(const URL, FilePath: string): TRequestResult;
+begin
+  Result := TryDownloadFile(URL, FilePath, [], [], nil, nil);
+end;
+
+class function THttp.TryDownload(const URL, FilePath: string; OnProgress: TProgressProc): TRequestResult;
+begin
+  Result := TryDownloadFile(URL, FilePath, [], [], OnProgress, nil);
+end;
+
+class function THttp.TryDownload(const URL, FilePath: string; OnProgress: TProgressEvent): TRequestResult;
+begin
+  Result := TryDownloadFile(URL, FilePath, [], [], nil, OnProgress);
+end;
+
+class function THttp.TryDownload(const URL, FilePath: string; const Headers, Params: array of TKeyValue): TRequestResult;
+begin
+  Result := TryDownloadFile(URL, FilePath, Headers, Params, nil, nil);
+end;
+
+class function THttp.TryDownload(const URL, FilePath: string; const Headers, Params: array of TKeyValue; OnProgress: TProgressProc): TRequestResult;
+begin
+  Result := TryDownloadFile(URL, FilePath, Headers, Params, OnProgress, nil);
+end;
+
+class function THttp.TryDownload(const URL, FilePath: string; const Headers, Params: array of TKeyValue; OnProgress: TProgressEvent): TRequestResult;
+begin
+  Result := TryDownloadFile(URL, FilePath, Headers, Params, nil, OnProgress);
+end;
+
+class function THttp.GetToStream(const URL: string; Stream: TStream): TResponse;
+begin
+  Result := StreamGet(URL, Stream, [], [], nil, nil);
+end;
+
+class function THttp.GetToStream(const URL: string; Stream: TStream; OnProgress: TProgressProc): TResponse;
+begin
+  Result := StreamGet(URL, Stream, [], [], OnProgress, nil);
+end;
+
+class function THttp.GetToStream(const URL: string; Stream: TStream; OnProgress: TProgressEvent): TResponse;
+begin
+  Result := StreamGet(URL, Stream, [], [], nil, OnProgress);
+end;
+
+class function THttp.GetToStream(const URL: string; Stream: TStream; const Headers, Params: array of TKeyValue): TResponse;
+begin
+  Result := StreamGet(URL, Stream, Headers, Params, nil, nil);
+end;
+
+class function THttp.GetToStream(const URL: string; Stream: TStream; const Headers, Params: array of TKeyValue; OnProgress: TProgressProc): TResponse;
+begin
+  Result := StreamGet(URL, Stream, Headers, Params, OnProgress, nil);
+end;
+
+class function THttp.GetToStream(const URL: string; Stream: TStream; const Headers, Params: array of TKeyValue; OnProgress: TProgressEvent): TResponse;
+begin
+  Result := StreamGet(URL, Stream, Headers, Params, nil, OnProgress);
+end;
+
+class function THttp.TryGetToStream(const URL: string; Stream: TStream): TRequestResult;
+begin
+  Result := TryStreamGet(URL, Stream, [], [], nil, nil);
+end;
+
+class function THttp.TryGetToStream(const URL: string; Stream: TStream; OnProgress: TProgressProc): TRequestResult;
+begin
+  Result := TryStreamGet(URL, Stream, [], [], OnProgress, nil);
+end;
+
+class function THttp.TryGetToStream(const URL: string; Stream: TStream; OnProgress: TProgressEvent): TRequestResult;
+begin
+  Result := TryStreamGet(URL, Stream, [], [], nil, OnProgress);
+end;
+
+class function THttp.TryGetToStream(const URL: string; Stream: TStream; const Headers, Params: array of TKeyValue): TRequestResult;
+begin
+  Result := TryStreamGet(URL, Stream, Headers, Params, nil, nil);
+end;
+
+class function THttp.TryGetToStream(const URL: string; Stream: TStream; const Headers, Params: array of TKeyValue; OnProgress: TProgressProc): TRequestResult;
+begin
+  Result := TryStreamGet(URL, Stream, Headers, Params, OnProgress, nil);
+end;
+
+class function THttp.TryGetToStream(const URL: string; Stream: TStream; const Headers, Params: array of TKeyValue; OnProgress: TProgressEvent): TRequestResult;
+begin
+  Result := TryStreamGet(URL, Stream, Headers, Params, nil, OnProgress);
 end;
 
 initialization

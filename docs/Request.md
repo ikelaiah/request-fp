@@ -191,6 +191,47 @@ Response := Http.PostMultipart('https://api.example.com/upload',
 - A file that cannot be opened raises `ERequestError`.
 - Files are read into memory before sending.
 
+### Downloads and streaming
+
+`Download` and `GetToStream` write the body as it arrives, so large files
+never sit in memory:
+
+```pascal
+Http.Download(URL, FilePath)
+Http.Download(URL, FilePath, OnProgress)
+Http.Download(URL, FilePath, Headers, Params)
+Http.Download(URL, FilePath, Headers, Params, OnProgress)
+
+Http.GetToStream(URL, Stream)                 // same four forms
+```
+
+```pascal
+procedure ShowProgress(Received, Total: Int64);
+begin
+  if Total > 0 then
+    Write(#13, Received * 100 div Total, '%');
+end;
+
+Response := Http.Download('https://example.com/big.zip', 'big.zip',
+  @ShowProgress);
+if not Response.OK then
+  WriteLn('Failed: ', Response.StatusCode, ' ', Response.Text);
+```
+
+- Only a 2xx body is saved. It goes to `FilePath + '.part'` and replaces
+  `FilePath` once complete, so an existing file is never left half-written.
+- Any other status leaves `FilePath` (or `Stream`) untouched and puts the
+  error body in `Response.Text`. On a 2xx, `Response.Text` is empty.
+- `OnProgress` is a plain procedure or a method (`of object`):
+  `procedure(Received, Total: Int64)`. `Total` is `-1` when the server sends
+  no `Content-Length`.
+- Raise an exception in `OnProgress` to cancel; the partial file is deleted.
+- A body shorter than `Content-Length` raises `ENetworkError`.
+- `GetToStream` writes at the stream's current position. If a transfer fails,
+  bytes already written stay in the stream.
+- `TryDownload` and `TryGetToStream` take the same arguments and return
+  `TRequestResult`.
+
 ## Exception-free methods
 
 The `Try*` methods return `TRequestResult` rather than allowing request
