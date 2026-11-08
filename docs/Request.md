@@ -354,6 +354,30 @@ Stateless methods separate transport success from HTTP status:
 - Call `Response.RaiseForStatus` if your application wants non-2xx responses
   to raise.
 - Use a `Try*` method when request exceptions should be captured in a result.
+- A connection closed without any response raises `ENetworkError`.
+
+## Retries
+
+Requests are retried automatically, so short outages and rate limits often
+go unnoticed:
+
+- **Methods:** GET, HEAD, PUT, and DELETE only. POST and PATCH are never
+  retried, because repeating them can duplicate an action.
+- **When:** network errors (not timeouts), `429 Too Many Requests`, and
+  `503 Service Unavailable`.
+- **How often:** 2 retries; waits 250 ms, then 500 ms.
+- **Retry-After:** honoured, in seconds or as a date. If it is longer than
+  the timeout, the 429/503 response is returned without waiting.
+- **Downloads:** not retried once body bytes have been written.
+- After the last retry, the final response is returned (or the error raised).
+
+```pascal
+Http.SetRetry(5, 100);  // 5 retries: 100, 200, 400, 800, 1600 ms
+Http.SetRetry(0, 0);    // disable
+WriteLn(Http.GetRetryCount, ' retries, first delay ', Http.GetRetryDelay, ' ms');
+```
+
+Sessions have their own `Session.SetRetry` with the same defaults.
 
 ## HTTPS
 

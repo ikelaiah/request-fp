@@ -175,6 +175,15 @@ Normal stateless and session methods raise for request/transport failures and
 return HTTP responses of any status. `RaiseForStatus` opts in to raising for
 non-2xx. `Try*` methods capture request exceptions in `TRequestResult`.
 
+## Retries
+
+```pascal
+// On by default: GET/HEAD/PUT/DELETE, network errors, 429, 503
+Http.SetRetry(2, 250);    // default: 2 retries, 250 ms then 500 ms
+Http.SetRetry(0, 0);      // disable
+Session.SetRetry(0, 0);   // per session
+```
+
 ```pascal
 except
   on E: ETimeoutError do ...  // connect or I/O timeout

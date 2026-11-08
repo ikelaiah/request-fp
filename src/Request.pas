@@ -15,6 +15,9 @@ uses
 const
   REQUEST_FP_VERSION = '1.4.0';
   DEFAULT_USER_AGENT = 'Request-FP/' + REQUEST_FP_VERSION;
+  { Retries for GET, HEAD, PUT, and DELETE: count and first delay. }
+  DEFAULT_RETRY_COUNT = 2;
+  DEFAULT_RETRY_DELAY_MS = 250;
   {$IFDEF DEBUG}
     DEBUG_MODE = True;
   {$ELSE}
@@ -499,6 +502,14 @@ type
       0 waits forever. Sessions have their own SetTimeout. }
     class procedure SetTimeout(Milliseconds: Integer); static;
     class function GetTimeout: Integer; static;
+
+    { Automatic retries for all Http requests (default 2 retries, 250 ms
+      first delay, doubling). Only GET, HEAD, PUT, and DELETE are retried,
+      on network errors (not timeouts), 429, and 503. SetRetry(0, 0)
+      disables. Sessions have their own SetRetry. }
+    class procedure SetRetry(MaxRetries, BaseDelayMS: Integer); static;
+    class function GetRetryCount: Integer; static;
+    class function GetRetryDelay: Integer; static;
   end;
 
 { Short key/value helper for headers, query parameters, forms, and multipart data. }
@@ -513,15 +524,21 @@ procedure EnsureSSL;
   Http or THttpSession instead. }
 
 { Runs one request on Client (any status is returned) and maps transport
-  failures to ERequestError, ENetworkError, or ETimeoutError. }
+  failures to ERequestError, ENetworkError, or ETimeoutError. Retries as
+  described for THttp.SetRetry when MaxRetries > 0. }
 function ExecuteRequest(Client: TFPHTTPClient; const Method, URL: string;
-  Body: TStream): TResponse; overload;
+  Body: TStream; MaxRetries: Integer = 0;
+  RetryDelayMS: Integer = 0): TResponse; overload;
 { Like ExecuteRequest, but writes a 2xx response body to Target and reports
   progress (either callback may be nil); Response.Text is then empty. Any
-  other body stays in Response.Text. }
+  other body stays in Response.Text. No retry once body bytes were written. }
 function ExecuteRequest(Client: TFPHTTPClient; const Method, URL: string;
   Body, Target: TStream; OnProgress: TProgressProc;
-  OnProgressEvent: TProgressEvent): TResponse; overload;
+  OnProgressEvent: TProgressEvent; MaxRetries: Integer = 0;
+  RetryDelayMS: Integer = 0): TResponse; overload;
+{ Parses an HTTP or cookie date such as "Wed, 21 Oct 2015 07:28:00 GMT" or
+  "Wednesday, 21-Oct-15 07:28:00 GMT" into a UTC TDateTime. }
+function TryParseHTTPDate(const S: string; out Value: TDateTime): Boolean;
 { Appends URL-encoded Params to URL. }
 function AppendQueryParams(const URL: string;
   const Params: array of TKeyValue): string;
@@ -542,15 +559,19 @@ const
 implementation
 
 uses
-  ssockets;
+  ssockets, DateUtils;
 
 const
   FORM_CONTENT_TYPE = 'application/x-www-form-urlencoded';
   TIMEOUT_TOLERANCE_MS = 50;
+  { Longest Retry-After waited for when the I/O timeout is 0 (no limit). }
+  MAX_RETRY_WAIT_MS = 60000;
 
 var
   SSLInitialized: Boolean = False;
   GDefaultTimeout: Integer = 30000;
+  GRetryCount: Integer = DEFAULT_RETRY_COUNT;
+  GRetryDelay: Integer = DEFAULT_RETRY_DELAY_MS;
  
 function ReadStreamAsUTF8String(AStream: TStream): string;
 var
@@ -959,6 +980,46 @@ end;
 
 { Shared request pipeline }
 
+function TryParseHTTPDate(const S: string; out Value: TDateTime): Boolean;
+const
+  Months: array[1..12] of string = ('jan', 'feb', 'mar', 'apr', 'may', 'jun',
+    'jul', 'aug', 'sep', 'oct', 'nov', 'dec');
+var
+  Parts, TimeParts: TStringArray;
+  Work: string;
+  Day, Month, Year, H, M, Sec, I: Integer;
+begin
+  Result := False;
+  Value := 0;
+  Work := S;
+  I := Pos(',', Work);
+  if I > 0 then
+    Work := Copy(Work, I + 1, MaxInt);
+  Work := Trim(StringReplace(Work, '-', ' ', [rfReplaceAll]));
+  Parts := Work.Split([' '], TStringSplitOptions.ExcludeEmpty);
+  if Length(Parts) < 4 then
+    Exit;
+  if not TryStrToInt(Parts[0], Day) then
+    Exit;
+  Month := 0;
+  for I := 1 to 12 do
+    if SameText(Copy(Parts[1], 1, 3), Months[I]) then
+      Month := I;
+  if Month = 0 then
+    Exit;
+  if not TryStrToInt(Parts[2], Year) then
+    Exit;
+  if Year < 70 then
+    Inc(Year, 2000)
+  else if Year < 100 then
+    Inc(Year, 1900);
+  TimeParts := Parts[3].Split([':']);
+  if (Length(TimeParts) <> 3) or not TryStrToInt(TimeParts[0], H) or
+     not TryStrToInt(TimeParts[1], M) or not TryStrToInt(TimeParts[2], Sec) then
+    Exit;
+  Result := TryEncodeDateTime(Year, Month, Day, H, M, Sec, 0, Value);
+end;
+
 function HasHeader(const Headers: array of TKeyValue; const Name: string): Boolean;
 var
   I: Integer;
@@ -1040,6 +1101,8 @@ type
     function Read(var Buffer; Count: Longint): Longint; override;
     function Write(const Buffer; Count: Longint): Longint; override;
     function Seek(const Offset: Int64; Origin: TSeekOrigin): Int64; override;
+    { Clears the error body before another attempt. }
+    procedure Reset;
     property ErrorBody: TMemoryStream read FErrorBody;
     property Received: Int64 read FReceived;
   end;
@@ -1108,6 +1171,12 @@ begin
   Result := FWritten;
 end;
 
+procedure TResponseSink.Reset;
+begin
+  FErrorBody.Clear;
+  FWritten := FReceived;
+end;
+
 { TDownloadFile }
 
 constructor TDownloadFile.Create(const AFilePath: string);
@@ -1158,6 +1227,8 @@ begin
         EnsureSSL;
       if Assigned(Body) then
         Body.Position := 0;
+      if Assigned(Sink) then
+        Sink.Reset;
       Client.RequestBody := Body;
       try
         // Accept any status; callers inspect StatusCode, OK, or RaiseForStatus.
@@ -1171,6 +1242,10 @@ begin
       finally
         Client.RequestBody := nil;
       end;
+      // FPC returns status 0 when the server closes without a response.
+      if Client.ResponseStatusCode <= 0 then
+        raise ENetworkError.Create(
+          'Network Error: connection closed without a response');
       Result.StatusCode := Client.ResponseStatusCode;
       Result.FHeaders := Client.ResponseHeaders.Text;
       if Assigned(Sink) then
@@ -1189,15 +1264,92 @@ begin
   end;
 end;
 
-function ExecuteRequest(Client: TFPHTTPClient; const Method, URL: string;
-  Body: TStream): TResponse;
+function IsRetryableMethod(const Method: string): Boolean;
 begin
-  Result := RunRequest(Client, Method, URL, Body, nil);
+  Result := SameText(Method, 'GET') or SameText(Method, 'HEAD') or
+            SameText(Method, 'PUT') or SameText(Method, 'DELETE');
+end;
+
+{ Retry-After in milliseconds (seconds or an HTTP date), or -1 if absent. }
+function RetryAfterMS(const Value: string): Int64;
+var
+  Seconds: Int64;
+  When: TDateTime;
+begin
+  Result := -1;
+  if TryStrToInt64(Trim(Value), Seconds) then
+  begin
+    if Seconds >= 0 then
+      Result := Seconds * 1000;
+  end
+  else if TryParseHTTPDate(Value, When) then
+  begin
+    Result := MilliSecondsBetween(When, LocalTimeToUniversal(Now));
+    if When < LocalTimeToUniversal(Now) then
+      Result := 0;
+  end;
+end;
+
+{ Runs the request, retrying idempotent methods on network errors (not
+  timeouts), 429, and 503. Waits DelayMS, then doubles it, unless the server
+  sends Retry-After. A Retry-After longer than the timeout is not waited for:
+  the response is returned. Never retries after body bytes reached Sink. }
+function RunWithRetries(Client: TFPHTTPClient; const Method, URL: string;
+  Body: TStream; Sink: TResponseSink; MaxRetries, DelayMS: Integer): TResponse;
+var
+  Attempt: Integer;
+  Wait, Limit: Int64;
+  Retry: Boolean;
+begin
+  if not IsRetryableMethod(Method) then
+    MaxRetries := 0;
+  Limit := Client.IOTimeout;
+  if Limit <= 0 then
+    Limit := MAX_RETRY_WAIT_MS;
+  Attempt := 0;
+  repeat
+    Retry := False;
+    Wait := Int64(DelayMS) shl Attempt;
+    try
+      Result := RunRequest(Client, Method, URL, Body, Sink);
+      if (Attempt < MaxRetries) and
+         ((Result.StatusCode = 429) or (Result.StatusCode = 503)) then
+      begin
+        Retry := True;
+        if RetryAfterMS(Result.HeaderValue('Retry-After')) >= 0 then
+        begin
+          Wait := RetryAfterMS(Result.HeaderValue('Retry-After'));
+          Retry := Wait <= Limit;
+        end;
+      end;
+    except
+      on E: ENetworkError do
+      begin
+        if (Attempt >= MaxRetries) or (E is ETimeoutError) or
+           (Assigned(Sink) and (Sink.Received > 0)) then
+          raise;
+        Retry := True;
+      end;
+    end;
+    if not Retry then
+      Exit;
+    if Wait > 0 then
+      Sleep(Wait);
+    Inc(Attempt);
+  until False;
+end;
+
+function ExecuteRequest(Client: TFPHTTPClient; const Method, URL: string;
+  Body: TStream; MaxRetries: Integer; RetryDelayMS: Integer): TResponse;
+begin
+  Result := RunWithRetries(Client, Method, URL, Body, nil, MaxRetries,
+    RetryDelayMS);
 end;
 
 function ExecuteRequest(Client: TFPHTTPClient; const Method, URL: string;
   Body, Target: TStream; OnProgress: TProgressProc;
-  OnProgressEvent: TProgressEvent): TResponse;
+  OnProgressEvent: TProgressEvent; MaxRetries: Integer;
+  RetryDelayMS: Integer): TResponse;
 var
   Sink: TResponseSink;
   Expected: Int64;
@@ -1206,7 +1358,8 @@ begin
     raise ERequestError.Create('Target stream cannot be nil');
   Sink := TResponseSink.Create(Client, Target, OnProgress, OnProgressEvent);
   try
-    Result := RunRequest(Client, Method, URL, Body, Sink);
+    Result := RunWithRetries(Client, Method, URL, Body, Sink, MaxRetries,
+      RetryDelayMS);
     { FPC stops quietly when the server closes early, so check the length
       to avoid saving a truncated body as complete. }
     if Result.OK and not SameText(Method, 'HEAD') then
@@ -1246,7 +1399,8 @@ var
 begin
   Client := NewClient(DefaultContentType, Headers);
   try
-    Result := ExecuteRequest(Client, Method, AppendQueryParams(URL, Params), Body);
+    Result := ExecuteRequest(Client, Method, AppendQueryParams(URL, Params),
+      Body, GRetryCount, GRetryDelay);
   finally
     Client.Free;
   end;
@@ -1263,7 +1417,7 @@ begin
   Client := NewClient('', Headers);
   try
     Result := ExecuteRequest(Client, 'GET', AppendQueryParams(URL, Params),
-      nil, Target, OnProgress, OnProgressEvent);
+      nil, Target, OnProgress, OnProgressEvent, GRetryCount, GRetryDelay);
   finally
     Client.Free;
   end;
@@ -1538,6 +1692,26 @@ begin
   if Milliseconds < 0 then
     Milliseconds := 0;
   GDefaultTimeout := Milliseconds;
+end;
+
+class procedure THttp.SetRetry(MaxRetries, BaseDelayMS: Integer);
+begin
+  if MaxRetries < 0 then
+    MaxRetries := 0;
+  if BaseDelayMS < 0 then
+    BaseDelayMS := 0;
+  GRetryCount := MaxRetries;
+  GRetryDelay := BaseDelayMS;
+end;
+
+class function THttp.GetRetryCount: Integer;
+begin
+  Result := GRetryCount;
+end;
+
+class function THttp.GetRetryDelay: Integer;
+begin
+  Result := GRetryDelay;
 end;
 
 class function THttp.GetTimeout: Integer;

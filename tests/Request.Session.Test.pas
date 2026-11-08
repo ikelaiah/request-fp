@@ -64,6 +64,7 @@ type
     procedure Test36_Session_DownloadUsesCookiesAndHeaders;
     procedure Test37_Session_GetToStreamAndTryVariants;
     procedure Test38_Session_MultipartStreamsFile;
+    procedure Test39_Session_Retry;
   end;
 
 implementation
@@ -186,6 +187,8 @@ begin
   FSession.SetBaseURL(TestBaseURL);
   FSession.SetHeader('Accept', 'application/json');
   FSession.SetHeader('X-Test-Header', 'test-value');
+  // Keep transport-failure tests fast; retry tests enable retries themselves.
+  FSession.SetRetry(0, 0);
 end;
 
 procedure TRequestSessionTests.Test27_Session_PostJSON;
@@ -1043,6 +1046,29 @@ begin
   finally
     DeleteFile(Path);
   end;
+end;
+
+procedure TRequestSessionTests.Test39_Session_Retry;
+var
+  R: TResponse;
+  Fresh: THttpSession;
+  Key: string;
+begin
+  Key := 'session-retry-' + IntToStr(GetTickCount64);
+  FSession.SetRetry(2, 10);
+  R := FSession.Get('/flaky?key=' + Key + '&fail=1');
+  AssertEquals('Session GET retried', 200, R.StatusCode);
+
+  R := FSession.Post('/flaky?key=' + Key + '-post&fail=1', 'a=1');
+  AssertEquals('Session POST not retried', 503, R.StatusCode);
+
+  FSession.SetRetry(0, 0);
+  R := FSession.Get('/flaky?key=' + Key + '-off&fail=1');
+  AssertEquals('Session retries disabled', 503, R.StatusCode);
+
+  Fresh.SetBaseURL(TestBaseURL);
+  R := Fresh.Get('/flaky?key=' + Key + '-fresh&fail=1');
+  AssertEquals('New sessions retry by default', 200, R.StatusCode);
 end;
 
 initialization
