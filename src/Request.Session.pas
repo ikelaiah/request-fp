@@ -20,9 +20,9 @@ type
 
     @example
 
-      var 
+      var
         Map: TSimpleMap;
-        
+
       Map.SetItem('Key', 'Value');
       if Map.ContainsKey('Key') then ...
       Map.Remove('Key');
@@ -58,13 +58,16 @@ type
 
   { THttpSession }
   {
-    @description HTTP session with connection pooling, header, and cookie management.
+    @description HTTP session with connection reuse, shared headers, and cookies.
 
-    @usage Use for making multiple HTTP requests with shared headers, cookies, and connection reuse.
+    @usage Use for multiple requests that share a base URL, headers, or cookies.
+           Every method returns the response for any HTTP status and raises
+           ERequestError (or ENetworkError/ETimeoutError) for transport failures.
+           Try* methods never raise.
 
     @example
 
-      var 
+      var
         Session: THttpSession;
 
       Session.SetBaseURL('https://api.example.com');
@@ -83,37 +86,75 @@ type
     FBaseURL: string;
     FUserAgent: string;
     FTimeout: Integer;
-    
+
     function GetClient: TFPHTTPClient;
     function GetFullURL(const URL: string): string;
     procedure SetupRequest(Client: TFPHTTPClient);
-    procedure UpdateCookies(Headers: TStrings);
-    function DoRequest(const Method, URL: string; const Body: string;
-      const ContentType: string; HasBody: Boolean): TResponse;
-    
+    function DoRequest(const Method, URL: string; Body: TStream;
+      const ContentType: string; const Headers: array of TKeyValue;
+      const Params: array of TKeyValue): TResponse;
+    function DoTextRequest(const Method, URL, Body: string; HasBody: Boolean;
+      const ContentType: string; const Headers: array of TKeyValue;
+      const Params: array of TKeyValue): TResponse;
+
   public
     { Advanced record management: see Initialize, Finalize, and Copy operators below. }
     class operator Initialize(var Session: THttpSession);
     class operator Finalize(var Session: THttpSession);
     class operator Copy(constref Source: THttpSession; var Dest: THttpSession);
-    
+
     { Resets the session to its defaults. Initialization is automatic. }
     procedure Init;
-    
+
     { Performs a HTTP GET request }
-    function Get(const URL: string): TResponse;
+    function Get(const URL: string): TResponse; overload;
+    { GET with extra headers for this request only }
+    function Get(const URL: string; const Headers: array of TKeyValue): TResponse; overload;
+    { GET with URL-encoded query parameters }
+    function GetWithParams(const URL: string; const Params: array of TKeyValue): TResponse;
     { Performs a HTTP POST request }
-    function Post(const URL: string; const Body: string = ''; 
+    function Post(const URL: string; const Body: string = '';
                  const ContentType: string = 'application/x-www-form-urlencoded'): TResponse;
     { Posts a JSON string or TJSONData value with the correct content type. }
     function PostJSON(const URL: string; const JSON: string): TResponse; overload;
     function PostJSON(const URL: string; const JSON: TJSONData): TResponse; overload;
+    { Posts Fields as application/x-www-form-urlencoded. }
+    function PostForm(const URL: string; const Fields: array of TKeyValue): TResponse;
+    { Posts multipart/form-data. Files values are file paths. }
+    function PostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TResponse;
     { Performs a HTTP PUT request }
-    function Put(const URL: string; const Body: string = ''; 
+    function Put(const URL: string; const Body: string = '';
                 const ContentType: string = 'application/json'): TResponse;
+    { Performs a HTTP PATCH request }
+    function Patch(const URL: string; const Body: string = '';
+                  const ContentType: string = 'application/json'): TResponse;
     { Performs a HTTP DELETE request }
     function Delete(const URL: string): TResponse;
-    
+    { Performs a HTTP HEAD request; Text is empty }
+    function Head(const URL: string): TResponse;
+    { Sends any request. Headers apply to this request only and override
+      session headers with the same name. Use '' for no body. }
+    function Send(const Method, URL: string; const Body: string;
+      const ContentType: string; const Headers: array of TKeyValue;
+      const Params: array of TKeyValue): TResponse;
+
+    { Exception-free variants. Success is False only for transport failures. }
+    function TryGet(const URL: string): TRequestResult;
+    function TryPost(const URL: string; const Body: string = '';
+      const ContentType: string = 'application/x-www-form-urlencoded'): TRequestResult;
+    function TryPostJSON(const URL: string; const JSON: string): TRequestResult;
+    function TryPostForm(const URL: string; const Fields: array of TKeyValue): TRequestResult;
+    function TryPostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TRequestResult;
+    function TryPut(const URL: string; const Body: string = '';
+      const ContentType: string = 'application/json'): TRequestResult;
+    function TryPatch(const URL: string; const Body: string = '';
+      const ContentType: string = 'application/json'): TRequestResult;
+    function TryDelete(const URL: string): TRequestResult;
+    function TryHead(const URL: string): TRequestResult;
+    function TrySend(const Method, URL: string; const Body: string;
+      const ContentType: string; const Headers: array of TKeyValue;
+      const Params: array of TKeyValue): TRequestResult;
+
     { Sets a header for all requests }
     procedure SetHeader(const Name, Value: string);
     { Sets a cookie for all requests }
@@ -124,32 +165,128 @@ type
     procedure SetUserAgent(const UserAgent: string);
     { Sets the timeout in milliseconds }
     procedure SetTimeout(Timeout: Integer);
-    
+
     { Clears all cookies }
     procedure ClearCookies;
     { Gets a cookie value by name }
     function GetCookie(const Name: string): string;
-    
+
     { Clears all headers (except Accept) }
     procedure ClearHeaders;
   end;
 
 implementation
 
-function ReadStreamAsUTF8String(AStream: TStream): string;
-var
-  Raw: RawByteString;
-  Len: SizeInt;
-begin
-  Len := AStream.Size;
-  SetLength(Raw, Len);
-  if Len > 0 then
-  begin
-    AStream.Position := 0;
-    AStream.ReadBuffer(Pointer(Raw)^, Len);
+uses
+  DateUtils, URIParser;
+
+type
+  PSimpleMap = ^TSimpleMap;
+
+  { FPC client that skips the empty "Cookie:" header it would otherwise send
+    when its own cookie list is empty. The session manages cookies itself. }
+  TSessionHTTPClient = class(TFPHTTPClient)
+  protected
+    function AllowHeader(var AHeader: string): Boolean; override;
   end;
-  SetCodePage(Raw, CP_UTF8, False);
-  Result := string(Raw);
+
+  { Keeps session cookies correct across redirects: applies Set-Cookie from
+    each redirect response, resends the merged cookies on same-host hops,
+    and drops them when the redirect leaves the host. }
+  TRedirectCookieHandler = class
+  public
+    Cookies: PSimpleMap;
+    procedure HandleRedirect(Sender: TObject; const ASrc: string;
+      var ADest: string);
+  end;
+
+procedure ApplySetCookie(var Cookies: TSimpleMap; const HeaderValue: string); forward;
+procedure ApplySetCookieHeaders(var Cookies: TSimpleMap; Headers: TStrings); forward;
+function BuildCookieHeader(const Cookies: TSimpleMap): string; forward;
+
+function TSessionHTTPClient.AllowHeader(var AHeader: string): Boolean;
+var
+  P: Integer;
+begin
+  P := Pos(':', AHeader);
+  if (P > 0) and SameText(Trim(Copy(AHeader, 1, P - 1)), 'Cookie') and
+     (Trim(Copy(AHeader, P + 1, MaxInt)) = '') then
+    Exit(False);
+  Result := inherited AllowHeader(AHeader);
+end;
+
+procedure TRedirectCookieHandler.HandleRedirect(Sender: TObject;
+  const ASrc: string; var ADest: string);
+var
+  Client: TFPHTTPClient;
+  DestHost, CookieStr: string;
+  Idx: Integer;
+begin
+  Client := TFPHTTPClient(Sender);
+  ApplySetCookieHeaders(Cookies^, Client.ResponseHeaders);
+  // FPC would resend only the redirect response's cookies; send ours instead.
+  Client.Cookies.Clear;
+
+  Idx := Client.RequestHeaders.IndexOfName('Cookie');
+  if Idx >= 0 then
+    Client.RequestHeaders.Delete(Idx);
+
+  DestHost := ParseURI(ADest).Host;
+  CookieStr := BuildCookieHeader(Cookies^);
+  if (CookieStr <> '') and
+     ((DestHost = '') or SameText(DestHost, ParseURI(ASrc).Host)) then
+    Client.AddHeader('Cookie', CookieStr);
+end;
+
+{ Parses cookie dates such as "Wed, 21 Oct 2015 07:28:00 GMT" or
+  "Wednesday, 21-Oct-15 07:28:00 GMT" (always UTC). }
+function TryParseCookieDate(const S: string; out Value: TDateTime): Boolean;
+const
+  Months: array[1..12] of string = ('jan', 'feb', 'mar', 'apr', 'may', 'jun',
+    'jul', 'aug', 'sep', 'oct', 'nov', 'dec');
+var
+  Parts: TStringArray;
+  Work: string;
+  Day, Month, Year, H, M, Sec, I: Integer;
+  TimeParts: TStringArray;
+begin
+  Result := False;
+  Work := S;
+  I := Pos(',', Work);
+  if I > 0 then
+    Work := Copy(Work, I + 1, MaxInt);
+  Work := Trim(StringReplace(Work, '-', ' ', [rfReplaceAll]));
+  Parts := Work.Split([' '], TStringSplitOptions.ExcludeEmpty);
+  if Length(Parts) < 4 then
+    Exit;
+  if not TryStrToInt(Parts[0], Day) then
+    Exit;
+  Month := 0;
+  for I := 1 to 12 do
+    if SameText(Copy(Parts[1], 1, 3), Months[I]) then
+      Month := I;
+  if Month = 0 then
+    Exit;
+  if not TryStrToInt(Parts[2], Year) then
+    Exit;
+  if Year < 70 then
+    Inc(Year, 2000)
+  else if Year < 100 then
+    Inc(Year, 1900);
+  TimeParts := Parts[3].Split([':']);
+  if (Length(TimeParts) <> 3) or not TryStrToInt(TimeParts[0], H) or
+     not TryStrToInt(TimeParts[1], M) or not TryStrToInt(TimeParts[2], Sec) then
+    Exit;
+  Result := TryEncodeDateTime(Year, Month, Day, H, M, Sec, 0, Value);
+end;
+
+procedure SetTryFailure(var R: TRequestResult; E: Exception);
+begin
+  R.Success := False;
+  R.Error := E.Message;
+  R.Response.SetContent('');
+  R.Response.SetHeadersText('');
+  R.Response.StatusCode := 0;
 end;
 
 { TSimpleMap }
@@ -282,22 +419,22 @@ begin
   // Skip if source and destination are the same
   if @Source = @Dest then
     Exit;
-    
+
   // Copy simple fields
   Dest.FBaseURL := Source.FBaseURL;
   Dest.FUserAgent := Source.FUserAgent;
   Dest.FTimeout := Source.FTimeout;
-  
+
   // Copy headers
   Dest.FHeaders.Clear;
   for I := 0 to Source.FHeaders.GetCount - 1 do
     Dest.FHeaders.SetItem(Source.FHeaders.GetKey(I), Source.FHeaders.GetValue(I));
-    
+
   // Copy cookies
   Dest.FCookies.Clear;
   for I := 0 to Source.FCookies.GetCount - 1 do
     Dest.FCookies.SetItem(Source.FCookies.GetKey(I), Source.FCookies.GetValue(I));
-  
+
   // Don't copy the client - it will be created on demand
   if Dest.FClient <> nil then
     FreeAndNil(Dest.FClient);
@@ -309,14 +446,14 @@ begin
   // Defensive programming - initialize fields that might be accessed
   if Self.FTimeout <= 0 then
     Self.FTimeout := 30000;
-    
+
   if Self.FUserAgent = '' then
     Self.FUserAgent := DEFAULT_USER_AGENT;
-    
+
   // Create client if needed
   if Self.FClient = nil then
   begin
-    Self.FClient := TFPHTTPClient.Create(nil);
+    Self.FClient := TSessionHTTPClient.Create(nil);
     Self.FClient.AllowRedirect := True;
     Self.FClient.IOTimeout := Self.FTimeout;
   end;
@@ -348,24 +485,19 @@ var
 begin
   // Clear any existing headers to prevent conflicts
   Client.RequestHeaders.Clear;
-  
+  // The session tracks cookies itself; drop the cookies FPC kept from the
+  // previous response so cleared or expired cookies are not resent.
+  Client.Cookies.Clear;
+
   // Set headers
   for I := 0 to FHeaders.GetCount - 1 do
     Client.AddHeader(FHeaders.GetKey(I), FHeaders.GetValue(I));
 
   // Handle cookies - AddHeader will override any existing header with the same name
-  if FCookies.GetCount > 0 then
-  begin
-    CookieStr := '';
-    for I := 0 to FCookies.GetCount - 1 do
-    begin
-      if I > 0 then
-        CookieStr := CookieStr + '; ';
-      CookieStr := CookieStr + FCookies.GetKey(I) + '=' + FCookies.GetValue(I);
-    end;
+  CookieStr := BuildCookieHeader(FCookies);
+  if CookieStr <> '' then
     Client.AddHeader('Cookie', CookieStr);
-  end;
-  
+
   // Set timeout
   Client.IOTimeout := FTimeout;
 
@@ -374,90 +506,146 @@ begin
     Client.AddHeader('User-Agent', FUserAgent);
 end;
 
-procedure THttpSession.UpdateCookies(Headers: TStrings);
+function BuildCookieHeader(const Cookies: TSimpleMap): string;
 var
   I: Integer;
-  CookieHeader: string;
-  Key, Value: string;
-  P: Integer;
 begin
-  for I := 0 to Headers.Count - 1 do
+  Result := '';
+  for I := 0 to Cookies.GetCount - 1 do
   begin
-    if LowerCase(Headers.Names[I]) = 'set-cookie' then
-    begin
-      CookieHeader := Trim(Headers.ValueFromIndex[I]);
-      P := Pos(';', CookieHeader);
-      if P > 0 then
-        CookieHeader := Copy(CookieHeader, 1, P - 1);
-      CookieHeader := Trim(CookieHeader);
-      P := Pos('=', CookieHeader);
-      if P > 0 then
-      begin
-        Key := Trim(Copy(CookieHeader, 1, P - 1));
-        Value := Trim(Copy(CookieHeader, P + 1, MaxInt));
-        FCookies.SetItem(Key, Value);
-      end;
-    end;
+    if I > 0 then
+      Result := Result + '; ';
+    Result := Result + Cookies.GetKey(I) + '=' + Cookies.GetValue(I);
   end;
 end;
 
-function THttpSession.DoRequest(const Method, URL: string; const Body: string;
-  const ContentType: string; HasBody: Boolean): TResponse;
+procedure ApplySetCookie(var Cookies: TSimpleMap; const HeaderValue: string);
+var
+  Parts: TStringArray;
+  Pair, AttrName, AttrValue: string;
+  Name, Value: string;
+  P, I, MaxAge: Integer;
+  Expires: TDateTime;
+  Expired: Boolean;
+begin
+  Parts := HeaderValue.Split([';']);
+  if Length(Parts) = 0 then
+    Exit;
+
+  Pair := Trim(Parts[0]);
+  P := Pos('=', Pair);
+  if P <= 1 then
+    Exit;
+  Name := Trim(Copy(Pair, 1, P - 1));
+  Value := Trim(Copy(Pair, P + 1, MaxInt));
+
+  // Max-Age wins over Expires (RFC 6265).
+  Expired := False;
+  for I := 1 to High(Parts) do
+  begin
+    Pair := Trim(Parts[I]);
+    P := Pos('=', Pair);
+    if P = 0 then
+      Continue;
+    AttrName := Trim(Copy(Pair, 1, P - 1));
+    AttrValue := Trim(Copy(Pair, P + 1, MaxInt));
+    if SameText(AttrName, 'Max-Age') and TryStrToInt(AttrValue, MaxAge) then
+    begin
+      Expired := MaxAge <= 0;
+      Break;
+    end;
+    if SameText(AttrName, 'Expires') and
+       TryParseCookieDate(AttrValue, Expires) then
+      Expired := Expires <= LocalTimeToUniversal(Now);
+  end;
+
+  if Expired then
+    Cookies.Remove(Name)
+  else
+    Cookies.SetItem(Name, Value);
+end;
+
+procedure ApplySetCookieHeaders(var Cookies: TSimpleMap; Headers: TStrings);
+var
+  I: Integer;
+begin
+  for I := 0 to Headers.Count - 1 do
+    if SameText(Trim(Headers.Names[I]), 'Set-Cookie') then
+      ApplySetCookie(Cookies, Trim(Headers.ValueFromIndex[I]));
+end;
+
+function THttpSession.DoRequest(const Method, URL: string; Body: TStream;
+  const ContentType: string; const Headers: array of TKeyValue;
+  const Params: array of TKeyValue): TResponse;
 var
   Client: TFPHTTPClient;
-  RequestBody: TStringStream;
-  ResponseStream: TMemoryStream;
-  FullURL: string;
+  RedirectHandler: TRedirectCookieHandler;
+  I: Integer;
 begin
-  FullURL := GetFullURL(URL);
-  RequestBody := nil;
-  ResponseStream := TMemoryStream.Create;
+  Client := GetClient;
+  SetupRequest(Client);
+  if ContentType <> '' then
+    Client.AddHeader('Content-Type', ContentType);
+  for I := 0 to High(Headers) do
+    Client.AddHeader(Headers[I].Key, Headers[I].Value);
+
+  RedirectHandler := TRedirectCookieHandler.Create;
   try
+    RedirectHandler.Cookies := @FCookies;
+    Client.OnRedirect := @RedirectHandler.HandleRedirect;
     try
-      if Pos('https://', LowerCase(FullURL)) = 1 then
-        EnsureSSL;
-
-      Client := GetClient;
-      SetupRequest(Client);
-      if HasBody then
-      begin
-        if ContentType <> '' then
-          Client.AddHeader('Content-Type', ContentType);
-        RequestBody := TStringStream.Create(Body);
-        Client.RequestBody := RequestBody;
-      end;
-
-      try
-        // Accept any status; callers inspect StatusCode, OK, or RaiseForStatus.
-        Client.HTTPMethod(Method, FullURL, ResponseStream, []);
-      finally
-        Client.RequestBody := nil;
-      end;
-
-      Result.StatusCode := Client.ResponseStatusCode;
-      Result.SetContent(ReadStreamAsUTF8String(ResponseStream));
-      Result.SetHeadersText(Client.ResponseHeaders.Text);
-      UpdateCookies(Client.ResponseHeaders);
-    except
-      on E: ERequestError do
-        raise;
-      on E: Exception do
-        raise ERequestError.Create(Method + ' request failed: ' + E.Message);
+      Result := ExecuteRequest(Client, Method,
+        AppendQueryParams(GetFullURL(URL), Params), Body);
+    finally
+      Client.OnRedirect := nil;
     end;
+    ApplySetCookieHeaders(FCookies, Client.ResponseHeaders);
   finally
-    RequestBody.Free;
-    ResponseStream.Free;
+    RedirectHandler.Free;
+  end;
+end;
+
+function THttpSession.DoTextRequest(const Method, URL, Body: string;
+  HasBody: Boolean; const ContentType: string;
+  const Headers: array of TKeyValue;
+  const Params: array of TKeyValue): TResponse;
+var
+  Stream: TStringStream;
+begin
+  if HasBody then
+    Stream := TStringStream.Create(Body)
+  else
+    Stream := nil;
+  try
+    if HasBody then
+      Result := DoRequest(Method, URL, Stream, ContentType, Headers, Params)
+    else
+      Result := DoRequest(Method, URL, nil, '', Headers, Params);
+  finally
+    Stream.Free;
   end;
 end;
 
 function THttpSession.Get(const URL: string): TResponse;
 begin
-  Result := DoRequest('GET', URL, '', '', False);
+  Result := DoTextRequest('GET', URL, '', False, '', [], []);
+end;
+
+function THttpSession.Get(const URL: string;
+  const Headers: array of TKeyValue): TResponse;
+begin
+  Result := DoTextRequest('GET', URL, '', False, '', Headers, []);
+end;
+
+function THttpSession.GetWithParams(const URL: string;
+  const Params: array of TKeyValue): TResponse;
+begin
+  Result := DoTextRequest('GET', URL, '', False, '', [], Params);
 end;
 
 function THttpSession.Post(const URL: string; const Body: string; const ContentType: string): TResponse;
 begin
-  Result := DoRequest('POST', URL, Body, ContentType, True);
+  Result := DoTextRequest('POST', URL, Body, True, ContentType, [], []);
 end;
 
 function THttpSession.PostJSON(const URL: string; const JSON: string): TResponse;
@@ -473,15 +661,185 @@ begin
   Result := PostJSON(URL, JSON.AsJSON);
 end;
 
-function THttpSession.Put(const URL: string; const Body: string; 
+function THttpSession.PostForm(const URL: string;
+  const Fields: array of TKeyValue): TResponse;
+begin
+  Result := Post(URL, EncodeFormFields(Fields),
+    'application/x-www-form-urlencoded');
+end;
+
+function THttpSession.PostMultipart(const URL: string;
+  const Fields, Files: array of TKeyValue): TResponse;
+var
+  Body: TStream;
+  ContentType: string;
+begin
+  Body := BuildMultipartBody(Fields, Files, ContentType);
+  try
+    Result := DoRequest('POST', URL, Body, ContentType, [], []);
+  finally
+    Body.Free;
+  end;
+end;
+
+function THttpSession.Put(const URL: string; const Body: string;
                         const ContentType: string): TResponse;
 begin
-  Result := DoRequest('PUT', URL, Body, ContentType, True);
+  Result := DoTextRequest('PUT', URL, Body, True, ContentType, [], []);
+end;
+
+function THttpSession.Patch(const URL: string; const Body: string;
+                          const ContentType: string): TResponse;
+begin
+  Result := DoTextRequest('PATCH', URL, Body, True, ContentType, [], []);
 end;
 
 function THttpSession.Delete(const URL: string): TResponse;
 begin
-  Result := DoRequest('DELETE', URL, '', '', False);
+  Result := DoTextRequest('DELETE', URL, '', False, '', [], []);
+end;
+
+function THttpSession.Head(const URL: string): TResponse;
+begin
+  Result := DoTextRequest('HEAD', URL, '', False, '', [], []);
+end;
+
+function THttpSession.Send(const Method, URL: string; const Body: string;
+  const ContentType: string; const Headers: array of TKeyValue;
+  const Params: array of TKeyValue): TResponse;
+begin
+  Result := DoTextRequest(UpperCase(Method), URL, Body, Body <> '',
+    ContentType, Headers, Params);
+end;
+
+// Exception-free variants
+
+function THttpSession.TryGet(const URL: string): TRequestResult;
+begin
+  try
+    Result.Response := Get(URL);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+      SetTryFailure(Result, E);
+  end;
+end;
+
+function THttpSession.TryPost(const URL: string; const Body: string;
+  const ContentType: string): TRequestResult;
+begin
+  try
+    Result.Response := Post(URL, Body, ContentType);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+      SetTryFailure(Result, E);
+  end;
+end;
+
+function THttpSession.TryPostJSON(const URL: string;
+  const JSON: string): TRequestResult;
+begin
+  try
+    Result.Response := PostJSON(URL, JSON);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+      SetTryFailure(Result, E);
+  end;
+end;
+
+function THttpSession.TryPostForm(const URL: string;
+  const Fields: array of TKeyValue): TRequestResult;
+begin
+  try
+    Result.Response := PostForm(URL, Fields);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+      SetTryFailure(Result, E);
+  end;
+end;
+
+function THttpSession.TryPostMultipart(const URL: string;
+  const Fields, Files: array of TKeyValue): TRequestResult;
+begin
+  try
+    Result.Response := PostMultipart(URL, Fields, Files);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+      SetTryFailure(Result, E);
+  end;
+end;
+
+function THttpSession.TryPut(const URL: string; const Body: string;
+  const ContentType: string): TRequestResult;
+begin
+  try
+    Result.Response := Put(URL, Body, ContentType);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+      SetTryFailure(Result, E);
+  end;
+end;
+
+function THttpSession.TryPatch(const URL: string; const Body: string;
+  const ContentType: string): TRequestResult;
+begin
+  try
+    Result.Response := Patch(URL, Body, ContentType);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+      SetTryFailure(Result, E);
+  end;
+end;
+
+function THttpSession.TryDelete(const URL: string): TRequestResult;
+begin
+  try
+    Result.Response := Delete(URL);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+      SetTryFailure(Result, E);
+  end;
+end;
+
+function THttpSession.TryHead(const URL: string): TRequestResult;
+begin
+  try
+    Result.Response := Head(URL);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+      SetTryFailure(Result, E);
+  end;
+end;
+
+function THttpSession.TrySend(const Method, URL: string; const Body: string;
+  const ContentType: string; const Headers: array of TKeyValue;
+  const Params: array of TKeyValue): TRequestResult;
+begin
+  try
+    Result.Response := Send(Method, URL, Body, ContentType, Headers, Params);
+    Result.Success := True;
+    Result.Error := '';
+  except
+    on E: Exception do
+      SetTryFailure(Result, E);
+  end;
 end;
 
 // Session Configuration
@@ -522,6 +880,7 @@ begin
   FCookies.Clear;
   if Assigned(FClient) then
   begin
+    FClient.Cookies.Clear;
     if Assigned(FClient.RequestHeaders) then
     begin
       idx := FClient.RequestHeaders.IndexOfName('Cookie');

@@ -16,6 +16,50 @@ All notable changes to this project will be documented in this file.
 
 - (none)
 
+## [1.4.0] - Unreleased
+
+### Added
+
+- `Http.Patch`, `Http.Head`, `Http.TryPatch`, and `Http.TryHead`.
+- `Http.SetTimeout` / `Http.GetTimeout` for the stateless I/O timeout.
+- `ENetworkError` and `ETimeoutError` (subclasses of `ERequestError`).
+- `Response.Bytes` and `Response.SaveToStream`.
+- Session `Patch`, `Head`, `PostForm`, `PostMultipart`, `GetWithParams`,
+  `Get(URL, Headers)`, and the general `Send(Method, URL, Body, ContentType,
+  Headers, Params)`.
+- Session `Try*` variants: `TryGet`, `TryPost`, `TryPostJSON`, `TryPostForm`,
+  `TryPostMultipart`, `TryPut`, `TryPatch`, `TryDelete`, `TryHead`, `TrySend`.
+- Public building blocks shared by both APIs: `ExecuteRequest`,
+  `AppendQueryParams`, `EncodeFormFields`, `BuildMultipartBody`.
+- Fixture endpoints and tests for PATCH, HEAD, timeouts, typed errors, bytes,
+  multipart encoding, server cookies, cookie expiry, and redirects.
+
+### Changed
+
+- All stateless methods share one request pipeline; `Request.pas` is about
+  250 lines shorter.
+- Stateless requests now default to a 30-second I/O timeout (previously no
+  limit). Use `Http.SetTimeout(0)` for the old behavior.
+- Session transport errors use the same messages as the stateless API
+  (`Network Error: ...`) instead of `GET request failed: ...`.
+- `PostJSON` and `PostMultipart` no longer add a second `Content-Type` when
+  you pass one in `Headers`.
+- Multipart uploads send a per-file `Content-Type` based on the extension,
+  percent-encode quotes and line breaks in names, and use a new random
+  boundary for every request.
+- `PostForm` with no fields sends an empty form body.
+
+### Fixed
+
+- Session cookies set on redirect responses (for example after a login POST)
+  are now kept and sent on the next hop.
+- Session cookies with `Max-Age=0` or a past `Expires` are now removed.
+- Sessions no longer send their cookies when a redirect goes to another host.
+- Sessions no longer send a second `Cookie` header with cookies FPC kept from
+  the previous response, so `ClearCookies` fully clears cookies.
+- A missing multipart upload file raises `ERequestError` instead of FPC's
+  `EFOpenError`.
+
 ## [1.3.1] - 2026-11-08
 
 ### Added

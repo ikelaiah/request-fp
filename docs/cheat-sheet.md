@@ -46,8 +46,13 @@ Response := Http.PostJSON('https://api.example.com/users',
 // The caller retains ownership of JsonObject.
 Response := Http.PostJSON('https://api.example.com/users', JsonObject);
 
-// DELETE
+// PATCH, DELETE, HEAD
+Response := Http.Patch('https://api.example.com/users/42', Body);
 Response := Http.Delete('https://api.example.com/users/42');
+Response := Http.Head('https://api.example.com/files/report.pdf');
+
+// I/O timeout for all stateless requests (milliseconds, default 30000)
+Http.SetTimeout(10000);
 
 // Multipart fields and files
 Response := Http.PostMultipart('https://api.example.com/upload',
@@ -69,7 +74,8 @@ if Response.OK then
   WriteLn('2xx response');
 
 Response.RaiseForStatus;       // raises for non-2xx
-Response.SaveToFile('out.dat');
+Response.SaveToFile('out.dat'); // exact bytes, binary-safe
+Bytes := Response.Bytes;        // TBytes copy of the body
 
 // Parsed JSON is owned by Response; do not free it.
 WriteLn(Response.JSON.FindPath('user.name').AsString);
@@ -104,7 +110,9 @@ TryPost
 TryPostForm
 TryPostJSON
 TryPut
+TryPatch
 TryDelete
+TryHead
 TryPostMultipart
 ```
 
@@ -123,7 +131,12 @@ begin
   Session.SetTimeout(10000); // milliseconds
 
   Response := Session.Get('/profile');
+  Response := Session.Get('/report', [KV('Accept', 'text/csv')]);
   Response := Session.PostJSON('/profile', '{"displayName":"Ada"}');
+  Response := Session.PostForm('/login', [KV('user', 'ada')]);
+  Response := Session.Patch('/profile', '{"theme":"dark"}');
+  Response := Session.Send('GET', '/search', '', '', [], [KV('q', 'fp')]);
+  Result := Session.TryGet('/health');
 
   Session.ClearCookies;
   Session.ClearHeaders;
@@ -146,3 +159,11 @@ end;
 Normal stateless and session methods raise for request/transport failures and
 return HTTP responses of any status. `RaiseForStatus` opts in to raising for
 non-2xx. `Try*` methods capture request exceptions in `TRequestResult`.
+
+```pascal
+except
+  on E: ETimeoutError do ...  // connect or I/O timeout
+  on E: ENetworkError do ...  // other transport failure
+  on E: ERequestError do ...  // anything else from Request-FP
+end;
+```

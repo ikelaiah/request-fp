@@ -134,17 +134,39 @@ end;
 
 Passing `nil` in place of `TJSONData` raises `ERequestError`.
 
-### PUT and DELETE
+### PUT, PATCH, DELETE, and HEAD
 
 ```pascal
 Http.Put(URL, Body)
 Http.Put(URL, Body, Headers)
 Http.Put(URL, Body, Headers, Params)
 
+Http.Patch(URL, Body)
+Http.Patch(URL, Body, Headers)
+Http.Patch(URL, Body, Headers, Params)
+
 Http.Delete(URL)
 Http.Delete(URL, Headers)
 Http.Delete(URL, Headers, Params)
+
+Http.Head(URL)
+Http.Head(URL, Headers)
+Http.Head(URL, Headers, Params)
 ```
+
+- `Put` and `Patch` send `application/x-www-form-urlencoded` for a non-empty
+  body unless you pass a `Content-Type` header.
+- `Head` returns status and headers; `Text` is empty.
+
+### Timeout
+
+```pascal
+Http.SetTimeout(10000); // milliseconds, all stateless requests
+WriteLn(Http.GetTimeout);
+```
+
+The default is 30000. `0` waits forever. It is the I/O timeout; FPC's
+connect timeout (3 seconds) is unchanged.
 
 ### Multipart POST
 
@@ -161,6 +183,13 @@ Response := Http.PostMultipart('https://api.example.com/upload',
   [KV('description', 'profile photo')],
   [KV('file', 'avatar.png')]);
 ```
+
+- Each file's `Content-Type` comes from its extension (for example
+  `image/png`, `application/pdf`); unknown extensions use
+  `application/octet-stream`.
+- Quotes and line breaks in field names and filenames are percent-encoded.
+- A file that cannot be opened raises `ERequestError`.
+- Files are read into memory before sending.
 
 ## Exception-free methods
 
@@ -189,9 +218,17 @@ Http.TryPut(URL, Body)
 Http.TryPut(URL, Body, Headers)
 Http.TryPut(URL, Body, Headers, Params)
 
+Http.TryPatch(URL, Body)
+Http.TryPatch(URL, Body, Headers)
+Http.TryPatch(URL, Body, Headers, Params)
+
 Http.TryDelete(URL)
 Http.TryDelete(URL, Headers)
 Http.TryDelete(URL, Headers, Params)
+
+Http.TryHead(URL)
+Http.TryHead(URL, Headers)
+Http.TryHead(URL, Headers, Params)
 
 Http.TryPostMultipart(URL, Fields, Files)
 Http.TryPostMultipart(URL, Fields, Files, Headers)
@@ -233,6 +270,8 @@ function HeaderValue(const Name: string): string;
 function IsSuccessStatus: Boolean;
 procedure RaiseForStatus;
 procedure SaveToFile(const FilePath: string);
+procedure SaveToStream(Stream: TStream);
+function Bytes: TBytes;
 ```
 
 - `Text` is the response body decoded as UTF-8.
@@ -242,7 +281,8 @@ procedure SaveToFile(const FilePath: string);
 - `HeaderValue` performs a case-insensitive response-header lookup and returns
   an empty string when the header is absent.
 - `RaiseForStatus` raises `ERequestError` for a status outside 200..299.
-- `SaveToFile` saves the body as its UTF-8 bytes.
+- `SaveToFile`, `SaveToStream`, and `Bytes` give the body bytes exactly as
+  received, so they are safe for binary downloads.
 
 The response owns the value returned by `JSON`. Do not free that value or a
 child obtained with `FindPath`.
@@ -263,7 +303,11 @@ When `Success` is false, `Error` contains the caught exception message and
 
 Stateless methods separate transport success from HTTP status:
 
-- Network, TLS, timeout, and request failures raise `ERequestError`.
+- Network, TLS, timeout, and request failures raise `ERequestError`:
+  - `ETimeoutError` for a connect timeout or an I/O timeout;
+  - `ENetworkError` (parent of `ETimeoutError`) for other connection, DNS,
+    socket, or TLS failures;
+  - plain `ERequestError` for other request errors.
 - A server response such as 404 or 500 is returned as `TResponse`.
 - Call `Response.RaiseForStatus` if your application wants non-2xx responses
   to raise.
