@@ -23,6 +23,10 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Multipart uploads (`PostMultipart`, `TryPostMultipart`, session
+  `PostMultipart`) stream files from disk instead of loading them into
+  memory. `BuildMultipartBody` returns a read-only stream that keeps the files
+  open until it is freed.
 - Linux needs only the OpenSSL 3 runtime (`libssl3`), not the `-dev` package:
   `.3` is added to FPC 3.2.2's library version search.
 - Tests default to the local test server instead of `https://httpbin.org`.

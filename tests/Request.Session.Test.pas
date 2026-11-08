@@ -63,6 +63,7 @@ type
     procedure Test35_Session_CrossHostRedirectDropsCookies;
     procedure Test36_Session_DownloadUsesCookiesAndHeaders;
     procedure Test37_Session_GetToStreamAndTryVariants;
+    procedure Test38_Session_MultipartStreamsFile;
   end;
 
 implementation
@@ -1009,6 +1010,39 @@ begin
   AssertFalse('Connection failure reported', Res.Success);
   AssertFalse('No file created', FileExists(Path));
   AssertFalse('No partial file left', FileExists(Path + '.part'));
+end;
+
+procedure TRequestSessionTests.Test38_Session_MultipartStreamsFile;
+const
+  FileSize = 1024 * 1024 + 7;
+var
+  Path: string;
+  FS: TFileStream;
+  Data: RawByteString;
+  I: Integer;
+  R: TResponse;
+begin
+  Path := GetTempDir + 'request_fp_session_upload.bin';
+  SetLength(Data, FileSize);
+  for I := 1 to FileSize do
+    Data[I] := Chr(I mod 256);
+  FS := TFileStream.Create(Path, fmCreate);
+  try
+    FS.WriteBuffer(Data[1], FileSize);
+  finally
+    FS.Free;
+  end;
+  try
+    R := FSession.PostMultipart('/upload-summary', [KV('kind', 'bin')],
+      [KV('file', Path)]);
+    AssertEquals('Status', 200, R.StatusCode);
+    AssertEquals('Uploaded size', FileSize,
+      R.JSON.FindPath('files.file.size').AsInt64);
+    AssertEquals('File name', 'request_fp_session_upload.bin',
+      R.JSON.FindPath('files.file.filename').AsString);
+  finally
+    DeleteFile(Path);
+  end;
 end;
 
 initialization

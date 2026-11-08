@@ -2,6 +2,7 @@
 """Small httpbin-compatible fixture for Request-FP's integration tests."""
 
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -262,8 +263,42 @@ class RequestHandler(BaseHTTPRequestHandler):
         else:
             self.send_request_echo()
 
+    def send_upload_summary(self):
+        """Multipart upload as sizes and hashes, for large binary files."""
+        body = self.read_body()
+        message = BytesParser(policy=policy.default).parsebytes(
+            (
+                "Content-Type: {}\r\nMIME-Version: 1.0\r\n\r\n"
+            ).format(self.headers.get("Content-Type", "")).encode("ascii")
+            + body
+        )
+        form, files = {}, {}
+        for part in message.iter_parts():
+            name = part.get_param("name", header="content-disposition")
+            payload = part.get_payload(decode=True)
+            if part.get_filename() is None:
+                form[name] = payload.decode("utf-8", errors="replace")
+            else:
+                files[name] = {
+                    "filename": part.get_filename(),
+                    "size": len(payload),
+                    "sha256": hashlib.sha256(payload).hexdigest(),
+                    "md5": hashlib.md5(payload).hexdigest(),
+                }
+        self.send_json(
+            {
+                "content_length": len(body),
+                "transfer_encoding": self.headers.get("Transfer-Encoding", ""),
+                "form": form,
+                "files": files,
+            }
+        )
+
     def do_POST(self):
-        if not self.send_status(urlsplit(self.path).path):
+        path = urlsplit(self.path).path
+        if path == "/upload-summary":
+            self.send_upload_summary()
+        elif not self.send_status(path):
             self.send_body_echo()
 
     def do_PUT(self):
