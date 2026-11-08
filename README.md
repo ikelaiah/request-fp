@@ -11,6 +11,7 @@
 ![Supports Linux](https://img.shields.io/badge/support-Linux-F59E0B?logo=Linux)
 ![Supports macOS](https://img.shields.io/badge/support-macOS-F59E0B?logo=Apple)
 [![Version](https://img.shields.io/badge/version-1.4.0-8B5CF6.svg)](CHANGELOG.md)
+[![Docs](https://img.shields.io/badge/docs-online-4338CA.svg)](https://ikelaiah.github.io/request-fp/)
 
 An easy, memory-safe HTTP client for Free Pascal. Request-FP wraps FPC's HTTP
 stack with a small API, automatic cleanup, and no application-level
@@ -298,6 +299,10 @@ signatures.
 
 ## Documentation and examples
 
+- [Documentation site](https://ikelaiah.github.io/request-fp/): guides,
+  reference, and diagrams in one place
+- [Getting started](docs/getting-started.md)
+- [How it works](docs/how-it-works.md)
 - [Cheat sheet](docs/cheat-sheet.md)
 - [Stateless API reference](docs/Request.md)
 - [Session guide](docs/Request.Session.md)

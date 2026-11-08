@@ -14,6 +14,32 @@ env:
   EXPECTED_EXAMPLES: 16
 
 jobs:
+  docs:
+    name: Docs (DocSprout)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install DocSprout 1.5.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/docsprout"
+          "$RUNNER_TEMP/docsprout/bin/python" -m pip install --quiet \
+            "https://github.com/ikelaiah/docsprout/archive/refs/tags/v1.5.0.zip"
+          echo "$RUNNER_TEMP/docsprout/bin" >> "$GITHUB_PATH"
+
+      - name: Validate the site
+        shell: bash
+        run: docsprout check
+
+      - name: Audit the documentation
+        shell: bash
+        run: docsprout audit --strict
+
   linux:
     name: Linux (Lazarus 4.8)
     runs-on: ubuntu-24.04

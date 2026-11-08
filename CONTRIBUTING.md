@@ -101,8 +101,25 @@ For user-facing changes, review:
 - `docs/cheat-sheet.md`
 - relevant programs under `examples/`
 - `CHANGELOG.md`
-- `docs/RELEASE-vX.Y.Z.md`
+- `docs/RELEASE-vX.Y.Z.md` (and add it to `docs/layout.md`)
 - `docs/PR-vX.Y.Z.md`
+
+### Documentation site
+
+The site is built with [DocSprout](https://github.com/ikelaiah/docsprout)
+from `docs/`. `docs/layout.md` decides which pages are published and in what
+order; `docs/docsprout.json` holds the name, colours, banner, and home-page
+cards. Pages deploy to GitHub Pages from `main`.
+
+```bash
+python -m pip install "https://github.com/ikelaiah/docsprout/archive/refs/tags/v1.5.0.zip"
+docsprout serve          # preview at http://127.0.0.1:8000
+docsprout check          # what CI runs
+docsprout audit --strict
+```
+
+- Link only to pages under `docs/`; use full GitHub URLs for other files.
+- Diagrams are SVGs in `docs/assets/` with a light and a dark colour scheme.
 
 ## Commit messages
 

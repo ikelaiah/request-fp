@@ -3,7 +3,7 @@
 This unit provides the stateless Request-FP API. Add `Request` to the `uses`
 clause and call methods on the global `Http` value.
 
-For a task-oriented overview, start with the [README](../README.md). For shared
+For a task-oriented overview, start with [Getting started](getting-started.md). For shared
 cookies and configuration, see the [session guide](Request.Session.md).
 
 ## First request
