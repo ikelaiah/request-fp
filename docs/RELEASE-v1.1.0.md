@@ -172,15 +172,15 @@ We listened, and v1.1.0 ensures no one else faces this confusion!
 
 ## 📝 Full Changelog
 
-See [CHANGELOG.md](../CHANGELOG.md#110---2026-01-01) for complete details.
+See [CHANGELOG.md](https://github.com/ikelaiah/request-fp/blob/main/CHANGELOG.md#110---2026-01-01) for complete details.
 
 ## 🔗 Quick Links
 
-- **Documentation**: [README.md](../README.md)
+- **Documentation**: [README.md](https://github.com/ikelaiah/request-fp#readme)
 - **API Reference**: [docs/Request.md](Request.md)
 - **SSL/HTTPS Guide**: [docs/SSL-HTTPS-GUIDE.md](SSL-HTTPS-GUIDE.md)
 - **Troubleshooting**: [SSL/HTTPS guide](SSL-HTTPS-GUIDE.md)
-- **Examples**: [examples/](../examples/)
+- **Examples**: [examples/](https://github.com/ikelaiah/request-fp/tree/main/examples)
 
 ## 🎯 What's Next?
 

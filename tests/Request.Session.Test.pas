@@ -61,6 +61,15 @@ type
     procedure Test33_Session_ServerCookiesAndExpiry;
     procedure Test34_Session_RedirectKeepsCookies;
     procedure Test35_Session_CrossHostRedirectDropsCookies;
+    procedure Test36_Session_DownloadUsesCookiesAndHeaders;
+    procedure Test37_Session_GetToStreamAndTryVariants;
+    procedure Test38_Session_MultipartStreamsFile;
+    procedure Test39_Session_Retry;
+    procedure Test40_Session_AuthAndJSONHelpers;
+    procedure Test41_Session_Proxy;
+    procedure Test42_CookieJarDomainAndPath;
+    procedure Test43_CookieJarSecureExpiryAndGlobal;
+    procedure Test44_Session_CookieScopeOverHTTP;
   end;
 
 implementation
@@ -183,6 +192,8 @@ begin
   FSession.SetBaseURL(TestBaseURL);
   FSession.SetHeader('Accept', 'application/json');
   FSession.SetHeader('X-Test-Header', 'test-value');
+  // Keep transport-failure tests fast; retry tests enable retries themselves.
+  FSession.SetRetry(0, 0);
 end;
 
 procedure TRequestSessionTests.Test27_Session_PostJSON;
@@ -940,6 +951,308 @@ begin
   CT := Response.HeaderValue('Content-Type');
   AssertTrue('Content-Type header should be present', CT <> '');
   AssertTrue('Content-Type should indicate JSON', Pos('application/json', LowerCase(CT)) > 0);
+end;
+
+procedure TRequestSessionTests.Test36_Session_DownloadUsesCookiesAndHeaders;
+var
+  R: TResponse;
+  Path, Saved: string;
+  FS: TFileStream;
+  Data: TJSONData;
+begin
+  Path := GetTempDir + 'request_fp_session_download.json';
+  DeleteFile(Path);
+  FSession.SetCookie('token', 'abc');
+  try
+    R := FSession.Download('/cookies', Path);
+    AssertEquals('Status', 200, R.StatusCode);
+    AssertEquals('Body is not kept in memory', '', R.Text);
+    FS := TFileStream.Create(Path, fmOpenRead or fmShareDenyWrite);
+    try
+      SetLength(Saved, FS.Size);
+      if FS.Size > 0 then
+        FS.ReadBuffer(Saved[1], FS.Size);
+    finally
+      FS.Free;
+    end;
+    Data := GetJSON(Saved);
+    try
+      AssertEquals('Session cookie was sent', 'abc',
+        Data.FindPath('cookies.token').AsString);
+    finally
+      Data.Free;
+    end;
+
+    R := FSession.Download('/set-cookie?streamed=yes', Path);
+    AssertEquals('Set-Cookie applied after a download', 'yes',
+      FSession.GetCookie('streamed'));
+  finally
+    DeleteFile(Path);
+  end;
+end;
+
+procedure TRequestSessionTests.Test37_Session_GetToStreamAndTryVariants;
+var
+  R: TResponse;
+  Res: TRequestResult;
+  Stream: TMemoryStream;
+  Path: string;
+begin
+  Stream := TMemoryStream.Create;
+  try
+    R := FSession.GetToStream('/bytes/1024', Stream);
+    AssertEquals('Status', 200, R.StatusCode);
+    AssertEquals('Stream size', 1024, Stream.Size);
+
+    Res := FSession.TryGetToStream('/status/404', Stream);
+    AssertTrue('Transport succeeded', Res.Success);
+    AssertEquals('Status', 404, Res.Response.StatusCode);
+    AssertEquals('Error body not written to stream', 1024, Stream.Size);
+  finally
+    Stream.Free;
+  end;
+
+  Path := GetTempDir + 'request_fp_session_fail.bin';
+  FSession.SetBaseURL(TestFailureURL);
+  Res := FSession.TryDownload('/bytes/10', Path);
+  AssertFalse('Connection failure reported', Res.Success);
+  AssertFalse('No file created', FileExists(Path));
+  AssertFalse('No partial file left', FileExists(Path + '.part'));
+end;
+
+procedure TRequestSessionTests.Test38_Session_MultipartStreamsFile;
+const
+  FileSize = 1024 * 1024 + 7;
+var
+  Path: string;
+  FS: TFileStream;
+  Data: RawByteString;
+  I: Integer;
+  R: TResponse;
+begin
+  Path := GetTempDir + 'request_fp_session_upload.bin';
+  SetLength(Data, FileSize);
+  for I := 1 to FileSize do
+    Data[I] := Chr(I mod 256);
+  FS := TFileStream.Create(Path, fmCreate);
+  try
+    FS.WriteBuffer(Data[1], FileSize);
+  finally
+    FS.Free;
+  end;
+  try
+    R := FSession.PostMultipart('/upload-summary', [KV('kind', 'bin')],
+      [KV('file', Path)]);
+    AssertEquals('Status', 200, R.StatusCode);
+    AssertEquals('Uploaded size', FileSize,
+      R.JSON.FindPath('files.file.size').AsInt64);
+    AssertEquals('File name', 'request_fp_session_upload.bin',
+      R.JSON.FindPath('files.file.filename').AsString);
+  finally
+    DeleteFile(Path);
+  end;
+end;
+
+procedure TRequestSessionTests.Test39_Session_Retry;
+var
+  R: TResponse;
+  Fresh: THttpSession;
+  Key: string;
+begin
+  Key := 'session-retry-' + IntToStr(GetTickCount64);
+  FSession.SetRetry(2, 10);
+  R := FSession.Get('/flaky?key=' + Key + '&fail=1');
+  AssertEquals('Session GET retried', 200, R.StatusCode);
+
+  R := FSession.Post('/flaky?key=' + Key + '-post&fail=1', 'a=1');
+  AssertEquals('Session POST not retried', 503, R.StatusCode);
+
+  FSession.SetRetry(0, 0);
+  R := FSession.Get('/flaky?key=' + Key + '-off&fail=1');
+  AssertEquals('Session retries disabled', 503, R.StatusCode);
+
+  Fresh.SetBaseURL(TestBaseURL);
+  R := Fresh.Get('/flaky?key=' + Key + '-fresh&fail=1');
+  AssertEquals('New sessions retry by default', 200, R.StatusCode);
+end;
+
+procedure TRequestSessionTests.Test40_Session_AuthAndJSONHelpers;
+var
+  R: TResponse;
+  Obj: TJSONObject;
+  OtherHost: string;
+begin
+  FSession.SetBearerToken('abc');
+  R := FSession.Get('/headers');
+  AssertEquals('Bearer sent', 'Bearer abc',
+    R.JSON.FindPath('headers.Authorization').AsString);
+
+  FSession.SetBasicAuth('user', 'pass');
+  R := FSession.Get('/headers');
+  AssertEquals('Basic replaces bearer', 'Basic dXNlcjpwYXNz',
+    R.JSON.FindPath('headers.Authorization').AsString);
+
+  R := FSession.PutJSON('/put', '{"x":2}');
+  AssertEquals('PUT JSON', 2, R.JSON.FindPath('json.x').AsInteger);
+  AssertEquals('PUT content type', 'application/json',
+    R.JSON.FindPath('headers.Content-Type').AsString);
+  Obj := TJSONObject.Create(['y', 3]);
+  try
+    R := FSession.PatchJSON('/patch', Obj);
+  finally
+    Obj.Free;
+  end;
+  AssertEquals('PATCH JSON', 3, R.JSON.FindPath('json.y').AsInteger);
+  AssertTrue('TryPatchJSON', FSession.TryPatchJSON('/patch', '{}').OK);
+
+  if Pos('127.0.0.1', TestBaseURL) = 0 then
+    Exit;
+  OtherHost := StringReplace(TestBaseURL, '127.0.0.1', 'localhost', []) +
+    '/headers';
+  R := FSession.Get('/redirect-to?url=' + OtherHost);
+  AssertTrue('Authorization not sent to another host',
+    R.JSON.FindPath('headers.Authorization') = nil);
+  R := FSession.Get('/headers');
+  AssertEquals('Session keeps its credentials', 'Basic dXNlcjpwYXNz',
+    R.JSON.FindPath('headers.Authorization').AsString);
+end;
+
+procedure TRequestSessionTests.Test41_Session_Proxy;
+var
+  R: TResponse;
+  Host, Msg: string;
+  Port: Integer;
+begin
+  if not LocalFixtureHostPort(Host, Port) then
+    Exit;
+  FSession.SetConnectTimeout(2000);
+  FSession.SetProxy(Host, Port);
+  R := FSession.Get('http://example.invalid/proxy-echo');
+  AssertEquals('Absolute URL sent to the proxy',
+    'http://example.invalid/proxy-echo', R.JSON.FindPath('target').AsString);
+  AssertEquals('No proxy credentials', '',
+    R.JSON.FindPath('proxy_authorization').AsString);
+
+  Msg := '';
+  try
+    FSession.Get('https://example.invalid/');
+  except
+    on E: ERequestError do
+      Msg := E.Message;
+  end;
+  AssertTrue('HTTPS through a proxy is refused clearly',
+    Pos('not supported', Msg) > 0);
+
+  FSession.SetProxy('', 0);
+  R := FSession.Get('/get');
+  AssertEquals('Proxy removed', 200, R.StatusCode);
+end;
+
+procedure TRequestSessionTests.Test42_CookieJarDomainAndPath;
+var
+  Jar: TCookieJar;
+begin
+  Jar.Clear;
+  Jar.Apply('d=1; Domain=example.com; Path=/', 'http://www.example.com/login');
+  AssertEquals('Domain cookie to a sibling subdomain', 'd=1',
+    Jar.HeaderFor('http://api.example.com/x', False));
+  AssertEquals('Domain cookie to the domain itself', 'd=1',
+    Jar.HeaderFor('http://example.com/', False));
+  AssertEquals('Not to another domain', '',
+    Jar.HeaderFor('http://example.org/', False));
+  AssertEquals('Not to a look-alike domain', '',
+    Jar.HeaderFor('http://badexample.com/', False));
+
+  Jar.Clear;
+  Jar.Apply('h=1', 'http://www.example.com/app/login');
+  AssertEquals('Host-only cookie to the same host', 'h=1',
+    Jar.HeaderFor('http://www.example.com/app/home', False));
+  AssertEquals('Host-only cookie not to a subdomain', '',
+    Jar.HeaderFor('http://api.www.example.com/app/home', False));
+  AssertEquals('Default path is the request directory', '',
+    Jar.HeaderFor('http://www.example.com/other', False));
+
+  Jar.Clear;
+  Jar.Apply('p=1; Path=/docs', 'http://example.com/');
+  AssertEquals('Path prefix with a slash', 'p=1',
+    Jar.HeaderFor('http://example.com/docs/page', False));
+  AssertEquals('Exact path', 'p=1', Jar.HeaderFor('http://example.com/docs', False));
+  AssertEquals('Not a partial segment', '',
+    Jar.HeaderFor('http://example.com/docsearch', False));
+
+  Jar.Clear;
+  Jar.Apply('x=1; Domain=other.com', 'http://example.com/');
+  Jar.Apply('y=1; Domain=com', 'http://example.com/');
+  AssertEquals('Foreign and top-level domains are rejected', 0, Jar.Count);
+end;
+
+procedure TRequestSessionTests.Test43_CookieJarSecureExpiryAndGlobal;
+var
+  Jar: TCookieJar;
+  JarCopy: TCookieJar;
+begin
+  Jar.Clear;
+  Jar.Apply('s=1; Secure', 'https://example.com/');
+  AssertEquals('Secure cookie not over http', '',
+    Jar.HeaderFor('http://example.com/', False));
+  AssertEquals('Secure cookie over https', 's=1',
+    Jar.HeaderFor('https://example.com/', False));
+
+  Jar.Clear;
+  Jar.Apply('a=1; Max-Age=3600', 'http://example.com/');
+  Jar.Apply('b=1; Expires=Thu, 01 Jan 1970 00:00:00 GMT', 'http://example.com/');
+  AssertEquals('Future cookie kept, past one dropped', 'a=1',
+    Jar.HeaderFor('http://example.com/', False));
+  Jar.Apply('a=; Max-Age=0', 'http://example.com/');
+  AssertEquals('Max-Age=0 removes', 0, Jar.Count);
+
+  Jar.Clear;
+  Jar.SetGlobal('g', 'manual');
+  AssertEquals('Global cookie to any host', 'g=manual',
+    Jar.HeaderFor('http://anywhere.test/x', True));
+  AssertEquals('Global cookie can be left out', '',
+    Jar.HeaderFor('http://anywhere.test/x', False));
+  Jar.Apply('g=server; Path=/', 'http://example.com/');
+  AssertEquals('Server cookie replaces the manual one', 'server', Jar.Get('g'));
+  AssertEquals('Only one g cookie', 1, Jar.Count);
+
+  JarCopy.Assign(Jar);
+  JarCopy.SetGlobal('only_in_copy', '1');
+  AssertEquals('Assign makes a separate copy', '', Jar.Get('only_in_copy'));
+end;
+
+procedure TRequestSessionTests.Test44_Session_CookieScopeOverHTTP;
+var
+  R: TResponse;
+  OtherHost: string;
+  Cookies: TJSONObject;
+begin
+  R := FSession.Get('/scope/a/set?h=' + 'p%3D1%3B%20Path%3D%2Fscope%2Fa' +
+    '&h=' + 'dp%3D1' + '&h=' + 'bad%3D1%3B%20Domain%3Dexample.com');
+  AssertEquals('Status', 200, R.StatusCode);
+  AssertEquals('Foreign Domain cookie rejected', '', FSession.GetCookie('bad'));
+
+  Cookies := TJSONObject(FSession.Get('/scope/a/page').JSON.FindPath('cookies'));
+  AssertEquals('Path and default-path cookies sent under /scope/a', 2,
+    Cookies.Count);
+
+  Cookies := TJSONObject(FSession.Get('/scope/b/page').JSON.FindPath('cookies'));
+  AssertEquals('Neither sent outside /scope/a', 0, Cookies.Count);
+
+  FSession.SetCookie('manual', 'yes');
+  Cookies := TJSONObject(FSession.Get('/scope/b/page').JSON.FindPath('cookies'));
+  AssertEquals('SetCookie cookie sent to every path', 'yes',
+    Cookies.Get('manual', ''));
+
+  if Pos('127.0.0.1', TestBaseURL) = 0 then
+    Exit;
+  OtherHost := StringReplace(TestBaseURL, '127.0.0.1', 'localhost', []);
+  Cookies := TJSONObject(FSession.Get(OtherHost + '/scope/a/page').JSON.FindPath(
+    'cookies'));
+  AssertEquals('Host-only cookies not sent to another host', '',
+    Cookies.Get('p', ''));
+  AssertEquals('SetCookie cookie still sent on a direct request', 'yes',
+    Cookies.Get('manual', ''));
 end;
 
 initialization

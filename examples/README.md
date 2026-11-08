@@ -22,7 +22,8 @@ bash ./build-examples.sh
 
 The scripts:
 
-- require Lazarus 4.8+ with `lazbuild` on `PATH`;
+- use Lazarus 4.8+ (`lazbuild` on `PATH`); `build-examples.sh` falls back to
+  plain `fpc` without it (`--fpc` forces this);
 - find every `.lpi` project below this directory;
 - ignore Lazarus `backup/` directories;
 - clean the root-level `example-bin/` directory;
@@ -49,10 +50,13 @@ On Linux:
 - `post_json` — posting and reading JSON
 - `multipart_upload` — multipart fields and files
 - `file_download` — saving a response to disk
+- `streaming_download` — large download streamed to disk with a progress bar
 - `download_with_redirects` — redirect handling
-- `retry_on_error` — status checks and retry logic
+- `retry_on_error` — automatic retries, and a manual retry for POST
+- `typed_errors` — telling timeouts, network failures, and HTTP errors apart
 - `session_easy_get` — minimal session usage
 - `session_cookie_headers` — persistent cookies and headers
 - `session_login_auth` — JSON login and authenticated follow-up request
+- `session_login_redirect` — login cookie kept across a redirect, bearer token
 - `session_put_delete_json` — session PUT and DELETE requests
 - `ssl_debug` — OpenSSL architecture and DLL diagnostics

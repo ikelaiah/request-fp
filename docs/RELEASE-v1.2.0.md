@@ -86,13 +86,13 @@ All v1.1.0 code continues to work without modification.
 
 ## 📝 Full Changelog
 
-See [CHANGELOG.md](../CHANGELOG.md#120---2026-01-01) for complete details.
+See [CHANGELOG.md](https://github.com/ikelaiah/request-fp/blob/main/CHANGELOG.md#120---2026-01-01) for complete details.
 
 ## 🔗 Quick Links
 
-- **Documentation**: [README.md](../README.md)
+- **Documentation**: [README.md](https://github.com/ikelaiah/request-fp#readme)
 - **Troubleshooting**: [SSL/HTTPS guide](SSL-HTTPS-GUIDE.md)
-- **SSL Debug Tool**: [examples/ssl_debug/](../examples/ssl_debug/)
+- **SSL Debug Tool**: [examples/ssl_debug/](https://github.com/ikelaiah/request-fp/tree/main/examples/ssl_debug)
 
 ## 💡 For Users Still Having Issues
 

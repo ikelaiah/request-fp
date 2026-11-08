@@ -108,4 +108,4 @@ where.exe libcrypto-1_1-x64.dll
 
 - [SSL/HTTPS guide](SSL-HTTPS-GUIDE.md)
 - [Technical details](TECHNICAL-DETAILS.md#windows-openssl-3-loading-with-fpc-322)
-- [SSL debug example](../examples/ssl_debug/)
+- [SSL debug example](https://github.com/ikelaiah/request-fp/tree/main/examples/ssl_debug)

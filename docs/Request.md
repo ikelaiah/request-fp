@@ -3,7 +3,7 @@
 This unit provides the stateless Request-FP API. Add `Request` to the `uses`
 clause and call methods on the global `Http` value.
 
-For a task-oriented overview, start with the [README](../README.md). For shared
+For a task-oriented overview, start with [Getting started](getting-started.md). For shared
 cookies and configuration, see the [session guide](Request.Session.md).
 
 ## First request
@@ -158,6 +158,36 @@ Http.Head(URL, Headers, Params)
   body unless you pass a `Content-Type` header.
 - `Head` returns status and headers; `Text` is empty.
 
+For JSON, use `PutJSON` and `PatchJSON` (string or `TJSONData`, optional
+`Headers`, plus `TryPutJSON` / `TryPatchJSON`):
+
+```pascal
+Http.PutJSON(URL, '{"name":"Ada"}');
+Http.PatchJSON(URL, Body);  // TJSONData; you keep ownership
+```
+
+### Authentication
+
+```pascal
+Http.Get(URL, [KVBearer(Token)]);
+Http.Get(URL, [KVBasic('user', 'secret')]);
+```
+
+`Authorization` is dropped when a redirect goes to a different host, so
+credentials are not sent to another server.
+
+### Proxy
+
+```pascal
+Http.SetProxy('proxy.local', 3128);                   // all Http requests
+Http.SetProxy('proxy.local', 3128, 'user', 'secret'); // with proxy auth
+Http.SetProxy('', 0);                                 // remove
+```
+
+The proxy is used for `http://` URLs only. FPC 3.2.2 cannot tunnel HTTPS
+through a proxy, so an `https://` request raises `ERequestError` while a proxy
+is set.
+
 ### Timeout
 
 ```pascal
@@ -165,8 +195,15 @@ Http.SetTimeout(10000); // milliseconds, all stateless requests
 WriteLn(Http.GetTimeout);
 ```
 
-The default is 30000. `0` waits forever. It is the I/O timeout; FPC's
-connect timeout (3 seconds) is unchanged.
+The default is 30000. `0` waits forever. It is the I/O timeout.
+
+The connect timeout is separate (default 3000 ms; `0` uses the system
+default). Both raise `ETimeoutError`:
+
+```pascal
+Http.SetConnectTimeout(5000);
+WriteLn(Http.GetConnectTimeout);
+```
 
 ### Multipart POST
 
@@ -189,7 +226,49 @@ Response := Http.PostMultipart('https://api.example.com/upload',
   `application/octet-stream`.
 - Quotes and line breaks in field names and filenames are percent-encoded.
 - A file that cannot be opened raises `ERequestError`.
-- Files are read into memory before sending.
+- Files are streamed from disk while sending, so large uploads use little
+  memory. They are opened before the request starts and closed when it ends.
+
+### Downloads and streaming
+
+`Download` and `GetToStream` write the body as it arrives, so large files
+never sit in memory:
+
+```pascal
+Http.Download(URL, FilePath)
+Http.Download(URL, FilePath, OnProgress)
+Http.Download(URL, FilePath, Headers, Params)
+Http.Download(URL, FilePath, Headers, Params, OnProgress)
+
+Http.GetToStream(URL, Stream)                 // same four forms
+```
+
+```pascal
+procedure ShowProgress(Received, Total: Int64);
+begin
+  if Total > 0 then
+    Write(#13, Received * 100 div Total, '%');
+end;
+
+Response := Http.Download('https://example.com/big.zip', 'big.zip',
+  @ShowProgress);
+if not Response.OK then
+  WriteLn('Failed: ', Response.StatusCode, ' ', Response.Text);
+```
+
+- Only a 2xx body is saved. It goes to `FilePath + '.part'` and replaces
+  `FilePath` once complete, so an existing file is never left half-written.
+- Any other status leaves `FilePath` (or `Stream`) untouched and puts the
+  error body in `Response.Text`. On a 2xx, `Response.Text` is empty.
+- `OnProgress` is a plain procedure or a method (`of object`):
+  `procedure(Received, Total: Int64)`. `Total` is `-1` when the server sends
+  no `Content-Length`.
+- Raise an exception in `OnProgress` to cancel; the partial file is deleted.
+- A body shorter than `Content-Length` raises `ENetworkError`.
+- `GetToStream` writes at the stream's current position. If a transfer fails,
+  bytes already written stay in the stream.
+- `TryDownload` and `TryGetToStream` take the same arguments and return
+  `TRequestResult`.
 
 ## Exception-free methods
 
@@ -267,6 +346,8 @@ JSON: TJSONData
 OK: Boolean
 
 function HeaderValue(const Name: string): string;
+function HeaderValues(const Name: string): TStringArray;
+function HeaderNames: TStringArray;
 function IsSuccessStatus: Boolean;
 procedure RaiseForStatus;
 procedure SaveToFile(const FilePath: string);
@@ -279,7 +360,9 @@ function Bytes: TBytes;
   body raises `ERequestError` with a `JSON Parse Error` prefix.
 - `OK` and `IsSuccessStatus` are true for HTTP status 200 through 299.
 - `HeaderValue` performs a case-insensitive response-header lookup and returns
-  an empty string when the header is absent.
+  an empty string when the header is absent (first value if repeated).
+- `HeaderValues` returns every value of a repeated header such as
+  `Set-Cookie`; `HeaderNames` lists header names once each, in order.
 - `RaiseForStatus` raises `ERequestError` for a status outside 200..299.
 - `SaveToFile`, `SaveToStream`, and `Bytes` give the body bytes exactly as
   received, so they are safe for binary downloads.
@@ -312,6 +395,30 @@ Stateless methods separate transport success from HTTP status:
 - Call `Response.RaiseForStatus` if your application wants non-2xx responses
   to raise.
 - Use a `Try*` method when request exceptions should be captured in a result.
+- A connection closed without any response raises `ENetworkError`.
+
+## Retries
+
+Requests are retried automatically, so short outages and rate limits often
+go unnoticed:
+
+- **Methods:** GET, HEAD, PUT, and DELETE only. POST and PATCH are never
+  retried, because repeating them can duplicate an action.
+- **When:** network errors (not timeouts), `429 Too Many Requests`, and
+  `503 Service Unavailable`.
+- **How often:** 2 retries; waits 250 ms, then 500 ms.
+- **Retry-After:** honoured, in seconds or as a date. If it is longer than
+  the timeout, the 429/503 response is returned without waiting.
+- **Downloads:** not retried once body bytes have been written.
+- After the last retry, the final response is returned (or the error raised).
+
+```pascal
+Http.SetRetry(5, 100);  // 5 retries: 100, 200, 400, 800, 1600 ms
+Http.SetRetry(0, 0);    // disable
+WriteLn(Http.GetRetryCount, ' retries, first delay ', Http.GetRetryDelay, ' ms');
+```
+
+Sessions have their own `Session.SetRetry` with the same defaults.
 
 ## HTTPS
 

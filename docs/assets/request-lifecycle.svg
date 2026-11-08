@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="388" viewBox="0 0 1000 388" role="img" aria-labelledby="lc-title lc-desc">
+  <title id="lc-title">From Http.Get to TResponse</title>
+  <desc id="lc-desc">Your code calls Http.Get or a session method. Request-FP builds the request, connects with OpenSSL for https or through a proxy for http, follows redirects while re-matching cookies and dropping Authorization on a new host, and retries GET, HEAD, PUT and DELETE on network errors, 429 and 503. The server's answer, whatever its status, returns as a TResponse. A transport failure raises ETimeoutError, ENetworkError or ERequestError, or sets Success to False for Try methods.</desc>
+  <style>
+    .bg { fill: #FFFFFF; stroke: #E2E8F0; }
+    .box { fill: #F8FAFC; stroke: #CBD5E1; }
+    .t { fill: #0F172A; }
+    .m { fill: #475569; }
+    .ln { stroke: #64748B; fill: none; }
+    .ah { fill: #64748B; }
+    .grp { fill: none; stroke: #A21CAF; stroke-dasharray: 6 5; }
+    .grpt { fill: #A21CAF; }
+    .ok { fill: #ECFDF5; stroke: #059669; }
+    .okt { fill: #047857; }
+    .err { fill: #FFF1F2; stroke: #E11D48; }
+    .errt { fill: #BE123C; }
+    .ends { fill: #EEF2FF; stroke: #4338CA; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0F172A; stroke: #1E293B; }
+      .box { fill: #1E293B; stroke: #334155; }
+      .t { fill: #F1F5F9; }
+      .m { fill: #94A3B8; }
+      .ln { stroke: #94A3B8; }
+      .ah { fill: #94A3B8; }
+      .grp { stroke: #E879F9; }
+      .grpt { fill: #E879F9; }
+      .ok { fill: #052E24; stroke: #34D399; }
+      .okt { fill: #6EE7B7; }
+      .err { fill: #3B0712; stroke: #FB7185; }
+      .errt { fill: #FDA4AF; }
+      .ends { fill: #1E1B4B; stroke: #818CF8; }
+    }
+    text { font-family: Inter, 'Segoe UI', system-ui, Arial, sans-serif; }
+    .mono { font-family: ui-monospace, 'Cascadia Code', Consolas, 'DejaVu Sans Mono', monospace; }
+  </style>
+  <defs>
+    <marker id="lc-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" class="ah"/>
+    </marker>
+  </defs>
+
+  <rect x="1" y="1" width="998" height="386" rx="18" class="bg"/>
+  <text x="32" y="44" font-size="20" font-weight="700" class="t">From Http.Get to TResponse</text>
+
+  <!-- Request-FP group -->
+  <rect x="175" y="70" width="652" height="122" rx="14" class="grp" stroke-width="2"/>
+  <text x="191" y="88" font-size="12" font-weight="700" letter-spacing="1.5" class="grpt">REQUEST-FP</text>
+
+  <!-- Your code -->
+  <rect x="32" y="98" width="120" height="80" rx="12" class="ends" stroke-width="1.5"/>
+  <text x="92" y="128" font-size="15" font-weight="700" text-anchor="middle" class="t">Your code</text>
+  <text x="92" y="150" font-size="12" text-anchor="middle" class="m mono">Http.Get</text>
+  <text x="92" y="166" font-size="12" text-anchor="middle" class="m mono">Session.Get</text>
+
+  <!-- Build -->
+  <rect x="191" y="98" width="140" height="80" rx="12" class="box" stroke-width="1.5"/>
+  <text x="261" y="128" font-size="15" font-weight="700" text-anchor="middle" class="t">1 Build</text>
+  <text x="261" y="150" font-size="12" text-anchor="middle" class="m">headers, query,</text>
+  <text x="261" y="166" font-size="12" text-anchor="middle" class="m">body, User-Agent</text>
+
+  <!-- Connect -->
+  <rect x="351" y="98" width="140" height="80" rx="12" class="box" stroke-width="1.5"/>
+  <text x="421" y="128" font-size="15" font-weight="700" text-anchor="middle" class="t">2 Connect</text>
+  <text x="421" y="150" font-size="12" text-anchor="middle" class="m">OpenSSL for https</text>
+  <text x="421" y="166" font-size="12" text-anchor="middle" class="m">proxy for http</text>
+
+  <!-- Redirects -->
+  <rect x="511" y="98" width="150" height="80" rx="12" class="box" stroke-width="1.5"/>
+  <text x="586" y="128" font-size="15" font-weight="700" text-anchor="middle" class="t">3 Redirects</text>
+  <text x="586" y="150" font-size="12" text-anchor="middle" class="m">re-match cookies,</text>
+  <text x="586" y="166" font-size="12" text-anchor="middle" class="m">drop auth off-host</text>
+
+  <!-- Retry -->
+  <rect x="681" y="98" width="130" height="80" rx="12" class="box" stroke-width="1.5"/>
+  <text x="746" y="128" font-size="15" font-weight="700" text-anchor="middle" class="t">4 Retry?</text>
+  <text x="746" y="150" font-size="12" text-anchor="middle" class="m">safe methods on</text>
+  <text x="746" y="166" font-size="12" text-anchor="middle" class="m">network, 429, 503</text>
+
+  <!-- Server -->
+  <rect x="848" y="98" width="120" height="80" rx="12" class="ends" stroke-width="1.5"/>
+  <text x="908" y="128" font-size="15" font-weight="700" text-anchor="middle" class="t">Server</text>
+  <text x="908" y="150" font-size="12" text-anchor="middle" class="m">answers with</text>
+  <text x="908" y="166" font-size="12" text-anchor="middle" class="m">any status</text>
+
+  <!-- Forward arrows -->
+  <path d="M152 138H189" class="ln" stroke-width="2" marker-end="url(#lc-arrow)"/>
+  <path d="M331 138H349" class="ln" stroke-width="2" marker-end="url(#lc-arrow)"/>
+  <path d="M491 138H509" class="ln" stroke-width="2" marker-end="url(#lc-arrow)"/>
+  <path d="M661 138H679" class="ln" stroke-width="2" marker-end="url(#lc-arrow)"/>
+  <path d="M811 138H846" class="ln" stroke-width="2" marker-end="url(#lc-arrow)"/>
+
+  <!-- Outcomes -->
+  <path d="M908 178V222H690V258" class="ln" stroke-width="2" marker-end="url(#lc-arrow)"/>
+  <path d="M500 192V222H330V258" class="ln" stroke-width="2" marker-end="url(#lc-arrow)"/>
+  <text x="916" y="214" font-size="12" class="m">any status</text>
+  <text x="508" y="214" font-size="12" class="m">transport failure</text>
+
+  <rect x="560" y="260" width="300" height="104" rx="14" class="ok" stroke-width="1.5"/>
+  <text x="710" y="292" font-size="17" font-weight="700" text-anchor="middle" class="okt mono">TResponse</text>
+  <text x="710" y="316" font-size="12.5" text-anchor="middle" class="m">StatusCode, headers,</text>
+  <text x="710" y="333" font-size="12.5" text-anchor="middle" class="m">Text, JSON, Bytes</text>
+  <text x="710" y="350" font-size="12.5" text-anchor="middle" class="m">RaiseForStatus opts in to raising</text>
+
+  <rect x="170" y="260" width="320" height="104" rx="14" class="err" stroke-width="1.5"/>
+  <text x="330" y="292" font-size="17" font-weight="700" text-anchor="middle" class="errt">Typed error</text>
+  <text x="330" y="316" font-size="12" text-anchor="middle" class="m mono">ETimeoutError, ENetworkError,</text>
+  <text x="330" y="333" font-size="12" text-anchor="middle" class="m mono">ERequestError</text>
+  <text x="330" y="350" font-size="12.5" text-anchor="middle" class="m">or Try*: Success = False</text>
+</svg>

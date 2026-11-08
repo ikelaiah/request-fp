@@ -167,4 +167,4 @@ end; // <-- Automatic cleanup happens here
 
 The FPCUnit suite covers repeated JSON access, response copying, and automatic
 cleanup. Build and run the current suite using the commands in
-[CONTRIBUTING.md](../CONTRIBUTING.md#build-and-run-the-tests).
+[CONTRIBUTING.md](https://github.com/ikelaiah/request-fp/blob/main/CONTRIBUTING.md#build-and-run-the-tests).

@@ -4,17 +4,68 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-09
+
 ### Added
 
-- (none)
+- Streaming downloads: `Http.Download(URL, FilePath)` and
+  `Http.GetToStream(URL, Stream)`, with `Try*`, header/parameter, and progress
+  overloads, plus session `Download`/`GetToStream`. Only a 2xx body is saved;
+  files are written to `.part` and replaced when complete; a body shorter
+  than `Content-Length` raises `ENetworkError`.
+- `TProgressProc` / `TProgressEvent` progress callbacks; raise to cancel.
+- Automatic retries, on by default: GET, HEAD, PUT, and DELETE are retried
+  twice (250 ms, then 500 ms) on network errors (not timeouts), 429, and 503,
+  honouring `Retry-After`. POST and PATCH are never retried.
+  `Http.SetRetry` / `Session.SetRetry` change it; `SetRetry(0, 0)` disables.
+- `TryParseHTTPDate` building block.
+- Auth helpers: `KVBasic(User, Pass)` and `KVBearer(Token)`, and session
+  `SetBasicAuth` / `SetBearerToken`.
+- `Http.PutJSON` / `PatchJSON` (with `Try*` variants) and session
+  `PutJSON` / `PatchJSON` / `TryPutJSON` / `TryPatchJSON`.
+- `Response.HeaderValues(Name)` and `Response.HeaderNames`.
+- `Http.SetConnectTimeout` / `GetConnectTimeout` and session
+  `SetConnectTimeout` (default 3000 ms).
+- `Http.SetProxy` / session `SetProxy` for `http://` URLs, with optional proxy
+  credentials. `https://` requests raise `ERequestError` while a proxy is
+  set, because FPC 3.2.2 cannot tunnel HTTPS.
+- Session cookies honour `Domain`, `Path`, `Secure`, `Max-Age`, and `Expires`
+  (RFC 6265), via the public `TCookieJar`. `SetCookie` cookies stay global.
+- Examples: `streaming_download`, `session_login_redirect`, `typed_errors`.
+- Documentation site built with DocSprout and published to GitHub Pages, with
+  new Getting started and How it works pages and SVG diagrams. CI runs
+  `docsprout check` and `docsprout audit --strict`.
+- macOS support: Request-FP finds Homebrew or MacPorts OpenSSL 3, and CI
+  builds and tests on macOS with FPC 3.2.2.
+- `run-tests.sh` and `run-tests.ps1`: build the suite, start the local test
+  server, and run all tests; `--leak-check` / `-LeakCheck` fails on unfreed
+  memory.
+- `fpc` fallback for the run scripts and `build-examples.sh` when Lazarus is
+  not installed.
+- CI runs a heaptrc leak check on Linux, Windows, and macOS.
 
 ### Changed
 
-- (none)
+- Multipart uploads (`PostMultipart`, `TryPostMultipart`, session
+  `PostMultipart`) stream files from disk instead of loading them into
+  memory. `BuildMultipartBody` returns a read-only stream that keeps the files
+  open until it is freed.
+- Linux needs only the OpenSSL 3 runtime (`libssl3`), not the `-dev` package:
+  `.3` is added to FPC 3.2.2's library version search.
+- Tests default to the local test server instead of `https://httpbin.org`.
+- Session cookies from servers are no longer sent to every host and path; see
+  Added. Cookies set with `SetCookie` behave as before.
+- `retry_on_error` example shows the built-in retries.
 
 ### Fixed
 
-- (none)
+- `Authorization` headers were resent when a redirect went to another host;
+  they are now dropped (stateless and session requests).
+- A connection closed without any response returned status 0 instead of
+  raising; it now raises `ENetworkError`.
+- Timeouts close to the configured limit were sometimes reported as
+  `ENetworkError` instead of `ETimeoutError` on Windows, because of the
+  system timer's ~16 ms resolution.
 
 ## [1.4.0] - 2026-11-09
 

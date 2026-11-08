@@ -7,11 +7,22 @@ interface
 
 uses
   Classes, SysUtils, fpcunit, testregistry, fpjson, jsonparser,
-  openssl, Request, Test.Support;
+  openssl, md5, Request, Test.Support;
 
 type
   { TRequestSimpleTests }
   TRequestSimpleTests = class(TTestCase)
+  private
+    FProgressCalls: Integer;
+    FLastReceived: Int64;
+    FLastTotal: Int64;
+    FCancelAfter: Integer;
+    FFlakyCounter: Integer;
+    procedure TrackProgress(Received, Total: Int64);
+    function FlakyKey: string;
+  protected
+    procedure SetUp; override;
+    procedure TearDown; override;
   published
     // Basic HTTP methods
     procedure Test01_SimpleGet;
@@ -60,6 +71,31 @@ type
     procedure Test33_MultipartEscapingAndContentType;
     procedure Test34_MultipartMissingFileRaisesRequestError;
     procedure Test35_PostJSONKeepsCustomContentType;
+    // Streaming downloads
+    procedure Test36_DownloadToFileWithProgress;
+    procedure Test37_GetToStreamChunkedUnknownTotal;
+    procedure Test38_DownloadErrorStatusKeepsFile;
+    procedure Test39_DownloadCancelKeepsOldFile;
+    procedure Test40_TruncatedDownloadRaises;
+    procedure Test41_GetToStreamRedirectAndPlainProc;
+    // Streaming uploads
+    procedure Test42_MultipartStreamsLargeFile;
+    procedure Test43_MultipartBodyRewindsAndReadsFully;
+    // Retries
+    procedure Test44_RetryOn503And429;
+    procedure Test45_RetryStopsAfterMax;
+    procedure Test46_RetryAfterHonouredOrReturned;
+    procedure Test47_OnlyIdempotentMethodsRetry;
+    procedure Test48_RetryOnDroppedConnection;
+    procedure Test49_TimeoutIsNotRetried;
+    procedure Test50_RetryDefaultsAndDownload;
+    // Helpers
+    procedure Test51_AuthHeaderHelpers;
+    procedure Test52_PutAndPatchJSON;
+    procedure Test53_HeaderValuesAndNames;
+    procedure Test54_ConnectTimeoutSetting;
+    procedure Test55_ProxyForHTTP;
+    procedure Test56_CrossHostRedirectDropsAuth;
   end;
 
 implementation
@@ -733,6 +769,698 @@ begin
   AssertEquals('Custom Content-Type is sent unchanged',
     'application/vnd.api+json',
     R.JSON.FindPath('headers.Content-Type').AsString);
+end;
+
+{ Streaming downloads }
+
+var
+  GPlainProgressCalls: Integer;
+  GPlainLastReceived: Int64;
+
+procedure PlainProgress(Received, Total: Int64);
+begin
+  Inc(GPlainProgressCalls);
+  GPlainLastReceived := Received;
+end;
+
+function ReadFileText(const Path: string): RawByteString;
+var
+  FS: TFileStream;
+begin
+  FS := TFileStream.Create(Path, fmOpenRead or fmShareDenyWrite);
+  try
+    SetLength(Result, FS.Size);
+    if FS.Size > 0 then
+      FS.ReadBuffer(Result[1], FS.Size);
+  finally
+    FS.Free;
+  end;
+end;
+
+procedure WriteFileText(const Path: string; const Data: RawByteString);
+var
+  FS: TFileStream;
+begin
+  FS := TFileStream.Create(Path, fmCreate);
+  try
+    if Data <> '' then
+      FS.WriteBuffer(Data[1], Length(Data));
+  finally
+    FS.Free;
+  end;
+end;
+
+function StreamText(Stream: TMemoryStream): RawByteString;
+begin
+  SetLength(Result, Stream.Size);
+  if Stream.Size > 0 then
+    Move(Stream.Memory^, Result[1], Stream.Size);
+end;
+
+function IsPatternBytes(const Data: RawByteString; Count: Integer): Boolean;
+var
+  I: Integer;
+begin
+  Result := Length(Data) = Count;
+  if Result then
+    for I := 1 to Count do
+      if Ord(Data[I]) <> (I - 1) mod 256 then
+        Exit(False);
+end;
+
+procedure TRequestSimpleTests.TrackProgress(Received, Total: Int64);
+begin
+  Inc(FProgressCalls);
+  FLastReceived := Received;
+  FLastTotal := Total;
+  if (FCancelAfter > 0) and (FProgressCalls >= FCancelAfter) then
+    raise ERequestError.Create('Cancelled by test');
+end;
+
+procedure TRequestSimpleTests.Test36_DownloadToFileWithProgress;
+const
+  ByteCount = 200000;
+var
+  R: TResponse;
+  Path: string;
+begin
+  Path := GetTempDir + 'request_fp_download.bin';
+  DeleteFile(Path);
+  FProgressCalls := 0;
+  FCancelAfter := 0;
+  try
+    R := Http.Download(TestURL('/bytes/' + IntToStr(ByteCount)), Path,
+      @TrackProgress);
+    AssertEquals('Status', 200, R.StatusCode);
+    AssertEquals('Body is not kept in memory', '', R.Text);
+    AssertEquals('Headers are kept', IntToStr(ByteCount),
+      R.HeaderValue('Content-Length'));
+    AssertTrue('File holds the exact bytes',
+      IsPatternBytes(ReadFileText(Path), ByteCount));
+    AssertFalse('No partial file left', FileExists(Path + '.part'));
+    AssertTrue('Progress was reported', FProgressCalls > 0);
+    AssertEquals('Last progress = all bytes', ByteCount, FLastReceived);
+    AssertEquals('Total from Content-Length', ByteCount, FLastTotal);
+  finally
+    DeleteFile(Path);
+  end;
+end;
+
+procedure TRequestSimpleTests.Test37_GetToStreamChunkedUnknownTotal;
+const
+  ByteCount = 5500;
+var
+  R: TResponse;
+  Stream: TMemoryStream;
+begin
+  FProgressCalls := 0;
+  FCancelAfter := 0;
+  Stream := TMemoryStream.Create;
+  try
+    R := Http.GetToStream(TestURL('/stream-bytes/' + IntToStr(ByteCount)),
+      Stream, @TrackProgress);
+    AssertEquals('Status', 200, R.StatusCode);
+    AssertTrue('Chunked body arrives intact',
+      IsPatternBytes(StreamText(Stream), ByteCount));
+    AssertEquals('Last progress = all bytes', ByteCount, FLastReceived);
+    AssertEquals('Total unknown without Content-Length', -1, FLastTotal);
+  finally
+    Stream.Free;
+  end;
+end;
+
+procedure TRequestSimpleTests.Test38_DownloadErrorStatusKeepsFile;
+var
+  R: TResponse;
+  Res: TRequestResult;
+  Path: string;
+begin
+  Path := GetTempDir + 'request_fp_keep.txt';
+  WriteFileText(Path, 'old');
+  try
+    R := Http.Download(TestURL('/status/404'), Path);
+    AssertEquals('Status', 404, R.StatusCode);
+    AssertTrue('Error body is in Text', Pos('404', R.Text) > 0);
+    AssertEquals('Existing file untouched', 'old', ReadFileText(Path));
+    AssertFalse('No partial file left', FileExists(Path + '.part'));
+
+    Res := Http.TryDownload(TestURL('/status/500'), Path);
+    AssertTrue('Transport succeeded', Res.Success);
+    AssertFalse('Not OK', Res.OK);
+    AssertEquals('Existing file still untouched', 'old', ReadFileText(Path));
+  finally
+    DeleteFile(Path);
+  end;
+end;
+
+procedure TRequestSimpleTests.Test39_DownloadCancelKeepsOldFile;
+var
+  Res: TRequestResult;
+  Path: string;
+  Raised: Boolean;
+begin
+  Path := GetTempDir + 'request_fp_cancel.bin';
+  WriteFileText(Path, 'old');
+  try
+    FProgressCalls := 0;
+    FCancelAfter := 1;
+    Raised := False;
+    try
+      Http.Download(TestURL('/bytes/300000'), Path, @TrackProgress);
+    except
+      on E: ERequestError do
+        Raised := Pos('Cancelled by test', E.Message) > 0;
+    end;
+    AssertTrue('Exception from the callback cancels', Raised);
+    AssertEquals('Existing file untouched', 'old', ReadFileText(Path));
+    AssertFalse('Partial file deleted', FileExists(Path + '.part'));
+
+    FProgressCalls := 0;
+    Res := Http.TryDownload(TestURL('/bytes/300000'), Path, @TrackProgress);
+    AssertFalse('TryDownload reports the cancel', Res.Success);
+    AssertFalse('Partial file deleted', FileExists(Path + '.part'));
+  finally
+    FCancelAfter := 0;
+    DeleteFile(Path);
+  end;
+end;
+
+procedure TRequestSimpleTests.Test40_TruncatedDownloadRaises;
+var
+  Path: string;
+  Raised: Boolean;
+begin
+  Path := GetTempDir + 'request_fp_truncated.bin';
+  DeleteFile(Path);
+  Raised := False;
+  try
+    Http.Download(TestURL('/truncated-bytes/4000'), Path);
+  except
+    on E: ENetworkError do
+      Raised := Pos('closed after 2000 of 4000 bytes', E.Message) > 0;
+  end;
+  AssertTrue('Short body raises ENetworkError', Raised);
+  AssertFalse('No file created', FileExists(Path));
+  AssertFalse('Partial file deleted', FileExists(Path + '.part'));
+end;
+
+procedure TRequestSimpleTests.Test41_GetToStreamRedirectAndPlainProc;
+const
+  ByteCount = 3000;
+var
+  R: TResponse;
+  Stream: TMemoryStream;
+  Raised: Boolean;
+begin
+  GPlainProgressCalls := 0;
+  Stream := TMemoryStream.Create;
+  try
+    R := Http.GetToStream(TestURL('/redirect-to'), Stream,
+      [KV('X-Test', '1')], [KV('url', '/bytes/' + IntToStr(ByteCount))],
+      @PlainProgress);
+    AssertEquals('Status after redirect', 200, R.StatusCode);
+    AssertTrue('Only the final body is written',
+      IsPatternBytes(StreamText(Stream), ByteCount));
+    AssertTrue('Plain procedure progress', GPlainProgressCalls > 0);
+    AssertEquals('Plain procedure saw all bytes', ByteCount, GPlainLastReceived);
+  finally
+    Stream.Free;
+  end;
+
+  Raised := False;
+  try
+    Http.GetToStream(TestURL('/get'), nil);
+  except
+    on E: ERequestError do
+      Raised := True;
+  end;
+  AssertTrue('nil stream raises ERequestError', Raised);
+end;
+
+{ Streaming uploads }
+
+procedure WritePatternFile(const Path: string; Count: Int64);
+var
+  FS: TFileStream;
+  Chunk: array[0..65535] of Byte;
+  I: Integer;
+  N: Int64;
+begin
+  for I := 0 to High(Chunk) do
+    Chunk[I] := I mod 251;
+  FS := TFileStream.Create(Path, fmCreate);
+  try
+    while Count > 0 do
+    begin
+      N := Count;
+      if N > SizeOf(Chunk) then
+        N := SizeOf(Chunk);
+      FS.WriteBuffer(Chunk, N);
+      Dec(Count, N);
+    end;
+  finally
+    FS.Free;
+  end;
+end;
+
+procedure TRequestSimpleTests.Test42_MultipartStreamsLargeFile;
+const
+  FileSize = 8 * 1024 * 1024;
+var
+  Path, ContentType: string;
+  Body: TStream;
+  HeapBefore, HeapGrowth: PtrUInt;
+  R: TResponse;
+begin
+  Path := GetTempDir + 'request_fp_upload_large.bin';
+  WritePatternFile(Path, FileSize);
+  try
+    HeapBefore := GetFPCHeapStatus.CurrHeapUsed;
+    Body := BuildMultipartBody([KV('note', 'big')], [KV('blob', Path)],
+      ContentType);
+    try
+      HeapGrowth := GetFPCHeapStatus.CurrHeapUsed - HeapBefore;
+      AssertTrue('File is not loaded into memory (grew ' +
+        IntToStr(HeapGrowth) + ' bytes)', HeapGrowth < 1024 * 1024);
+      AssertTrue('Body size includes the file', Body.Size > FileSize);
+    finally
+      Body.Free;
+    end;
+
+    R := Http.PostMultipart(TestURL('/upload-summary'),
+      [KV('note', 'big')], [KV('blob', Path)]);
+    AssertEquals('Status', 200, R.StatusCode);
+    AssertEquals('Field', 'big', R.JSON.FindPath('form.note').AsString);
+    AssertEquals('Uploaded size', FileSize,
+      R.JSON.FindPath('files.blob.size').AsInt64);
+    AssertEquals('Uploaded bytes match', MD5Print(MD5File(Path)),
+      R.JSON.FindPath('files.blob.md5').AsString);
+    AssertEquals('Sent with Content-Length, not chunked', '',
+      R.JSON.FindPath('transfer_encoding').AsString);
+  finally
+    DeleteFile(Path);
+  end;
+end;
+
+procedure TRequestSimpleTests.Test43_MultipartBodyRewindsAndReadsFully;
+var
+  PathA, PathB, ContentType: string;
+  Body: TStream;
+  First, Second: TMemoryStream;
+  Text: RawByteString;
+begin
+  PathA := GetTempDir + 'request_fp_part_a.txt';
+  PathB := GetTempDir + 'request_fp_part_empty.bin';
+  WriteFileText(PathA, 'alpha');
+  WriteFileText(PathB, '');
+  First := TMemoryStream.Create;
+  Second := TMemoryStream.Create;
+  try
+    Body := BuildMultipartBody([KV('x', '1')],
+      [KV('a', PathA), KV('empty', PathB)], ContentType);
+    try
+      First.CopyFrom(Body, 0);
+      Body.Position := 0;
+      Second.CopyFrom(Body, 0);
+      AssertEquals('Size matches bytes read', Body.Size, First.Size);
+      AssertEquals('Rewound read is identical', First.Size, Second.Size);
+      AssertTrue('Rewound bytes are identical',
+        CompareMem(First.Memory, Second.Memory, First.Size));
+    finally
+      Body.Free;
+    end;
+    Text := StreamText(First);
+    AssertTrue('File content present', Pos(#13#10#13#10'alpha'#13#10, Text) > 0);
+    AssertTrue('Empty file part present',
+      Pos('filename="request_fp_part_empty.bin"', Text) > 0);
+    AssertTrue('Closing boundary last',
+      Copy(Text, Length(Text) - 3, 4) = '--'#13#10);
+    AssertTrue('Files are closed when the body is freed',
+      DeleteFile(PathA) and DeleteFile(PathB));
+  finally
+    First.Free;
+    Second.Free;
+    DeleteFile(PathA);
+    DeleteFile(PathB);
+  end;
+end;
+
+{ Retries }
+
+procedure TRequestSimpleTests.SetUp;
+begin
+  inherited SetUp;
+  // Keep transport-failure tests fast; retry tests enable retries themselves.
+  Http.SetRetry(0, 0);
+end;
+
+procedure TRequestSimpleTests.TearDown;
+begin
+  Http.SetRetry(DEFAULT_RETRY_COUNT, DEFAULT_RETRY_DELAY_MS);
+  inherited TearDown;
+end;
+
+function TRequestSimpleTests.FlakyKey: string;
+begin
+  Inc(FFlakyCounter);
+  Result := TestName + '-' + IntToStr(GetTickCount64) + '-' +
+    IntToStr(FFlakyCounter);
+end;
+
+function FlakyURL(const Key, Query: string): string;
+begin
+  Result := TestURL('/flaky?key=' + Key + '&' + Query);
+end;
+
+function FlakyCount(const Key: string): Integer;
+var
+  R: TResponse;
+begin
+  R := Http.Get(TestURL('/flaky-count?key=' + Key));
+  Result := R.JSON.FindPath('count').AsInteger;
+end;
+
+procedure TRequestSimpleTests.Test44_RetryOn503And429;
+var
+  R: TResponse;
+  Key: string;
+begin
+  Http.SetRetry(2, 10);
+  Key := FlakyKey;
+  R := Http.Get(FlakyURL(Key, 'fail=2&status=503'));
+  AssertEquals('Succeeds after two 503s', 200, R.StatusCode);
+  AssertEquals('Third attempt', 3, R.JSON.FindPath('attempt').AsInteger);
+
+  Key := FlakyKey;
+  R := Http.Get(FlakyURL(Key, 'fail=1&status=429'));
+  AssertEquals('429 is retried', 200, R.StatusCode);
+
+  Key := FlakyKey;
+  R := Http.Get(FlakyURL(Key, 'fail=1&status=500'));
+  AssertEquals('500 is not retried', 500, R.StatusCode);
+  AssertEquals('One attempt for 500', 1, FlakyCount(Key));
+end;
+
+procedure TRequestSimpleTests.Test45_RetryStopsAfterMax;
+var
+  R: TResponse;
+  Key: string;
+begin
+  Http.SetRetry(2, 10);
+  Key := FlakyKey;
+  R := Http.Get(FlakyURL(Key, 'fail=5'));
+  AssertEquals('Last response returned', 503, R.StatusCode);
+  AssertEquals('One try plus two retries', 3, FlakyCount(Key));
+
+  Http.SetRetry(0, 0);
+  Key := FlakyKey;
+  R := Http.Get(FlakyURL(Key, 'fail=1'));
+  AssertEquals('SetRetry(0, 0) disables retries', 503, R.StatusCode);
+  AssertEquals('Single attempt', 1, FlakyCount(Key));
+end;
+
+procedure TRequestSimpleTests.Test46_RetryAfterHonouredOrReturned;
+var
+  R: TResponse;
+  Key: string;
+  Start: QWord;
+begin
+  Http.SetRetry(2, 10);
+  Key := FlakyKey;
+  Start := GetTickCount64;
+  R := Http.Get(FlakyURL(Key, 'fail=1&retry_after=1'));
+  AssertEquals('Retried after Retry-After', 200, R.StatusCode);
+  AssertTrue('Waited about one second', GetTickCount64 - Start >= 900);
+
+  Key := FlakyKey;
+  Start := GetTickCount64;
+  R := Http.Get(FlakyURL(Key, 'fail=1&retry_after=3600'));
+  AssertEquals('Long Retry-After is returned, not waited for', 503,
+    R.StatusCode);
+  AssertEquals('Retry-After visible to the caller', '3600',
+    R.HeaderValue('Retry-After'));
+  AssertEquals('No retry', 1, FlakyCount(Key));
+  AssertTrue('Returned promptly', GetTickCount64 - Start < 2000);
+end;
+
+procedure TRequestSimpleTests.Test47_OnlyIdempotentMethodsRetry;
+var
+  R: TResponse;
+  Key: string;
+begin
+  Http.SetRetry(2, 10);
+  Key := FlakyKey;
+  R := Http.Post(FlakyURL(Key, 'fail=1'), 'a=1');
+  AssertEquals('POST not retried', 503, R.StatusCode);
+  AssertEquals('POST single attempt', 1, FlakyCount(Key));
+
+  Key := FlakyKey;
+  R := Http.Patch(FlakyURL(Key, 'fail=1'), '{}');
+  AssertEquals('PATCH not retried', 503, R.StatusCode);
+  AssertEquals('PATCH single attempt', 1, FlakyCount(Key));
+
+  Key := FlakyKey;
+  R := Http.Put(FlakyURL(Key, 'fail=1'), 'a=1');
+  AssertEquals('PUT retried', 200, R.StatusCode);
+
+  Key := FlakyKey;
+  R := Http.Delete(FlakyURL(Key, 'fail=1'));
+  AssertEquals('DELETE retried', 200, R.StatusCode);
+
+  Key := FlakyKey;
+  R := Http.Head(FlakyURL(Key, 'fail=1'));
+  AssertEquals('HEAD retried', 200, R.StatusCode);
+end;
+
+procedure TRequestSimpleTests.Test48_RetryOnDroppedConnection;
+var
+  R: TResponse;
+  Key, Msg: string;
+begin
+  Key := FlakyKey;
+  Msg := '';
+  try
+    Http.Get(FlakyURL(Key, 'fail=1&mode=drop'));
+  except
+    on E: ENetworkError do
+      Msg := E.Message;
+  end;
+  AssertTrue('Empty response raises ENetworkError: ' + Msg,
+    Pos('without a response', Msg) > 0);
+
+  Http.SetRetry(2, 10);
+  Key := FlakyKey;
+  R := Http.Get(FlakyURL(Key, 'fail=1&mode=drop'));
+  AssertEquals('Retried after a dropped connection', 200, R.StatusCode);
+  AssertEquals('Second attempt', 2, R.JSON.FindPath('attempt').AsInteger);
+end;
+
+procedure TRequestSimpleTests.Test49_TimeoutIsNotRetried;
+var
+  Key: string;
+  Raised: Boolean;
+  OldTimeout: Integer;
+begin
+  Http.SetRetry(2, 10);
+  OldTimeout := Http.GetTimeout;
+  Http.SetTimeout(200);
+  try
+    Key := FlakyKey;
+    Raised := False;
+    try
+      // A retry would succeed, so an ETimeoutError proves there was none.
+      Http.Get(FlakyURL(Key, 'fail=1&delay=1'));
+    except
+      on E: ETimeoutError do
+        Raised := True;
+    end;
+    AssertTrue('Timeout raised without retry', Raised);
+  finally
+    Http.SetTimeout(OldTimeout);
+  end;
+end;
+
+procedure TRequestSimpleTests.Test50_RetryDefaultsAndDownload;
+var
+  R: TResponse;
+  Key, Path: string;
+  Start: QWord;
+begin
+  Http.SetRetry(DEFAULT_RETRY_COUNT, DEFAULT_RETRY_DELAY_MS);
+  AssertEquals('Default retry count', 2, Http.GetRetryCount);
+  AssertEquals('Default first delay', 250, Http.GetRetryDelay);
+
+  Key := FlakyKey;
+  Start := GetTickCount64;
+  R := Http.Get(FlakyURL(Key, 'fail=1'));
+  AssertEquals('Retries are on by default', 200, R.StatusCode);
+  AssertTrue('Waited the first delay', GetTickCount64 - Start >= 230);
+
+  Path := GetTempDir + 'request_fp_retry_download.json';
+  Key := FlakyKey;
+  try
+    R := Http.Download(FlakyURL(Key, 'fail=1'), Path);
+    AssertEquals('Download retried', 200, R.StatusCode);
+    AssertTrue('Saved the successful body',
+      Pos('"attempt": 2', ReadFileText(Path)) > 0);
+  finally
+    DeleteFile(Path);
+  end;
+end;
+
+{ Helpers }
+
+procedure TRequestSimpleTests.Test51_AuthHeaderHelpers;
+var
+  R: TResponse;
+begin
+  AssertEquals('Basic header name', 'Authorization', KVBasic('user', 'pass').Key);
+  AssertEquals('Basic value', 'Basic dXNlcjpwYXNz', KVBasic('user', 'pass').Value);
+  AssertEquals('Bearer value', 'Bearer abc', KVBearer('abc').Value);
+  R := Http.Get(TestURL('/headers'), [KVBearer('abc')]);
+  AssertEquals('Bearer sent', 'Bearer abc',
+    R.JSON.FindPath('headers.Authorization').AsString);
+end;
+
+procedure TRequestSimpleTests.Test52_PutAndPatchJSON;
+var
+  R: TResponse;
+  Obj: TJSONObject;
+  Res: TRequestResult;
+begin
+  R := Http.PutJSON(TestURL('/put'), '{"a":1}');
+  AssertEquals('PUT status', 200, R.StatusCode);
+  AssertEquals('PUT JSON body', 1, R.JSON.FindPath('json.a').AsInteger);
+  AssertEquals('PUT content type', 'application/json',
+    R.JSON.FindPath('headers.Content-Type').AsString);
+
+  Obj := TJSONObject.Create(['b', 2]);
+  try
+    R := Http.PatchJSON(TestURL('/patch'), Obj);
+  finally
+    Obj.Free;
+  end;
+  AssertEquals('PATCH JSON body', 2, R.JSON.FindPath('json.b').AsInteger);
+
+  R := Http.PutJSON(TestURL('/put'), '{}',
+    [KV('Content-Type', 'application/merge-patch+json')]);
+  AssertEquals('Custom content type wins', 'application/merge-patch+json',
+    R.JSON.FindPath('headers.Content-Type').AsString);
+
+  Res := Http.TryPatchJSON(TestURL('/patch'), TJSONData(nil));
+  AssertFalse('nil JSON is reported', Res.Success);
+  AssertTrue('nil JSON message', Pos('cannot be nil', Res.Error) > 0);
+
+  Res := Http.TryPutJSON(TestFailureURL + '/put', '{}');
+  AssertFalse('Transport failure reported', Res.Success);
+end;
+
+procedure TRequestSimpleTests.Test53_HeaderValuesAndNames;
+var
+  R: TResponse;
+  Values, Names: TStringArray;
+  I, SetCookieCount: Integer;
+begin
+  R := Http.Get(TestURL('/set-cookie?a=1&b=2'));
+  Values := R.HeaderValues('set-cookie');
+  AssertEquals('Both Set-Cookie values', 2, Length(Values));
+  AssertEquals('First value in order', 'a=1; Path=/', Values[0]);
+  AssertEquals('Second value in order', 'b=2; Path=/', Values[1]);
+  AssertEquals('Missing header gives no values', 0,
+    Length(R.HeaderValues('X-Missing')));
+
+  Names := R.HeaderNames;
+  SetCookieCount := 0;
+  for I := 0 to High(Names) do
+    if SameText(Names[I], 'Set-Cookie') then
+      Inc(SetCookieCount);
+  AssertEquals('Names have no duplicates', 1, SetCookieCount);
+  AssertTrue('Content-Type listed',
+    (Length(Names) > 1) and (R.HeaderValue('Content-Type') <> ''));
+end;
+
+procedure TRequestSimpleTests.Test54_ConnectTimeoutSetting;
+var
+  Raised: Boolean;
+begin
+  AssertEquals('Default connect timeout', 3000, Http.GetConnectTimeout);
+  Http.SetConnectTimeout(-5);
+  AssertEquals('Negative becomes 0', 0, Http.GetConnectTimeout);
+  Http.SetConnectTimeout(1500);
+  try
+    AssertEquals('Value kept', 1500, Http.GetConnectTimeout);
+    Raised := False;
+    try
+      Http.Get(TestFailureURL);
+    except
+      on E: ENetworkError do
+        Raised := True;
+    end;
+    AssertTrue('Failure still raises ENetworkError', Raised);
+  finally
+    Http.SetConnectTimeout(3000);
+  end;
+end;
+
+procedure TRequestSimpleTests.Test55_ProxyForHTTP;
+var
+  R: TResponse;
+  Res: TRequestResult;
+  Host: string;
+  Port: Integer;
+  Msg: string;
+begin
+  if not LocalFixtureHostPort(Host, Port) then
+    Exit; // The local test server doubles as the proxy.
+  Http.SetProxy(Host, Port, 'proxyuser', 'proxypass');
+  try
+    R := Http.Get('http://example.invalid/proxy-echo');
+    AssertEquals('Status via proxy', 200, R.StatusCode);
+    AssertEquals('Absolute URL sent to the proxy',
+      'http://example.invalid/proxy-echo', R.JSON.FindPath('target').AsString);
+    AssertEquals('Host header is the target', 'example.invalid',
+      R.JSON.FindPath('host').AsString);
+    AssertEquals('Proxy credentials', KVBasic('proxyuser', 'proxypass').Value,
+      R.JSON.FindPath('proxy_authorization').AsString);
+
+    Msg := '';
+    try
+      Http.Get('https://example.invalid/');
+    except
+      on E: ERequestError do
+        Msg := E.Message;
+    end;
+    AssertTrue('HTTPS through a proxy is refused clearly: ' + Msg,
+      Pos('HTTPS through a proxy is not supported', Msg) > 0);
+
+    Res := Http.TryGet('https://example.invalid/');
+    AssertFalse('TryGet reports it', Res.Success);
+  finally
+    Http.SetProxy('', 0);
+  end;
+  R := Http.Get(TestURL('/get'));
+  AssertEquals('Proxy removed', 200, R.StatusCode);
+end;
+
+procedure TRequestSimpleTests.Test56_CrossHostRedirectDropsAuth;
+var
+  R: TResponse;
+  OtherHost: string;
+begin
+  R := Http.Get(TestURL('/redirect-to'), [KVBearer('secret')],
+    [KV('url', '/headers')]);
+  AssertEquals('Same-host redirect keeps Authorization', 'Bearer secret',
+    R.JSON.FindPath('headers.Authorization').AsString);
+
+  if Pos('127.0.0.1', TestBaseURL) = 0 then
+    Exit; // Needs the local server, reachable as both 127.0.0.1 and localhost.
+  OtherHost := StringReplace(TestBaseURL, '127.0.0.1', 'localhost', []) +
+    '/headers';
+  R := Http.Get(TestURL('/redirect-to'), [KVBearer('secret')],
+    [KV('url', OtherHost)]);
+  AssertEquals('Final status', 200, R.StatusCode);
+  AssertTrue('Authorization not sent to another host',
+    R.JSON.FindPath('headers.Authorization') = nil);
 end;
 
 procedure TRequestSimpleTests.Test25_SSLInitialization;

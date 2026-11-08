@@ -57,10 +57,13 @@ An absolute URL passed to a request method bypasses the base URL.
 Headers set on a session are sent on every request:
 
 ```pascal
-Session.SetHeader('Authorization', 'Bearer ' + Token);
+Session.SetBearerToken(Token);           // Authorization: Bearer ...
+Session.SetBasicAuth('user', 'secret');  // or Authorization: Basic ...
 Session.SetHeader('Accept-Language', 'en-AU');
 Response := Session.Get('/profile');
 ```
+
+`Authorization` is not sent when a redirect goes to a different host.
 
 `ClearHeaders` removes custom headers and restores the default
 `Accept: application/json` header.
@@ -99,6 +102,8 @@ end;
 ```
 
 The caller retains ownership of a JSON value passed to `PostJSON`.
+`PutJSON` and `PatchJSON` (and `TryPutJSON` / `TryPatchJSON`) work the same
+way.
 
 For other content types, use `Post` or `Put` directly:
 
@@ -134,15 +139,34 @@ Response := Session.PostMultipart('/upload',
   [KV('file', 'avatar.png')]);
 ```
 
+## Downloads
+
+`Download` and `GetToStream` stream the body to a file or stream, with session
+headers and cookies applied:
+
+```pascal
+Response := Session.Download('/reports/2026.pdf', 'report.pdf');
+Response := Session.Download('/backup.zip', 'backup.zip', @ShowProgress);
+Response := Session.GetToStream('/export.csv', MyStream);
+```
+
+The rules match [Http.Download](Request.md#downloads-and-streaming): only a
+2xx body is saved, the file is replaced only when complete, and the error
+body is in `Response.Text`. `TryDownload` and `TryGetToStream` return
+`TRequestResult`.
+
 ## Cookies
 
 Cookies received in `Set-Cookie` headers are stored and sent by later calls:
 
 - Cookies set on redirect responses (common after a login POST) are kept.
-- A cookie with `Max-Age=0` or a past `Expires` is removed.
-- Session cookies are not sent when a redirect goes to a different host.
-- `Domain` and `Path` attributes are not checked: every stored cookie is sent
-  to the session's own requests.
+- `Domain` and `Path` are honoured (RFC 6265): a cookie is only sent to
+  matching hosts and paths. Without `Domain`, only the exact host gets it;
+  without `Path`, the request's directory is used.
+- A `Domain` the server is not part of (or a bare top-level name such as
+  `com`) is ignored. There is no public-suffix list.
+- `Secure` cookies are only sent over `https://`.
+- `Max-Age` and `Expires` are tracked; expired cookies are removed.
 
 You can also manage them directly:
 
@@ -151,6 +175,11 @@ Session.SetCookie('session_id', 'abc123');
 WriteLn(Session.GetCookie('session_id'));
 Session.ClearCookies;
 ```
+
+- `SetCookie` cookies are sent with every request, to any host or path, but
+  not when a redirect leaves the host. A server cookie with the same name
+  replaces it.
+- `GetCookie` returns the first stored cookie with that name, from any host.
 
 ## Timeouts
 
@@ -161,7 +190,32 @@ Session.SetTimeout(10000);
 ```
 
 The new timeout applies to the current connection and later calls. A request
-that exceeds it raises `ETimeoutError`.
+that exceeds it raises `ETimeoutError`. The connect timeout is separate:
+
+```pascal
+Session.SetConnectTimeout(5000);  // default 3000
+```
+
+## Proxy
+
+```pascal
+Session.SetProxy('proxy.local', 3128, 'user', 'secret');
+Session.SetProxy('', 0);  // remove
+```
+
+Like `Http.SetProxy`, this covers `http://` URLs only; `https://` requests
+raise `ERequestError` while a proxy is set.
+
+## Retries
+
+Sessions retry GET, HEAD, PUT, and DELETE on network errors, 429, and 503
+(2 retries, 250 ms then 500 ms), like the
+[stateless API](Request.md#retries):
+
+```pascal
+Session.SetRetry(5, 100);  // more patient
+Session.SetRetry(0, 0);    // disable
+```
 
 ## Reading a response
 
@@ -226,6 +280,8 @@ THttpSession = record
     const ContentType: string = 'application/x-www-form-urlencoded'): TResponse;
   function PostJSON(const URL: string; const JSON: string): TResponse;
   function PostJSON(const URL: string; const JSON: TJSONData): TResponse;
+  function PutJSON(const URL: string; const JSON: string): TResponse;  // also TJSONData
+  function PatchJSON(const URL: string; const JSON: string): TResponse; // also TJSONData
   function PostForm(const URL: string; const Fields: array of TKeyValue): TResponse;
   function PostMultipart(const URL: string; const Fields, Files: array of TKeyValue): TResponse;
   function Put(const URL: string; const Body: string = '';
@@ -238,9 +294,13 @@ THttpSession = record
     const ContentType: string; const Headers: array of TKeyValue;
     const Params: array of TKeyValue): TResponse;
 
+  // Streaming (OnProgress is optional: TProgressProc or TProgressEvent)
+  function Download(const URL, FilePath: string; OnProgress): TResponse;
+  function GetToStream(const URL: string; Stream: TStream; OnProgress): TResponse;
+
   // Exception-free: TryGet, TryPost, TryPostJSON, TryPostForm,
-  // TryPostMultipart, TryPut, TryPatch, TryDelete, TryHead, TrySend
-  // (same parameters, return TRequestResult)
+  // TryPostMultipart, TryPut, TryPatch, TryDelete, TryHead, TrySend,
+  // TryDownload, TryGetToStream (same parameters, return TRequestResult)
 
   // Configuration
   procedure SetHeader(const Name, Value: string);
@@ -248,6 +308,12 @@ THttpSession = record
   procedure SetBaseURL(const URL: string);
   procedure SetUserAgent(const UserAgent: string);
   procedure SetTimeout(Timeout: Integer);
+  procedure SetRetry(MaxRetries, BaseDelayMS: Integer);
+  procedure SetConnectTimeout(Timeout: Integer);
+  procedure SetProxy(const Host: string; Port: Integer;
+    const UserName: string = ''; const Password: string = '');
+  procedure SetBasicAuth(const UserName, Password: string);
+  procedure SetBearerToken(const Token: string);
 
   // State
   procedure ClearCookies;
@@ -258,17 +324,6 @@ end;
 
 `TSimpleMap` is public for compatibility but is an implementation detail for
 most users.
-
-## Multipart requests
-
-The session API does not yet provide a multipart helper. Prefer the stateless
-helper:
-
-```pascal
-Result := Http.TryPostMultipart('https://api.example.com/upload',
-  [KV('description', 'avatar')],
-  [KV('file', 'avatar.png')]);
-```
 
 ## HTTPS
 

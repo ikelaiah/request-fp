@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="496" viewBox="0 0 1000 496" role="img" aria-labelledby="cr-title cr-desc">
+  <title id="cr-title">Cookies and credentials across redirects</title>
+  <desc id="cr-desc">A session posts to login.example.com, which answers 302 with Set-Cookie sid=42; the session stores the cookie for that host. The next request to login.example.com sends Cookie sid=42 and the Authorization header. When the server then redirects to cdn.other.net, the request to the other host carries no cookie and no Authorization header.</desc>
+  <style>
+    .bg { fill: #FFFFFF; stroke: #E2E8F0; }
+    .t { fill: #0F172A; }
+    .m { fill: #475569; }
+    .head { fill: #EEF2FF; stroke: #4338CA; }
+    .life { stroke: #CBD5E1; }
+    .ln { stroke: #4338CA; fill: none; }
+    .ah { fill: #4338CA; }
+    .ret { stroke: #64748B; fill: none; }
+    .rah { fill: #64748B; }
+    .cookie { fill: #FDF4FF; stroke: #A21CAF; }
+    .cookiet { fill: #86198F; }
+    .safe { fill: #ECFDF5; stroke: #059669; }
+    .safet { fill: #047857; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0F172A; stroke: #1E293B; }
+      .t { fill: #F1F5F9; }
+      .m { fill: #94A3B8; }
+      .head { fill: #1E1B4B; stroke: #818CF8; }
+      .life { stroke: #334155; }
+      .ln { stroke: #A5B4FC; }
+      .ah { fill: #A5B4FC; }
+      .ret { stroke: #94A3B8; }
+      .rah { fill: #94A3B8; }
+      .cookie { fill: #3B0A3F; stroke: #E879F9; }
+      .cookiet { fill: #F5D0FE; }
+      .safe { fill: #052E24; stroke: #34D399; }
+      .safet { fill: #6EE7B7; }
+    }
+    text { font-family: Inter, 'Segoe UI', system-ui, Arial, sans-serif; }
+    .mono { font-family: ui-monospace, 'Cascadia Code', Consolas, 'DejaVu Sans Mono', monospace; }
+  </style>
+  <defs>
+    <marker id="cr-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" class="ah"/>
+    </marker>
+    <marker id="cr-r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" class="rah"/>
+    </marker>
+  </defs>
+
+  <rect x="1" y="1" width="998" height="494" rx="18" class="bg"/>
+  <text x="32" y="44" font-size="20" font-weight="700" class="t">Cookies and credentials across redirects</text>
+
+  <!-- Participants -->
+  <rect x="70" y="66" width="160" height="40" rx="10" class="head" stroke-width="1.5"/>
+  <text x="150" y="91" font-size="14" font-weight="700" text-anchor="middle" class="t mono">THttpSession</text>
+  <rect x="430" y="66" width="200" height="40" rx="10" class="head" stroke-width="1.5"/>
+  <text x="530" y="91" font-size="14" font-weight="700" text-anchor="middle" class="t mono">login.example.com</text>
+  <rect x="770" y="66" width="180" height="40" rx="10" class="head" stroke-width="1.5"/>
+  <text x="860" y="91" font-size="14" font-weight="700" text-anchor="middle" class="t mono">cdn.other.net</text>
+
+  <path d="M150 106V446" class="life" stroke-width="2" stroke-dasharray="4 5"/>
+  <path d="M530 106V446" class="life" stroke-width="2" stroke-dasharray="4 5"/>
+  <path d="M860 106V446" class="life" stroke-width="2" stroke-dasharray="4 5"/>
+
+  <!-- 1 -->
+  <path d="M152 140H526" class="ln" stroke-width="2" marker-end="url(#cr-a)"/>
+  <text x="339" y="132" font-size="13" text-anchor="middle" class="t mono">POST /login</text>
+
+  <!-- 2 -->
+  <path d="M528 184H154" class="ret" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#cr-r)"/>
+  <text x="339" y="176" font-size="13" text-anchor="middle" class="t mono">302 Location: /home  +  Set-Cookie: sid=42</text>
+  <rect x="20" y="196" width="122" height="44" rx="10" class="cookie" stroke-width="1.5"/>
+  <text x="81" y="215" font-size="11.5" font-weight="700" text-anchor="middle" class="cookiet">stores sid=42</text>
+  <text x="81" y="231" font-size="11" text-anchor="middle" class="cookiet">for this host</text>
+
+  <!-- 3 -->
+  <path d="M152 258H526" class="ln" stroke-width="2" marker-end="url(#cr-a)"/>
+  <text x="339" y="250" font-size="13" text-anchor="middle" class="t mono">GET /home</text>
+  <text x="339" y="276" font-size="12" text-anchor="middle" class="m mono">Cookie: sid=42 · Authorization: Bearer …</text>
+
+  <!-- 4 -->
+  <path d="M528 310H154" class="ret" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#cr-r)"/>
+  <text x="339" y="302" font-size="13" text-anchor="middle" class="t mono">302 Location: https://cdn.other.net/img</text>
+
+  <!-- 5 -->
+  <path d="M152 360H856" class="ln" stroke-width="2" marker-end="url(#cr-a)"/>
+  <text x="694" y="352" font-size="13" text-anchor="middle" class="t mono">GET /img</text>
+  <rect x="566" y="366" width="256" height="30" rx="15" class="safe" stroke-width="1.5"/>
+  <text x="694" y="386" font-size="12" font-weight="700" text-anchor="middle" class="safet">no Cookie, no Authorization</text>
+
+  <!-- 6 -->
+  <path d="M858 434H154" class="ret" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#cr-r)"/>
+  <text x="694" y="426" font-size="13" text-anchor="middle" class="t mono">200 OK</text>
+
+  <text x="500" y="474" font-size="12.5" text-anchor="middle" class="m">Cookies match their Domain and Path · Secure cookies only over https · expired cookies are removed</text>
+</svg>

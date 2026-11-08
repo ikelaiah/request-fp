@@ -12,16 +12,25 @@ if [[ "$output_dir" != "$repo_root/example-bin" ]]; then
   exit 1
 fi
 
-if ! command -v lazbuild >/dev/null 2>&1; then
-  echo "lazbuild was not found. Install Lazarus 4.8+ and add lazbuild to PATH." >&2
+# Build with lazbuild when available; otherwise (or with --fpc) build each
+# project's main source with fpc directly.
+use_fpc=false
+if [[ "${1:-}" == "--fpc" ]] || ! command -v lazbuild >/dev/null 2>&1; then
+  use_fpc=true
+fi
+if [[ "$use_fpc" == true ]] && ! command -v fpc >/dev/null 2>&1; then
+  echo "Neither lazbuild nor fpc was found. Install FPC 3.2.2+ or Lazarus 4.8+." >&2
   exit 1
 fi
 
-case "$(uname -s)" in
-  MINGW*|MSYS*|CYGWIN*)
-    compiler_output_dir="$(cygpath -w "$output_dir")"
-    ;;
-esac
+native_path() {
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) cygpath -w "$1" ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+compiler_output_dir="$(native_path "$output_dir")"
 
 projects=()
 while IFS= read -r project; do
@@ -45,15 +54,33 @@ for project in "${projects[@]}"; do
   relative_project="${project#"$repo_root/"}"
   echo "Building $relative_project"
 
-  lazbuild \
-    --quiet \
-    --quiet \
-    --build-all \
-    --build-mode=Release \
-    --no-write-project \
-    "--opt=-FE$compiler_output_dir" \
-    "$project"
+  if [[ "$use_fpc" == true ]]; then
+    project_dir="$(dirname -- "$project")"
+    main_file="$(grep -oE '<Filename Value="[^"]+\.(lpr|pas)"' "$project" |
+      head -n 1 | sed -E 's/.*Value="([^"]+)"/\1/')"
+    if [[ -z "$main_file" ]]; then
+      echo "Could not find the main source file in $relative_project" >&2
+      exit 1
+    fi
+    unit_dir="$output_dir/.units/$(basename -- "$project" .lpi)"
+    mkdir -p -- "$unit_dir"
+    fpc -B -MObjFPC -Scghi -O2 -v0 -l- \
+      "-Fu$(native_path "$repo_root/src")" \
+      "-FU$(native_path "$unit_dir")" \
+      "-FE$compiler_output_dir" \
+      "$(native_path "$project_dir/$main_file")"
+  else
+    lazbuild \
+      --quiet \
+      --quiet \
+      --build-all \
+      --build-mode=Release \
+      --no-write-project \
+      "--opt=-FE$compiler_output_dir" \
+      "$project"
+  fi
 done
+rm -rf -- "$output_dir/.units"
 
 echo
 echo "Built ${#projects[@]} example projects into $output_dir"

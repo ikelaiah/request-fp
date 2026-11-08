@@ -59,27 +59,27 @@ by Git.
 
 ## Build and run the tests
 
-Compile the FPCUnit runner:
+Use the run scripts. They build the FPCUnit runner, start the local test
+server (`tests/http_fixture.py`, needs Python 3), and run every test:
 
 ```bash
-lazbuild --build-mode=Release tests/TestRunner.lpi
+./run-tests.sh                # Linux, macOS, Git Bash
+./run-tests.sh --leak-check   # must report 0 unfreed memory blocks
 ```
-
-Run it on Windows:
 
 ```powershell
-.\tests\TestRunner.exe -a --format=plain
+.\run-tests.ps1
+.\run-tests.ps1 -LeakCheck
 ```
 
-Run it on Linux:
-
-```bash
-./tests/TestRunner -a --format=plain
-```
-
-The integration suite calls `https://httpbin.org` and requires outbound
-network access. A transient upstream failure can occasionally require a
-rerun.
+- Both scripts use `lazbuild` when available and `fpc` otherwise (`--fpc` /
+  `-Fpc` forces `fpc`).
+- Pass runner options after `--` (bash) or with `-RunnerArgs` (PowerShell),
+  for example `./run-tests.sh -- --suite=Test29_PatchAndHead --format=plain`.
+- To test against another server, set `REQUEST_FP_TEST_BASE_URL` (for example
+  `https://httpbin.org`); the local server is then not started. Some tests
+  use routes that only the local server provides.
+- New tests that need a server route should add it to `tests/http_fixture.py`.
 
 ## Code guidelines
 
@@ -101,8 +101,25 @@ For user-facing changes, review:
 - `docs/cheat-sheet.md`
 - relevant programs under `examples/`
 - `CHANGELOG.md`
-- `docs/RELEASE-vX.Y.Z.md`
+- `docs/RELEASE-vX.Y.Z.md` (and add it to `docs/layout.md`)
 - `docs/PR-vX.Y.Z.md`
+
+### Documentation site
+
+The site is built with [DocSprout](https://github.com/ikelaiah/docsprout)
+from `docs/`. `docs/layout.md` decides which pages are published and in what
+order; `docs/docsprout.json` holds the name, colours, banner, and home-page
+cards. Pages deploy to GitHub Pages from `main`.
+
+```bash
+python -m pip install "https://github.com/ikelaiah/docsprout/archive/refs/tags/v1.5.0.zip"
+docsprout serve          # preview at http://127.0.0.1:8000
+docsprout check          # what CI runs
+docsprout audit --strict
+```
+
+- Link only to pages under `docs/`; use full GitHub URLs for other files.
+- Diagrams are SVGs in `docs/assets/` with a light and a dark colour scheme.
 
 ## Commit messages
 

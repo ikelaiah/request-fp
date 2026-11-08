@@ -2,8 +2,10 @@
 """Small httpbin-compatible fixture for Request-FP's integration tests."""
 
 import argparse
+import hashlib
 import json
 import sys
+import threading
 import time
 from email import policy
 from email.parser import BytesParser
@@ -14,6 +16,10 @@ from urllib.parse import parse_qs, urlsplit
 
 def single_values(values):
     return {key: items[-1] for key, items in values.items()}
+
+
+FLAKY_COUNTS = {}
+FLAKY_LOCK = threading.Lock()
 
 
 class RequestHandler(BaseHTTPRequestHandler):
@@ -199,7 +205,8 @@ class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlsplit(self.path).path
 
-        if self.send_status(path) or self.send_cookie_routes(path):
+        if (self.send_status(path) or self.send_cookie_routes(path)
+                or self.send_flaky(path)):
             pass
         elif path.startswith("/delay/"):
             try:
@@ -216,6 +223,58 @@ class RequestHandler(BaseHTTPRequestHandler):
                 count = 256
             body = bytes(i % 256 for i in range(count))
             self.send_bytes(200, body, "application/octet-stream")
+        elif path.startswith("/stream-bytes/"):
+            # Same bytes as /bytes/N, sent chunked without Content-Length.
+            count = int(path.rsplit("/", 1)[1])
+            body = bytes(i % 256 for i in range(count))
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Transfer-Encoding", "chunked")
+            self.end_headers()
+            for start in range(0, count, 1000):
+                chunk = body[start:start + 1000]
+                self.wfile.write(b"%x\r\n%s\r\n" % (len(chunk), chunk))
+            self.wfile.write(b"0\r\n\r\n")
+        elif path.startswith("/truncated-bytes/"):
+            # Promises N bytes, sends half, then closes the connection.
+            count = int(path.rsplit("/", 1)[1])
+            body = bytes(i % 256 for i in range(count // 2))
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(count))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
+            self.close_connection = True
+        elif path.startswith("/scope/"):
+            # /scope/<any>/set?h=<Set-Cookie value>[&h=...] sends those
+            # Set-Cookie headers; any other /scope/ path echoes the cookies.
+            if path.endswith("/set"):
+                values = parse_qs(urlsplit(self.path).query).get("h", [])
+                body = b'{"ok":true}'
+                self.send_response(200)
+                for value in values:
+                    self.send_header("Set-Cookie", value)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            else:
+                cookie = SimpleCookie(self.headers.get("Cookie", ""))
+                self.send_json(
+                    {"cookies": {k: m.value for k, m in cookie.items()}}
+                )
+        elif path == "/proxy-echo":
+            # When used as an HTTP proxy, the request target is the full URL.
+            self.send_json(
+                {
+                    "target": self.path,
+                    "host": self.headers.get("Host", ""),
+                    "proxy_authorization": self.headers.get(
+                        "Proxy-Authorization", ""
+                    ),
+                }
+            )
         elif path == "/health":
             self.send_bytes(200, b"ok", "text/plain; charset=utf-8")
         elif path == "/html":
@@ -239,20 +298,105 @@ class RequestHandler(BaseHTTPRequestHandler):
         else:
             self.send_request_echo()
 
+    def send_upload_summary(self):
+        """Multipart upload as sizes and hashes, for large binary files."""
+        body = self.read_body()
+        message = BytesParser(policy=policy.default).parsebytes(
+            (
+                "Content-Type: {}\r\nMIME-Version: 1.0\r\n\r\n"
+            ).format(self.headers.get("Content-Type", "")).encode("ascii")
+            + body
+        )
+        form, files = {}, {}
+        for part in message.iter_parts():
+            name = part.get_param("name", header="content-disposition")
+            payload = part.get_payload(decode=True)
+            if part.get_filename() is None:
+                form[name] = payload.decode("utf-8", errors="replace")
+            else:
+                files[name] = {
+                    "filename": part.get_filename(),
+                    "size": len(payload),
+                    "sha256": hashlib.sha256(payload).hexdigest(),
+                    "md5": hashlib.md5(payload).hexdigest(),
+                }
+        self.send_json(
+            {
+                "content_length": len(body),
+                "transfer_encoding": self.headers.get("Transfer-Encoding", ""),
+                "form": form,
+                "files": files,
+            }
+        )
+
+    def send_flaky(self, path):
+        """/flaky?key=K&fail=N[&status=503][&retry_after=S][&mode=drop][&delay=S]
+
+        The first N requests for key K fail (with status, or by closing the
+        connection without a response when mode=drop); later ones return 200
+        with the attempt number. /flaky-count?key=K reports the count.
+        Returns True if handled."""
+        if path not in ("/flaky", "/flaky-count"):
+            return False
+        args = single_values(parse_qs(urlsplit(self.path).query))
+        key = args.get("key", "")
+        self.read_body()
+        if path == "/flaky-count":
+            with FLAKY_LOCK:
+                count = FLAKY_COUNTS.get(key, 0)
+            self.send_json({"count": count})
+            return True
+        with FLAKY_LOCK:
+            attempt = FLAKY_COUNTS.get(key, 0) + 1
+            FLAKY_COUNTS[key] = attempt
+        if attempt <= int(args.get("fail", "0")):
+            time.sleep(min(float(args.get("delay", "0")), 10.0))
+            if args.get("mode") == "drop":
+                self.close_connection = True
+                return True
+            status = int(args.get("status", "503"))
+            body = json.dumps({"attempt": attempt}).encode("utf-8")
+            self.send_response(status)
+            if "retry_after" in args:
+                self.send_header("Retry-After", args["retry_after"])
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(body)
+            return True
+        body = json.dumps({"attempt": attempt}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+        return True
+
     def do_POST(self):
-        if not self.send_status(urlsplit(self.path).path):
+        path = urlsplit(self.path).path
+        if self.send_flaky(path):
+            pass
+        elif path == "/upload-summary":
+            self.send_upload_summary()
+        elif not self.send_status(path):
             self.send_body_echo()
 
     def do_PUT(self):
-        if not self.send_status(urlsplit(self.path).path):
+        path = urlsplit(self.path).path
+        if not (self.send_flaky(path) or self.send_status(path)):
             self.send_body_echo()
 
     def do_PATCH(self):
-        if not self.send_status(urlsplit(self.path).path):
+        path = urlsplit(self.path).path
+        if not (self.send_flaky(path) or self.send_status(path)):
             self.send_body_echo()
 
     def do_HEAD(self):
         path = urlsplit(self.path).path
+        if self.send_flaky(path):
+            return
         status = 200
         if path.startswith("/status/"):
             try:
@@ -266,7 +410,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_DELETE(self):
-        if not self.send_status(urlsplit(self.path).path):
+        path = urlsplit(self.path).path
+        if not (self.send_flaky(path) or self.send_status(path)):
             self.send_request_echo()
 
 

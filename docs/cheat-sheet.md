@@ -81,6 +81,32 @@ Bytes := Response.Bytes;        // TBytes copy of the body
 WriteLn(Response.JSON.FindPath('user.name').AsString);
 ```
 
+## Auth, headers, and proxy
+
+```pascal
+Http.Get(URL, [KVBearer(Token)]);          // or KVBasic(User, Pass)
+Http.PutJSON(URL, '{"a":1}');              // also PatchJSON
+Values := Response.HeaderValues('Set-Cookie'); // every value
+Names := Response.HeaderNames;
+Http.SetConnectTimeout(5000);
+Http.SetProxy('proxy.local', 3128);        // http:// only; ('', 0) removes
+```
+
+## Downloads
+
+```pascal
+procedure ShowProgress(Received, Total: Int64);  // Total = -1 if unknown
+begin
+  WriteLn(Received, ' / ', Total);
+end;
+
+Response := Http.Download(URL, 'big.zip');                // streamed to disk
+Response := Http.Download(URL, 'big.zip', @ShowProgress);
+Response := Http.GetToStream(URL, MyStream);
+if not Response.OK then
+  WriteLn(Response.Text);  // error body; the file is left untouched
+```
+
 ## Exception-free requests
 
 Prefix the request name with `Try`:
@@ -126,15 +152,17 @@ var
 begin
   // No Init or Free needed.
   Session.SetBaseURL('https://api.example.com');
-  Session.SetHeader('Authorization', 'Bearer ' + Token);
+  Session.SetBearerToken(Token);      // or SetBasicAuth(User, Pass)
   Session.SetCookie('session_id', 'abc123');
-  Session.SetTimeout(10000); // milliseconds
+  Session.SetTimeout(10000);          // milliseconds
+  Session.SetConnectTimeout(5000);
+  Session.SetProxy('proxy.local', 3128); // http:// only
 
   Response := Session.Get('/profile');
   Response := Session.Get('/report', [KV('Accept', 'text/csv')]);
   Response := Session.PostJSON('/profile', '{"displayName":"Ada"}');
   Response := Session.PostForm('/login', [KV('user', 'ada')]);
-  Response := Session.Patch('/profile', '{"theme":"dark"}');
+  Response := Session.PatchJSON('/profile', '{"theme":"dark"}');
   Response := Session.Send('GET', '/search', '', '', [], [KV('q', 'fp')]);
   Result := Session.TryGet('/health');
 
@@ -159,6 +187,15 @@ end;
 Normal stateless and session methods raise for request/transport failures and
 return HTTP responses of any status. `RaiseForStatus` opts in to raising for
 non-2xx. `Try*` methods capture request exceptions in `TRequestResult`.
+
+## Retries
+
+```pascal
+// On by default: GET/HEAD/PUT/DELETE, network errors, 429, 503
+Http.SetRetry(2, 250);    // default: 2 retries, 250 ms then 500 ms
+Http.SetRetry(0, 0);      // disable
+Session.SetRetry(0, 0);   // per session
+```
 
 ```pascal
 except
