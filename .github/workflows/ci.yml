@@ -49,32 +49,48 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Restore Lazarus installer cache
+        id: lazarus-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/lazarus-cache
+          key: lazarus-4.8-fpc-3.2.2-linux-amd64-debs
+
       - name: Install Lazarus 4.8 and FPC 3.2.2
         shell: bash
         run: |
           set -euo pipefail
 
-          install_dir="$RUNNER_TEMP/lazarus-4.8"
+          install_dir="$RUNNER_TEMP/lazarus-cache"
           base_url="https://downloads.sourceforge.net/project/lazarus/Lazarus%20Linux%20amd64%20DEB/Lazarus%204.8"
+          packages=(
+            fpc-laz_3.2.2-210709_amd64.deb
+            fpc-src_3.2.2-210709_amd64.deb
+            lazarus-project_4.8.0-0_amd64.deb
+          )
           mkdir -p "$install_dir"
           cd "$install_dir"
 
-          curl --fail --location --retry 5 --retry-delay 5 \
-            --output fpc-laz.deb \
-            "$base_url/fpc-laz_3.2.2-210709_amd64.deb"
-          curl --fail --location --retry 5 --retry-delay 5 \
-            --output fpc-src.deb \
-            "$base_url/fpc-src_3.2.2-210709_amd64.deb"
-          curl --fail --location --retry 5 --retry-delay 5 \
-            --output lazarus-project.deb \
-            "$base_url/lazarus-project_4.8.0-0_amd64.deb"
+          # Download only what the cache did not restore.
+          for package in "${packages[@]}"; do
+            if [[ ! -s "$package" ]]; then
+              curl --fail --location --retry 5 --retry-delay 5 \
+                --output "$package" \
+                "$base_url/$package"
+            fi
+          done
 
           sudo apt-get update
           sudo env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
             libssl-dev \
-            "$install_dir/fpc-laz.deb" \
-            "$install_dir/fpc-src.deb" \
-            "$install_dir/lazarus-project.deb"
+            "${packages[@]/#/$install_dir/}"
+
+      - name: Save Lazarus installer cache
+        if: steps.lazarus-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/lazarus-cache
+          key: ${{ steps.lazarus-cache.outputs.cache-primary-key }}
 
       - name: Verify compiler versions
         shell: bash
@@ -124,19 +140,31 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Restore Lazarus installer cache
+        id: lazarus-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/lazarus-cache
+          key: lazarus-4.8-fpc-3.2.2-win64-installer
+
       - name: Install Lazarus 4.8 and FPC 3.2.2
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
 
-          $installer = Join-Path $env:RUNNER_TEMP 'lazarus-4.8-fpc-3.2.2-win64.exe'
+          $cacheDir = Join-Path $env:RUNNER_TEMP 'lazarus-cache'
+          $installer = Join-Path $cacheDir 'lazarus-4.8-fpc-3.2.2-win64.exe'
           $url = 'https://downloads.sourceforge.net/project/lazarus/Lazarus%20Windows%2064%20bits/Lazarus%204.8/lazarus-4.8-fpc-3.2.2-win64.exe'
 
-          curl.exe --fail --location --retry 5 --retry-delay 5 `
-            --output $installer `
-            $url
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to download Lazarus installer (exit $LASTEXITCODE)."
+          # Download only when the cache did not restore the installer.
+          if (-not (Test-Path -LiteralPath $installer)) {
+            New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+            curl.exe --fail --location --retry 5 --retry-delay 5 `
+              --output $installer `
+              $url
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to download Lazarus installer (exit $LASTEXITCODE)."
+            }
           }
 
           $arguments = @(
@@ -158,6 +186,13 @@ jobs:
           'C:\Lazarus' | Out-File -FilePath $env:GITHUB_PATH -Append
           'C:\Lazarus\fpc\3.2.2\bin\x86_64-win64' |
             Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Save Lazarus installer cache
+        if: steps.lazarus-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/lazarus-cache
+          key: ${{ steps.lazarus-cache.outputs.cache-primary-key }}
 
       - name: Stage OpenSSL DLLs
         shell: pwsh
