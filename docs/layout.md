@@ -20,6 +20,7 @@ Unlisted: exclude
 - [Technical details](TECHNICAL-DETAILS.md)
 
 ## Release notes
+  - [v1.5.0](RELEASE-v1.5.0.md)
   - [v1.4.0](RELEASE-v1.4.0.md)
   - [v1.3.1](RELEASE-v1.3.1.md)
   - [v1.3.0](RELEASE-v1.3.0.md)

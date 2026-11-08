@@ -13,7 +13,7 @@ uses
   {$IFDEF WINDOWS}, Windows{$ENDIF};
 
 const
-  REQUEST_FP_VERSION = '1.4.0';
+  REQUEST_FP_VERSION = '1.5.0';
   DEFAULT_USER_AGENT = 'Request-FP/' + REQUEST_FP_VERSION;
   { Retries for GET, HEAD, PUT, and DELETE: count and first delay. }
   DEFAULT_RETRY_COUNT = 2;

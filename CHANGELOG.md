@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-09
+
 ### Added
 
 - Streaming downloads: `Http.Download(URL, FilePath)` and
