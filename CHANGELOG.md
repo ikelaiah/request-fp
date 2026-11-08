@@ -12,6 +12,11 @@ All notable changes to this project will be documented in this file.
   files are written to `.part` and replaced when complete; a body shorter
   than `Content-Length` raises `ENetworkError`.
 - `TProgressProc` / `TProgressEvent` progress callbacks; raise to cancel.
+- Automatic retries, on by default: GET, HEAD, PUT, and DELETE are retried
+  twice (250 ms, then 500 ms) on network errors (not timeouts), 429, and 503,
+  honouring `Retry-After`. POST and PATCH are never retried.
+  `Http.SetRetry` / `Session.SetRetry` change it; `SetRetry(0, 0)` disables.
+- `TryParseHTTPDate` building block.
 - macOS support: Request-FP finds Homebrew or MacPorts OpenSSL 3, and CI
   builds and tests on macOS with FPC 3.2.2.
 - `run-tests.sh` and `run-tests.ps1`: build the suite, start the local test
@@ -33,6 +38,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- A connection closed without any response returned status 0 instead of
+  raising; it now raises `ENetworkError`.
 - Timeouts close to the configured limit were sometimes reported as
   `ENetworkError` instead of `ETimeoutError` on Windows, because of the
   system timer's ~16 ms resolution.

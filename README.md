@@ -275,6 +275,7 @@ Http.PostMultipart(URL, Fields, Files)
 Http.Download(URL, FilePath)
 Http.GetToStream(URL, Stream)
 Http.SetTimeout(10000)
+Http.SetRetry(2, 250)   // default; SetRetry(0, 0) disables
 
 // Response
 Response.StatusCode

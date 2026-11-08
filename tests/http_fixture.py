@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import sys
+import threading
 import time
 from email import policy
 from email.parser import BytesParser
@@ -15,6 +16,10 @@ from urllib.parse import parse_qs, urlsplit
 
 def single_values(values):
     return {key: items[-1] for key, items in values.items()}
+
+
+FLAKY_COUNTS = {}
+FLAKY_LOCK = threading.Lock()
 
 
 class RequestHandler(BaseHTTPRequestHandler):
@@ -200,7 +205,8 @@ class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlsplit(self.path).path
 
-        if self.send_status(path) or self.send_cookie_routes(path):
+        if (self.send_status(path) or self.send_cookie_routes(path)
+                or self.send_flaky(path)):
             pass
         elif path.startswith("/delay/"):
             try:
@@ -294,23 +300,74 @@ class RequestHandler(BaseHTTPRequestHandler):
             }
         )
 
+    def send_flaky(self, path):
+        """/flaky?key=K&fail=N[&status=503][&retry_after=S][&mode=drop][&delay=S]
+
+        The first N requests for key K fail (with status, or by closing the
+        connection without a response when mode=drop); later ones return 200
+        with the attempt number. /flaky-count?key=K reports the count.
+        Returns True if handled."""
+        if path not in ("/flaky", "/flaky-count"):
+            return False
+        args = single_values(parse_qs(urlsplit(self.path).query))
+        key = args.get("key", "")
+        self.read_body()
+        if path == "/flaky-count":
+            with FLAKY_LOCK:
+                count = FLAKY_COUNTS.get(key, 0)
+            self.send_json({"count": count})
+            return True
+        with FLAKY_LOCK:
+            attempt = FLAKY_COUNTS.get(key, 0) + 1
+            FLAKY_COUNTS[key] = attempt
+        if attempt <= int(args.get("fail", "0")):
+            time.sleep(min(float(args.get("delay", "0")), 10.0))
+            if args.get("mode") == "drop":
+                self.close_connection = True
+                return True
+            status = int(args.get("status", "503"))
+            body = json.dumps({"attempt": attempt}).encode("utf-8")
+            self.send_response(status)
+            if "retry_after" in args:
+                self.send_header("Retry-After", args["retry_after"])
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(body)
+            return True
+        body = json.dumps({"attempt": attempt}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+        return True
+
     def do_POST(self):
         path = urlsplit(self.path).path
-        if path == "/upload-summary":
+        if self.send_flaky(path):
+            pass
+        elif path == "/upload-summary":
             self.send_upload_summary()
         elif not self.send_status(path):
             self.send_body_echo()
 
     def do_PUT(self):
-        if not self.send_status(urlsplit(self.path).path):
+        path = urlsplit(self.path).path
+        if not (self.send_flaky(path) or self.send_status(path)):
             self.send_body_echo()
 
     def do_PATCH(self):
-        if not self.send_status(urlsplit(self.path).path):
+        path = urlsplit(self.path).path
+        if not (self.send_flaky(path) or self.send_status(path)):
             self.send_body_echo()
 
     def do_HEAD(self):
         path = urlsplit(self.path).path
+        if self.send_flaky(path):
+            return
         status = 200
         if path.startswith("/status/"):
             try:
@@ -324,7 +381,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_DELETE(self):
-        if not self.send_status(urlsplit(self.path).path):
+        path = urlsplit(self.path).path
+        if not (self.send_flaky(path) or self.send_status(path)):
             self.send_request_echo()
 
 

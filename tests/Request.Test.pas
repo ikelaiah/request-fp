@@ -17,7 +17,12 @@ type
     FLastReceived: Int64;
     FLastTotal: Int64;
     FCancelAfter: Integer;
+    FFlakyCounter: Integer;
     procedure TrackProgress(Received, Total: Int64);
+    function FlakyKey: string;
+  protected
+    procedure SetUp; override;
+    procedure TearDown; override;
   published
     // Basic HTTP methods
     procedure Test01_SimpleGet;
@@ -76,6 +81,14 @@ type
     // Streaming uploads
     procedure Test42_MultipartStreamsLargeFile;
     procedure Test43_MultipartBodyRewindsAndReadsFully;
+    // Retries
+    procedure Test44_RetryOn503And429;
+    procedure Test45_RetryStopsAfterMax;
+    procedure Test46_RetryAfterHonouredOrReturned;
+    procedure Test47_OnlyIdempotentMethodsRetry;
+    procedure Test48_RetryOnDroppedConnection;
+    procedure Test49_TimeoutIsNotRetried;
+    procedure Test50_RetryDefaultsAndDownload;
   end;
 
 implementation
@@ -1082,6 +1095,209 @@ begin
     Second.Free;
     DeleteFile(PathA);
     DeleteFile(PathB);
+  end;
+end;
+
+{ Retries }
+
+procedure TRequestSimpleTests.SetUp;
+begin
+  inherited SetUp;
+  // Keep transport-failure tests fast; retry tests enable retries themselves.
+  Http.SetRetry(0, 0);
+end;
+
+procedure TRequestSimpleTests.TearDown;
+begin
+  Http.SetRetry(DEFAULT_RETRY_COUNT, DEFAULT_RETRY_DELAY_MS);
+  inherited TearDown;
+end;
+
+function TRequestSimpleTests.FlakyKey: string;
+begin
+  Inc(FFlakyCounter);
+  Result := TestName + '-' + IntToStr(GetTickCount64) + '-' +
+    IntToStr(FFlakyCounter);
+end;
+
+function FlakyURL(const Key, Query: string): string;
+begin
+  Result := TestURL('/flaky?key=' + Key + '&' + Query);
+end;
+
+function FlakyCount(const Key: string): Integer;
+var
+  R: TResponse;
+begin
+  R := Http.Get(TestURL('/flaky-count?key=' + Key));
+  Result := R.JSON.FindPath('count').AsInteger;
+end;
+
+procedure TRequestSimpleTests.Test44_RetryOn503And429;
+var
+  R: TResponse;
+  Key: string;
+begin
+  Http.SetRetry(2, 10);
+  Key := FlakyKey;
+  R := Http.Get(FlakyURL(Key, 'fail=2&status=503'));
+  AssertEquals('Succeeds after two 503s', 200, R.StatusCode);
+  AssertEquals('Third attempt', 3, R.JSON.FindPath('attempt').AsInteger);
+
+  Key := FlakyKey;
+  R := Http.Get(FlakyURL(Key, 'fail=1&status=429'));
+  AssertEquals('429 is retried', 200, R.StatusCode);
+
+  Key := FlakyKey;
+  R := Http.Get(FlakyURL(Key, 'fail=1&status=500'));
+  AssertEquals('500 is not retried', 500, R.StatusCode);
+  AssertEquals('One attempt for 500', 1, FlakyCount(Key));
+end;
+
+procedure TRequestSimpleTests.Test45_RetryStopsAfterMax;
+var
+  R: TResponse;
+  Key: string;
+begin
+  Http.SetRetry(2, 10);
+  Key := FlakyKey;
+  R := Http.Get(FlakyURL(Key, 'fail=5'));
+  AssertEquals('Last response returned', 503, R.StatusCode);
+  AssertEquals('One try plus two retries', 3, FlakyCount(Key));
+
+  Http.SetRetry(0, 0);
+  Key := FlakyKey;
+  R := Http.Get(FlakyURL(Key, 'fail=1'));
+  AssertEquals('SetRetry(0, 0) disables retries', 503, R.StatusCode);
+  AssertEquals('Single attempt', 1, FlakyCount(Key));
+end;
+
+procedure TRequestSimpleTests.Test46_RetryAfterHonouredOrReturned;
+var
+  R: TResponse;
+  Key: string;
+  Start: QWord;
+begin
+  Http.SetRetry(2, 10);
+  Key := FlakyKey;
+  Start := GetTickCount64;
+  R := Http.Get(FlakyURL(Key, 'fail=1&retry_after=1'));
+  AssertEquals('Retried after Retry-After', 200, R.StatusCode);
+  AssertTrue('Waited about one second', GetTickCount64 - Start >= 900);
+
+  Key := FlakyKey;
+  Start := GetTickCount64;
+  R := Http.Get(FlakyURL(Key, 'fail=1&retry_after=3600'));
+  AssertEquals('Long Retry-After is returned, not waited for', 503,
+    R.StatusCode);
+  AssertEquals('Retry-After visible to the caller', '3600',
+    R.HeaderValue('Retry-After'));
+  AssertEquals('No retry', 1, FlakyCount(Key));
+  AssertTrue('Returned promptly', GetTickCount64 - Start < 2000);
+end;
+
+procedure TRequestSimpleTests.Test47_OnlyIdempotentMethodsRetry;
+var
+  R: TResponse;
+  Key: string;
+begin
+  Http.SetRetry(2, 10);
+  Key := FlakyKey;
+  R := Http.Post(FlakyURL(Key, 'fail=1'), 'a=1');
+  AssertEquals('POST not retried', 503, R.StatusCode);
+  AssertEquals('POST single attempt', 1, FlakyCount(Key));
+
+  Key := FlakyKey;
+  R := Http.Patch(FlakyURL(Key, 'fail=1'), '{}');
+  AssertEquals('PATCH not retried', 503, R.StatusCode);
+  AssertEquals('PATCH single attempt', 1, FlakyCount(Key));
+
+  Key := FlakyKey;
+  R := Http.Put(FlakyURL(Key, 'fail=1'), 'a=1');
+  AssertEquals('PUT retried', 200, R.StatusCode);
+
+  Key := FlakyKey;
+  R := Http.Delete(FlakyURL(Key, 'fail=1'));
+  AssertEquals('DELETE retried', 200, R.StatusCode);
+
+  Key := FlakyKey;
+  R := Http.Head(FlakyURL(Key, 'fail=1'));
+  AssertEquals('HEAD retried', 200, R.StatusCode);
+end;
+
+procedure TRequestSimpleTests.Test48_RetryOnDroppedConnection;
+var
+  R: TResponse;
+  Key, Msg: string;
+begin
+  Key := FlakyKey;
+  Msg := '';
+  try
+    Http.Get(FlakyURL(Key, 'fail=1&mode=drop'));
+  except
+    on E: ENetworkError do
+      Msg := E.Message;
+  end;
+  AssertTrue('Empty response raises ENetworkError: ' + Msg,
+    Pos('without a response', Msg) > 0);
+
+  Http.SetRetry(2, 10);
+  Key := FlakyKey;
+  R := Http.Get(FlakyURL(Key, 'fail=1&mode=drop'));
+  AssertEquals('Retried after a dropped connection', 200, R.StatusCode);
+  AssertEquals('Second attempt', 2, R.JSON.FindPath('attempt').AsInteger);
+end;
+
+procedure TRequestSimpleTests.Test49_TimeoutIsNotRetried;
+var
+  Key: string;
+  Raised: Boolean;
+  OldTimeout: Integer;
+begin
+  Http.SetRetry(2, 10);
+  OldTimeout := Http.GetTimeout;
+  Http.SetTimeout(200);
+  try
+    Key := FlakyKey;
+    Raised := False;
+    try
+      // A retry would succeed, so an ETimeoutError proves there was none.
+      Http.Get(FlakyURL(Key, 'fail=1&delay=1'));
+    except
+      on E: ETimeoutError do
+        Raised := True;
+    end;
+    AssertTrue('Timeout raised without retry', Raised);
+  finally
+    Http.SetTimeout(OldTimeout);
+  end;
+end;
+
+procedure TRequestSimpleTests.Test50_RetryDefaultsAndDownload;
+var
+  R: TResponse;
+  Key, Path: string;
+  Start: QWord;
+begin
+  Http.SetRetry(DEFAULT_RETRY_COUNT, DEFAULT_RETRY_DELAY_MS);
+  AssertEquals('Default retry count', 2, Http.GetRetryCount);
+  AssertEquals('Default first delay', 250, Http.GetRetryDelay);
+
+  Key := FlakyKey;
+  Start := GetTickCount64;
+  R := Http.Get(FlakyURL(Key, 'fail=1'));
+  AssertEquals('Retries are on by default', 200, R.StatusCode);
+  AssertTrue('Waited the first delay', GetTickCount64 - Start >= 230);
+
+  Path := GetTempDir + 'request_fp_retry_download.json';
+  Key := FlakyKey;
+  try
+    R := Http.Download(FlakyURL(Key, 'fail=1'), Path);
+    AssertEquals('Download retried', 200, R.StatusCode);
+    AssertTrue('Saved the successful body',
+      Pos('"attempt": 2', ReadFileText(Path)) > 0);
+  finally
+    DeleteFile(Path);
   end;
 end;
 

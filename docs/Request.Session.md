@@ -179,6 +179,17 @@ Session.SetTimeout(10000);
 The new timeout applies to the current connection and later calls. A request
 that exceeds it raises `ETimeoutError`.
 
+## Retries
+
+Sessions retry GET, HEAD, PUT, and DELETE on network errors, 429, and 503
+(2 retries, 250 ms then 500 ms), like the
+[stateless API](Request.md#retries):
+
+```pascal
+Session.SetRetry(5, 100);  // more patient
+Session.SetRetry(0, 0);    // disable
+```
+
 ## Reading a response
 
 Session methods return the same `TResponse` as the stateless API:
@@ -268,6 +279,7 @@ THttpSession = record
   procedure SetBaseURL(const URL: string);
   procedure SetUserAgent(const UserAgent: string);
   procedure SetTimeout(Timeout: Integer);
+  procedure SetRetry(MaxRetries, BaseDelayMS: Integer);
 
   // State
   procedure ClearCookies;

@@ -86,6 +86,8 @@ type
     FBaseURL: string;
     FUserAgent: string;
     FTimeout: Integer;
+    FRetryCount: Integer;
+    FRetryDelay: Integer;
 
     function GetClient: TFPHTTPClient;
     function GetFullURL(const URL: string): string;
@@ -189,6 +191,9 @@ type
     procedure SetUserAgent(const UserAgent: string);
     { Sets the timeout in milliseconds }
     procedure SetTimeout(Timeout: Integer);
+    { Retries for this session; same rules as THttp.SetRetry (default 2
+      retries, 250 ms first delay). SetRetry(0, 0) disables. }
+    procedure SetRetry(MaxRetries, BaseDelayMS: Integer);
 
     { Clears all cookies }
     procedure ClearCookies;
@@ -260,48 +265,6 @@ begin
   if (CookieStr <> '') and
      ((DestHost = '') or SameText(DestHost, ParseURI(ASrc).Host)) then
     Client.AddHeader('Cookie', CookieStr);
-end;
-
-{ Parses cookie dates such as "Wed, 21 Oct 2015 07:28:00 GMT" or
-  "Wednesday, 21-Oct-15 07:28:00 GMT" (always UTC). }
-function TryParseCookieDate(const S: string; out Value: TDateTime): Boolean;
-const
-  Months: array[1..12] of string = ('jan', 'feb', 'mar', 'apr', 'may', 'jun',
-    'jul', 'aug', 'sep', 'oct', 'nov', 'dec');
-var
-  Parts: TStringArray;
-  Work: string;
-  Day, Month, Year, H, M, Sec, I: Integer;
-  TimeParts: TStringArray;
-begin
-  Result := False;
-  Work := S;
-  I := Pos(',', Work);
-  if I > 0 then
-    Work := Copy(Work, I + 1, MaxInt);
-  Work := Trim(StringReplace(Work, '-', ' ', [rfReplaceAll]));
-  Parts := Work.Split([' '], TStringSplitOptions.ExcludeEmpty);
-  if Length(Parts) < 4 then
-    Exit;
-  if not TryStrToInt(Parts[0], Day) then
-    Exit;
-  Month := 0;
-  for I := 1 to 12 do
-    if SameText(Copy(Parts[1], 1, 3), Months[I]) then
-      Month := I;
-  if Month = 0 then
-    Exit;
-  if not TryStrToInt(Parts[2], Year) then
-    Exit;
-  if Year < 70 then
-    Inc(Year, 2000)
-  else if Year < 100 then
-    Inc(Year, 1900);
-  TimeParts := Parts[3].Split([':']);
-  if (Length(TimeParts) <> 3) or not TryStrToInt(TimeParts[0], H) or
-     not TryStrToInt(TimeParts[1], M) or not TryStrToInt(TimeParts[2], Sec) then
-    Exit;
-  Result := TryEncodeDateTime(Year, Month, Day, H, M, Sec, 0, Value);
 end;
 
 procedure SetTryFailure(var R: TRequestResult; E: Exception);
@@ -423,6 +386,8 @@ begin
   Session.FBaseURL := '';
   Session.FUserAgent := DEFAULT_USER_AGENT;
   Session.FTimeout := 30000; // 30 seconds default timeout
+  Session.FRetryCount := DEFAULT_RETRY_COUNT;
+  Session.FRetryDelay := DEFAULT_RETRY_DELAY_MS;
 
   // Set default headers - TSimpleMap doesn't need explicit initialization
   Session.FHeaders.SetItem('Accept', 'application/json');
@@ -448,6 +413,8 @@ begin
   Dest.FBaseURL := Source.FBaseURL;
   Dest.FUserAgent := Source.FUserAgent;
   Dest.FTimeout := Source.FTimeout;
+  Dest.FRetryCount := Source.FRetryCount;
+  Dest.FRetryDelay := Source.FRetryDelay;
 
   // Copy headers
   Dest.FHeaders.Clear;
@@ -579,7 +546,7 @@ begin
       Break;
     end;
     if SameText(AttrName, 'Expires') and
-       TryParseCookieDate(AttrValue, Expires) then
+       TryParseHTTPDate(AttrValue, Expires) then
       Expired := Expires <= LocalTimeToUniversal(Now);
   end;
 
@@ -622,10 +589,11 @@ begin
       if Assigned(Target) then
         Result := ExecuteRequest(Client, Method,
           AppendQueryParams(GetFullURL(URL), Params), Body, Target,
-          OnProgress, OnProgressEvent)
+          OnProgress, OnProgressEvent, FRetryCount, FRetryDelay)
       else
         Result := ExecuteRequest(Client, Method,
-          AppendQueryParams(GetFullURL(URL), Params), Body);
+          AppendQueryParams(GetFullURL(URL), Params), Body, FRetryCount,
+          FRetryDelay);
     finally
       Client.OnRedirect := nil;
     end;
@@ -1026,6 +994,16 @@ end;
 
 // Cookie Management
 
+procedure THttpSession.SetRetry(MaxRetries, BaseDelayMS: Integer);
+begin
+  if MaxRetries < 0 then
+    MaxRetries := 0;
+  if BaseDelayMS < 0 then
+    BaseDelayMS := 0;
+  FRetryCount := MaxRetries;
+  FRetryDelay := BaseDelayMS;
+end;
+
 procedure THttpSession.ClearCookies;
 var
   idx: Integer;
@@ -1071,6 +1049,8 @@ begin
   Self.FBaseURL := '';
   Self.FUserAgent := DEFAULT_USER_AGENT;
   Self.FTimeout := 30000; // 30 seconds default timeout
+  Self.FRetryCount := DEFAULT_RETRY_COUNT;
+  Self.FRetryDelay := DEFAULT_RETRY_DELAY_MS;
 
   // Set default headers
   Self.FHeaders.SetItem('Accept', 'application/json');
